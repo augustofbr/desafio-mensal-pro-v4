@@ -2,14 +2,13 @@ import { useState, useEffect } from "react";
 import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
+import { CategoryRules } from "@/lib/rulesConfig";
 
-export const ESTETICA_REVENUE_MINIMUM = 5000;
-
-export function useEsteticaData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map()) {
+export function useEsteticaData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
   const [esteticaData, setEsteticaData] = useState<any[]>([]);
   const { getFilteredDateRange } = useDateFilter();
 
-  const processEsteticaData = (data: any[]) => {
+  const processEsteticaData = (data: any[], rules: CategoryRules) => {
     if (!Array.isArray(data)) {
       console.error("Invalid estética data:", data);
       setEsteticaData([]);
@@ -59,13 +58,34 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
     });
 
     const cleanedData = Object.values(professionalRevenue).map((prof: any) => {
-      const revenuePercentage = Math.round(((prof.totalRevenue / ESTETICA_REVENUE_MINIMUM) * 100) * 10) / 10;
       const starCount = starsByProfessional.get(prof.professional) || 0;
+      const revenuePercentage = Math.round(((prof.totalRevenue / rules.qualificationGoals.minRevenue!) * 100) * 10) / 10;
 
+      if (rules.scoringModel === 'revenue-points') {
+        const revenuePoints = Math.floor(prof.totalRevenue / rules.revenuePointConversion!);
+        const starPoints = starCount * rules.starPointValue;
+        const totalPoints = revenuePoints + starPoints;
+
+        return {
+          professional: prof.professional,
+          totalRevenue: prof.totalRevenue,
+          revenuePercentage,
+          revenuePoints,
+          starPoints,
+          points: totalPoints,
+          services: prof.services,
+          serviceCount: prof.serviceCount,
+          starCount
+        };
+      }
+
+      // V1: revenue-percentage mode
       return {
         professional: prof.professional,
         totalRevenue: prof.totalRevenue,
         revenuePercentage,
+        revenuePoints: 0,
+        starPoints: 0,
         points: revenuePercentage,
         services: prof.services,
         serviceCount: prof.serviceCount,
@@ -73,9 +93,12 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
       };
     });
 
-    const sortedData = cleanedData.sort(
-      (a: any, b: any) => b.revenuePercentage - a.revenuePercentage
-    );
+    const sortedData = cleanedData.sort((a: any, b: any) => {
+      if (rules.scoringModel === 'revenue-points') {
+        return b.points - a.points;
+      }
+      return b.revenuePercentage - a.revenuePercentage;
+    });
 
     console.log("Final processed estética data:", sortedData);
     setEsteticaData(sortedData);
@@ -93,13 +116,13 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
 
       console.log("Estética services found:", categoryServices.length, "from", categoryProfessionals.length, "professionals");
 
-      processEsteticaData(categoryServices);
+      processEsteticaData(categoryServices, rules);
     } else if (starsByProfessional.size > 0) {
-      processEsteticaData([]);
+      processEsteticaData([], rules);
     } else {
       setEsteticaData([]);
     }
-  }, [allServicesData, getFilteredDateRange, categoryProfessionals, starsByProfessional]);
+  }, [allServicesData, getFilteredDateRange, categoryProfessionals, starsByProfessional, rules]);
 
   return esteticaData;
 }

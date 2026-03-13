@@ -3,13 +3,13 @@ import { useState, useEffect } from "react";
 import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
-import { STAR_POINTS_VALUE } from "./useStarsData";
+import { CategoryRules } from "@/lib/rulesConfig";
 
-export function useManicurePedicureData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map()) {
+export function useManicurePedicureData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
   const [manicureData, setManicureData] = useState<any[]>([]);
   const { getFilteredDateRange } = useDateFilter();
 
-  const processManicurePedicureData = (data: any[]) => {
+  const processManicurePedicureData = (data: any[], rules: CategoryRules) => {
     if (!Array.isArray(data)) {
       console.error("Invalid manicure data:", data);
       setManicureData([]);
@@ -18,8 +18,20 @@ export function useManicurePedicureData(allServicesData: any[], categoryProfessi
 
     console.log("Processing manicure data:", data.length, "services");
 
+    // Initialize ALL professionals with 0 points FIRST
+    const professionalPoints: any = {};
+    for (const profName of categoryProfessionals) {
+      professionalPoints[profName] = {
+        professional: profName,
+        points: 0,
+        services: [],
+        clientDays: new Set(),
+        spaServices: 0
+      };
+    }
+
     // Group by professional and calculate points with new rules
-    const professionalPoints = data.reduce((acc: any, service: any) => {
+    data.reduce((acc: any, service: any) => {
       const serviceName = service.service_name || '';
       const professional = service.professional;
       const serviceDate = service.service_date;
@@ -37,16 +49,16 @@ export function useManicurePedicureData(allServicesData: any[], categoryProfessi
         };
       }
 
-      // Rule 1: "SPA dos Pés" = 2 points each
+      // Rule 1: "SPA dos Pés" = specialServicePointValue points each
       const isSpaDosPes = serviceName === "SPA dos Pés";
       if (isSpaDosPes) {
-        acc[professional].points += 2;
+        acc[professional].points += rules.specialServicePointValue;
         acc[professional].spaServices += 1;
 
         acc[professional].services.push({
           date: convertDateFormat(service.service_date),
           name: service.service_name,
-          points: 2,
+          points: rules.specialServicePointValue,
           type: 'spa'
         });
       }
@@ -70,7 +82,7 @@ export function useManicurePedicureData(allServicesData: any[], categoryProfessi
       }
 
       return acc;
-    }, {});
+    }, professionalPoints);
 
     // Add star points for each professional
     starsByProfessional.forEach((starCount, professional) => {
@@ -84,7 +96,7 @@ export function useManicurePedicureData(allServicesData: any[], categoryProfessi
         };
       }
 
-      const starPoints = starCount * STAR_POINTS_VALUE;
+      const starPoints = starCount * rules.starPointValue;
       professionalPoints[professional].points += starPoints;
 
       professionalPoints[professional].services.push({
@@ -105,7 +117,7 @@ export function useManicurePedicureData(allServicesData: any[], categoryProfessi
         spaServices: prof.spaServices,
         uniqueClientDays: prof.clientDays.size,
         starCount,
-        starPoints: starCount * STAR_POINTS_VALUE
+        starPoints: starCount * rules.starPointValue
       };
     });
 
@@ -130,9 +142,9 @@ export function useManicurePedicureData(allServicesData: any[], categoryProfessi
 
       console.log("Manicure services found:", categoryServices.length, "from", categoryProfessionals.length, "professionals");
 
-      processManicurePedicureData(categoryServices);
+      processManicurePedicureData(categoryServices, rules);
     } else if (starsByProfessional.size > 0) {
-      processManicurePedicureData([]);
+      processManicurePedicureData([], rules);
     } else {
       setManicureData([]);
     }

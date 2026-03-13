@@ -3,24 +3,60 @@ import { useState, useEffect } from "react";
 import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
-import { STAR_POINTS_VALUE } from "./useStarsData";
+import { CategoryRules } from "@/lib/rulesConfig";
+import { ManufacturerData } from "@/hooks/useManufacturerData";
+import { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
-export function useHairTreatmentData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map()) {
+export interface InvalidTreatment {
+  professional: string;
+  serviceName: string;
+  fabricante: string;
+}
+
+export function useHairTreatmentData(
+  allServicesData: any[],
+  categoryProfessionals: string[],
+  starsByProfessional: Map<string, number> = new Map(),
+  rules: CategoryRules,
+  manufacturerData: ManufacturerData | null,
+  profLookup: Map<string, ProfissionalAtivo>
+) {
   const [hairData, setHairData] = useState<any[]>([]);
+  const [invalidTreatments, setInvalidTreatments] = useState<InvalidTreatment[]>([]);
   const { getFilteredDateRange } = useDateFilter();
 
-  const processHairTreatmentData = (treatmentData: any[], allData: any[]) => {
+  const processHairTreatmentData = (
+    treatmentData: any[],
+    allData: any[],
+    rules: CategoryRules,
+    manufacturerData: ManufacturerData | null,
+    profLookup: Map<string, ProfissionalAtivo>
+  ) => {
     if (!Array.isArray(treatmentData)) {
       console.error("Invalid hair treatment data:", treatmentData);
       setHairData([]);
+      setInvalidTreatments([]);
       return;
     }
 
     console.log("Processing hair data:", treatmentData.length, "treatment services,", allData.length, "total services");
 
-    // Step 1: Process treatment services to identify professionals and calculate treatment points
+    // Step 0: Initialize ALL professionals with 0 points FIRST
     const professionalPoints: any = {};
+    const currentInvalidTreatments: InvalidTreatment[] = [];
 
+    for (const profName of categoryProfessionals) {
+      professionalPoints[profName] = {
+        professional: profName,
+        points: 0,
+        services: [],
+        clientDays: new Set(),
+        treatmentServices: 0,
+        invalidTreatmentCount: 0
+      };
+    }
+
+    // Step 1: Process treatment services to identify professionals and calculate treatment points
     treatmentData.forEach((service: any) => {
       const professional = service.professional;
 
@@ -32,20 +68,51 @@ export function useHairTreatmentData(allServicesData: any[], categoryProfessiona
           points: 0,
           services: [],
           clientDays: new Set(),
-          treatmentServices: 0
+          treatmentServices: 0,
+          invalidTreatmentCount: 0
         };
       }
 
-      // Rule 1: Each treatment service = 2 points
-      professionalPoints[professional].points += 2;
-      professionalPoints[professional].treatmentServices += 1;
+      // Check manufacturer constraints when enabled
+      if (rules.manufacturerConstraints && manufacturerData) {
+        const profissionalId = profLookup.get(professional)?.profissionalId;
+        const isAllowed = profissionalId != null
+          ? manufacturerData.isTreatmentAllowed(service.service_name, profissionalId)
+          : false;
 
-      professionalPoints[professional].services.push({
-        date: convertDateFormat(service.service_date),
-        name: service.service_name || "Unknown Service",
-        points: 2,
-        type: 'treatment'
-      });
+        if (isAllowed) {
+          // Valid treatment: count points normally
+          professionalPoints[professional].points += rules.specialServicePointValue;
+          professionalPoints[professional].treatmentServices += 1;
+
+          professionalPoints[professional].services.push({
+            date: convertDateFormat(service.service_date),
+            name: service.service_name || "Unknown Service",
+            points: rules.specialServicePointValue,
+            type: 'treatment'
+          });
+        } else {
+          // Invalid treatment: do NOT count points, track it
+          professionalPoints[professional].invalidTreatmentCount += 1;
+          const fabricante = manufacturerData.getTreatmentManufacturers(service.service_name)[0] || 'Desconhecido';
+          currentInvalidTreatments.push({
+            professional,
+            serviceName: service.service_name || "Unknown Service",
+            fabricante
+          });
+        }
+      } else {
+        // V1 behavior: all treatments count points
+        professionalPoints[professional].points += rules.specialServicePointValue;
+        professionalPoints[professional].treatmentServices += 1;
+
+        professionalPoints[professional].services.push({
+          date: convertDateFormat(service.service_date),
+          name: service.service_name || "Unknown Service",
+          points: rules.specialServicePointValue,
+          type: 'treatment'
+        });
+      }
     });
 
     // Step 2: For each professional in the ranking, count unique clients from ALL their services
@@ -86,11 +153,12 @@ export function useHairTreatmentData(allServicesData: any[], categoryProfessiona
           points: 0,
           services: [],
           clientDays: new Set(),
-          treatmentServices: 0
+          treatmentServices: 0,
+          invalidTreatmentCount: 0
         };
       }
 
-      const starPoints = starCount * STAR_POINTS_VALUE;
+      const starPoints = starCount * rules.starPointValue;
       professionalPoints[professional].points += starPoints;
 
       professionalPoints[professional].services.push({
@@ -111,7 +179,8 @@ export function useHairTreatmentData(allServicesData: any[], categoryProfessiona
         treatmentServices: prof.treatmentServices,
         uniqueClientDays: prof.clientDays.size,
         starCount,
-        starPoints: starCount * STAR_POINTS_VALUE
+        starPoints: starCount * rules.starPointValue,
+        invalidTreatmentCount: prof.invalidTreatmentCount
       };
     });
 
@@ -122,6 +191,7 @@ export function useHairTreatmentData(allServicesData: any[], categoryProfessiona
 
     console.log("Final processed hair data:", sortedData);
     setHairData(sortedData);
+    setInvalidTreatments(currentInvalidTreatments);
   };
 
   useEffect(() => {
@@ -140,14 +210,15 @@ export function useHairTreatmentData(allServicesData: any[], categoryProfessiona
       );
 
       console.log("Hair treatments found:", hairTreatments.length, "from", categoryProfessionals.length, "professionals");
-      processHairTreatmentData(hairTreatments, categoryServices);
+      processHairTreatmentData(hairTreatments, categoryServices, rules, manufacturerData, profLookup);
     } else if (starsByProfessional.size > 0) {
       // No services but stars exist - process stars only
-      processHairTreatmentData([], []);
+      processHairTreatmentData([], [], rules, manufacturerData, profLookup);
     } else {
       setHairData([]);
+      setInvalidTreatments([]);
     }
-  }, [allServicesData, getFilteredDateRange, categoryProfessionals, starsByProfessional]);
+  }, [allServicesData, getFilteredDateRange, categoryProfessionals, starsByProfessional, rules, manufacturerData, profLookup]);
 
-  return hairData;
+  return { hairData, invalidTreatments };
 }
