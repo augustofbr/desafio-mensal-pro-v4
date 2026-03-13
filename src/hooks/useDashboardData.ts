@@ -8,8 +8,15 @@ import { useEsteticaData } from "./useEsteticaData";
 import { useMaquiagemData } from "./useMaquiagemData";
 import { useProfessionalDetails } from "./useProfessionalDetails";
 import { useStarsData } from "./useStarsData";
+import { getRulesForDate } from "@/lib/rulesConfig";
+import { useManufacturerData } from "./useManufacturerData";
+import { useDateFilter } from "@/contexts/DateFilterContext";
 
 export function useDashboardData() {
+  const { getFilteredDateRange } = useDateFilter();
+  const dateRange = getFilteredDateRange();
+  const rules = getRulesForDate(dateRange.startDate);
+
   const {
     loading: servicesLoading,
     lastUpdate,
@@ -21,21 +28,26 @@ export function useDashboardData() {
   const {
     activeProfessionals,
     getProfessionalsByCategory,
+    profLookup,
     loading: profsLoading,
     fetchActiveProfessionals
   } = useActiveProfessionals();
 
   const { starsData, loading: starsLoading } = useStarsData(activeProfessionals);
+  const manufacturerData = useManufacturerData(rules.cabelo.manufacturerConstraints);
 
   const cabeloProfessionals = getProfessionalsByCategory("Cabelo");
   const unhasProfessionals = getProfessionalsByCategory("Unhas");
   const esteticaProfessionals = getProfessionalsByCategory("Estetica");
   const maquiagemProfessionals = getProfessionalsByCategory("Maquiagem");
 
-  const hairData = useHairTreatmentData(allServicesData, cabeloProfessionals, starsData.cabelo);
-  const manicureData = useManicurePedicureData(allServicesData, unhasProfessionals, starsData.unhas);
-  const esteticaData = useEsteticaData(allServicesData, esteticaProfessionals, starsData.estetica);
-  const maquiagemData = useMaquiagemData(allServicesData, maquiagemProfessionals, starsData.maquiagem);
+  const { hairData, invalidTreatments } = useHairTreatmentData(
+    allServicesData, cabeloProfessionals, starsData.cabelo,
+    rules.cabelo, manufacturerData, profLookup
+  );
+  const manicureData = useManicurePedicureData(allServicesData, unhasProfessionals, starsData.unhas, rules.unhas);
+  const esteticaData = useEsteticaData(allServicesData, esteticaProfessionals, starsData.estetica, rules.estetica);
+  const maquiagemData = useMaquiagemData(allServicesData, maquiagemProfessionals, starsData.maquiagem, rules.maquiagem);
 
   const {
     selectedProfessional,
@@ -43,7 +55,7 @@ export function useDashboardData() {
     professionalDetails,
     loading: detailsLoading,
     selectProfessional
-  } = useProfessionalDetails();
+  } = useProfessionalDetails(rules, manufacturerData, profLookup, starsData);
 
   // Fetch data on initial load
   useEffect(() => {
@@ -52,7 +64,8 @@ export function useDashboardData() {
   }, [fetchServicesData, fetchActiveProfessionals]);
 
   // Combined loading state
-  const loading = servicesLoading || profsLoading || detailsLoading || starsLoading;
+  const loading = servicesLoading || profsLoading || detailsLoading || starsLoading ||
+    (rules.cabelo.manufacturerConstraints && manufacturerData.isLoading);
 
   return {
     loading,
@@ -62,6 +75,8 @@ export function useDashboardData() {
     manicureData,
     esteticaData,
     maquiagemData,
+    invalidTreatments,
+    rules,
     refreshData: fetchServicesData,
     selectedProfessional,
     professionalDetails,
