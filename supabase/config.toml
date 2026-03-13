@@ -1,0 +1,42 @@
+
+# This file controls the configuration for the local development Supabase project.
+project_id = "kxgrprxyqeuffhczaznl"
+
+[api]
+# Port that the API will listen on.
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+# Port that the DB will listen on.
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+# Port that Studio will listen on.
+port = 54323
+
+[inbucket]
+# Port that Inbucket will listen on.
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[storage]
+# Port that Storage will listen on.
+port = 54327
+
+[auth]
+# Port that Auth will listen on.
+port = 54328
+
+[realtime]
+# Port that Realtime will listen on.
+port = 54329
+
+[functions]
+[functions.daily-trinks-automation]
+verify_jwt = true
