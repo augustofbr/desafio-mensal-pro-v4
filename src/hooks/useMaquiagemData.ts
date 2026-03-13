@@ -42,7 +42,8 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
           name: service.service_name || "Serviço de Maquiagem",
           points: 0,
           type: 'service',
-          clientName: service.client_name
+          clientName: service.client_name,
+          value: serviceValue
         });
 
         return acc;

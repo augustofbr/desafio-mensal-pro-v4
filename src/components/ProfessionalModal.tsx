@@ -3,18 +3,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { LineChart } from "@/components/ui/line-chart";
-import { Scissors, Sparkles, Heart } from "lucide-react";
+import { Scissors, Sparkles, Heart, AlertTriangle, DollarSign, Star } from "lucide-react";
 import { getCurrentMonthName, groupByDay, calculateDailyAccumulated } from "@/lib/utils";
 import { getCategoryDisplayName } from "@/lib/categoryDisplayNames";
+import { CategoryRules } from "@/lib/rulesConfig";
 
 interface ProfessionalModalProps {
   isOpen: boolean;
   onClose: () => void;
   details: any;
   category: string;
+  rules?: CategoryRules;
 }
 
-export default function ProfessionalModal({ isOpen, onClose, details, category }: ProfessionalModalProps) {
+export default function ProfessionalModal({ isOpen, onClose, details, category, rules }: ProfessionalModalProps) {
   if (!details) return null;
 
   const renderSummaryCards = () => {
@@ -24,7 +26,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
 
     if (category === "Cabelo") {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={`grid grid-cols-1 ${rules?.manufacturerConstraints && summary.invalidTreatmentCount > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
           <Card className="border-blue-200">
             <CardContent className="p-4">
               <div className="flex items-center space-x-3">
@@ -60,6 +62,25 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
               </div>
             </CardContent>
           </Card>
+
+          {rules?.manufacturerConstraints && summary.invalidTreatmentCount > 0 && (
+            <Card className="border-amber-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-amber-100 rounded-lg">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Tratamentos não contabilizados</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-amber-600">{summary.invalidTreatmentCount}</span>
+                      <span className="text-sm text-gray-500">tratamentos</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       );
     } else if (category === "Unhas") {
@@ -103,6 +124,64 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
         </div>
       );
     } else if (category === "Estetica") {
+      if (rules?.scoringModel === 'revenue-points') {
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="border-violet-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-violet-100 rounded-lg">
+                    <Sparkles className="h-5 w-5 text-violet-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Serviços Realizados</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-violet-600">{summary.esteticaServiceCount}</span>
+                      <span className="text-sm text-gray-500">serviços</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">Total no período</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-violet-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-violet-100 rounded-lg">
+                    <DollarSign className="h-5 w-5 text-violet-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Pontos de Faturamento</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-violet-600">{summary.revenuePoints}</span>
+                      <span className="text-sm text-gray-500">pontos</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-violet-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-violet-100 rounded-lg">
+                    <Star className="h-5 w-5 text-violet-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Pontos de Estrelas</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-violet-600">{summary.starPoints}</span>
+                      <span className="text-sm text-gray-500">pontos</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      }
+
       return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-violet-200">
@@ -143,6 +222,46 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
         </div>
       );
     } else if (category === "Maquiagem") {
+      if (rules?.scoringModel === 'revenue-points') {
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="border-yellow-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <DollarSign className="h-5 w-5 text-yellow-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Pontos de Faturamento</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-yellow-600">{summary.revenuePoints}</span>
+                      <span className="text-sm text-gray-500">pontos</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-yellow-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <Star className="h-5 w-5 text-yellow-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Pontos de Estrelas</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-yellow-600">{summary.starPoints}</span>
+                      <span className="text-sm text-gray-500">pontos</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      }
+
       return (
         <div className="grid grid-cols-1 gap-4">
           <Card className="border-yellow-200">
@@ -215,6 +334,13 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
     };
   };
 
+  const shouldShowPointsColumn = () => {
+    if (category === "Estetica") {
+      return rules?.scoringModel === 'revenue-points';
+    }
+    return true;
+  };
+
   const chartData = prepareIndividualEvolutionData();
   const currentMonth = getCurrentMonthName();
   const displayCategory = getCategoryDisplayName(category);
@@ -225,7 +351,12 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
         <DialogHeader>
           <DialogTitle className="text-xl">{details.professional}</DialogTitle>
           <DialogDescription className="mt-1">
-            {displayCategory}: {details.totalServices} serviços | {category === "Estetica" ? `${details.totalPoints}% da meta` : `${details.totalPoints} pontos`}
+            {displayCategory}: {details.totalServices} serviços | {rules?.scoringModel === 'revenue-points'
+              ? `${details.totalPoints} Pts`
+              : category === "Estetica"
+                ? `${details.totalPoints}% da meta`
+                : `${details.totalPoints} pontos`
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -249,7 +380,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
                   <TableRow>
                     <TableHead>Serviço</TableHead>
                     <TableHead className="text-center">Quantidade</TableHead>
-                    {category !== "Estetica" && (
+                    {shouldShowPointsColumn() && (
                       <TableHead className="text-right">Pontos</TableHead>
                     )}
                   </TableRow>
@@ -261,7 +392,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category }
                         <div className="font-medium">{service.name}</div>
                       </TableCell>
                       <TableCell className="text-center">{service.count}</TableCell>
-                      {category !== "Estetica" && (
+                      {shouldShowPointsColumn() && (
                         <TableCell className="text-right font-medium">
                           {service.points}
                           <span className="text-xs text-muted-foreground ml-1">

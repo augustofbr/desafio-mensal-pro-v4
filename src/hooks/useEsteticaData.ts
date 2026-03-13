@@ -39,7 +39,8 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
         date: convertDateFormat(service.service_date),
         name: service.service_name,
         points: 1,
-        type: 'revenue'
+        type: 'revenue',
+        value: revenue
       });
 
       return acc;

@@ -5,6 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCurrentMonthName } from "@/lib/utils";
 import { EvolutionChartContainer } from "@/components/charts/EvolutionChartContainer";
 import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryEnabled } from "@/lib/categoryDisplayNames";
+import { getRulesForDate } from "@/lib/rulesConfig";
+import { useDateFilter } from "@/contexts/DateFilterContext";
 
 interface DashboardChartsProps {
   hairData: any[];
@@ -14,6 +16,9 @@ interface DashboardChartsProps {
 }
 
 export default function DashboardCharts({ hairData, manicureData, esteticaData, maquiagemData }: DashboardChartsProps) {
+  const { getFilteredDateRange } = useDateFilter();
+  const { startDate } = getFilteredDateRange();
+  const rules = getRulesForDate(startDate);
   const [hasData, setHasData] = useState(false);
   const [selectedProfessionals, setSelectedProfessionals] = useState<string[]>([]);
   const currentMonth = getCurrentMonthName();
@@ -137,6 +142,7 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
                   onToggleProfessional={toggleProfessional}
                   onSelectAll={selectAllProfessionals}
                   onClearAll={clearAllProfessionals}
+                  rules={rules.maquiagem}
                 />
               </TabsContent>
             )}
@@ -150,6 +156,7 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
                   onToggleProfessional={toggleProfessional}
                   onSelectAll={selectAllProfessionals}
                   onClearAll={clearAllProfessionals}
+                  rules={rules.estetica}
                 />
               </TabsContent>
             )}

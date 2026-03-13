@@ -5,6 +5,7 @@ import { ExpandableChart } from "./ExpandableChart";
 import { groupByDay, calculateDailyAccumulated } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { getCategoryDisplayName, PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
+import { CategoryRules } from "@/lib/rulesConfig";
 
 interface EvolutionChartContainerProps {
   data: any[];
@@ -13,6 +14,7 @@ interface EvolutionChartContainerProps {
   onToggleProfessional: (professional: string) => void;
   onSelectAll: () => void;
   onClearAll: () => void;
+  rules?: CategoryRules;
 }
 
 export function EvolutionChartContainer({
@@ -21,7 +23,8 @@ export function EvolutionChartContainer({
   selectedProfessionals,
   onToggleProfessional,
   onSelectAll,
-  onClearAll
+  onClearAll,
+  rules
 }: EvolutionChartContainerProps) {
   const { getFilteredDateRange } = useDateFilter();
 
@@ -103,15 +106,39 @@ export function EvolutionChartContainer({
       'rgb(50, 205, 50)',
     ];
 
+    const isRevenuePoints = rules?.scoringModel === 'revenue-points';
+
     const datasets = filteredData.map((prof, index) => {
       const services = Array.isArray(prof.services) ? prof.services : [];
-      const dailyPoints = groupByDay(services);
-      const accumulated = calculateDailyAccumulated(dailyPoints, fullDateRange);
       const color = colors[index % colors.length];
+
+      let chartValues: number[];
+
+      if (isRevenuePoints && rules?.revenuePointConversion) {
+        // Revenue-points: floor(cumulativeRevenue / conversion) per day
+        const dailyRevenue: Record<string, number> = {};
+        services.forEach((service: any) => {
+          if (service?.date) {
+            const date = service.date.length === 10 ? service.date : service.date.substring(0, 10);
+            dailyRevenue[date] = (dailyRevenue[date] || 0) + (service.value || 0);
+          }
+        });
+
+        let cumulativeRevenue = 0;
+        chartValues = fullDateRange.map(date => {
+          cumulativeRevenue += (dailyRevenue[date] || 0);
+          return Math.floor(cumulativeRevenue / rules.revenuePointConversion!);
+        });
+      } else {
+        // Points-based: use existing accumulation
+        const dailyPoints = groupByDay(services);
+        const accumulated = calculateDailyAccumulated(dailyPoints, fullDateRange);
+        chartValues = fullDateRange.map(date => accumulated[date] || 0);
+      }
 
       return {
         label: prof.professional,
-        data: fullDateRange.map(date => accumulated[date] || 0),
+        data: chartValues,
         borderColor: color,
         tension: 0.3,
       };

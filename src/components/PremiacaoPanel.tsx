@@ -1,6 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy, Award, CheckCircle, AlertCircle, Star } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
+import { useDateFilter } from "@/contexts/DateFilterContext";
+import { getRulesForDate, getCategoryRules, CategoryRules, RulesVersion } from "@/lib/rulesConfig";
 
 interface PremiacaoPanelProps {
   hairData: any[];
@@ -10,94 +12,159 @@ interface PremiacaoPanelProps {
   loading: boolean;
 }
 
-const PREMIACAO_CONFIG = {
-  cabelo: {
-    label: "Cabelo",
-    premio: 300,
-    minimo: 60,
-    type: 'clients' as const,
-  },
-  unhas: {
-    label: "Unhas",
-    premio: 200,
-    minimo: 50,
-    type: 'clients' as const,
-  },
-  estetica: {
-    label: "Estética",
-    premio: 200,
-    minimo: 5000,
-    type: 'revenue' as const,
-  },
-  maquiagem: {
-    label: "Make",
-    premio: 200,
-    minimo: 25,
-    type: 'services' as const,
-  },
+interface WinnerInfo {
+  professional: string;
+  points: number;
+  uniqueClients: number;
+  treatmentServices: number;
+  spaServices: number;
+  totalServices: number;
+  revenuePercentage: number;
+  starCount: number;
+  starPoints: number;
+  qualified: boolean;
+  progressBars: { label: string; current: number; goal: number; percent: number }[];
+}
+
+type ColorScheme = {
+  gradient: string;
+  bgLight: string;
+  text: string;
+  progressBg: string;
+  progressFill: string;
+  iconBg: string;
 };
 
-type CategoryConfig = typeof PREMIACAO_CONFIG[keyof typeof PREMIACAO_CONFIG];
+function buildWinner(
+  leader: any,
+  categoryKey: string,
+  categoryRules: CategoryRules
+): WinnerInfo {
+  const starCount = leader.starCount || 0;
+  const starPoints = leader.starPoints || 0;
+  const uniqueClients = leader.uniqueClientDays || 0;
+  const treatmentServices = leader.treatmentServices || 0;
+  const spaServices = leader.spaServices || 0;
+  const totalServices = leader.totalServices || 0;
+  const revenuePercentage = leader.revenuePercentage || 0;
+
+  const goals = categoryRules.qualificationGoals;
+  const progressBars: WinnerInfo["progressBars"] = [];
+  let qualified = true;
+
+  if (categoryKey === "cabelo") {
+    if (goals.minUniqueClients != null) {
+      const pct = Math.min((uniqueClients / goals.minUniqueClients) * 100, 100);
+      progressBars.push({
+        label: `${uniqueClients}/${goals.minUniqueClients} clientes`,
+        current: uniqueClients,
+        goal: goals.minUniqueClients,
+        percent: pct,
+      });
+      if (uniqueClients < goals.minUniqueClients) qualified = false;
+    }
+    if (goals.minSpecialServices != null) {
+      const pct = Math.min((treatmentServices / goals.minSpecialServices) * 100, 100);
+      progressBars.push({
+        label: `${treatmentServices}/${goals.minSpecialServices} tratamentos`,
+        current: treatmentServices,
+        goal: goals.minSpecialServices,
+        percent: pct,
+      });
+      if (treatmentServices < goals.minSpecialServices) qualified = false;
+    }
+  } else if (categoryKey === "unhas") {
+    if (goals.minUniqueClients != null) {
+      const pct = Math.min((uniqueClients / goals.minUniqueClients) * 100, 100);
+      progressBars.push({
+        label: `${uniqueClients}/${goals.minUniqueClients} clientes`,
+        current: uniqueClients,
+        goal: goals.minUniqueClients,
+        percent: pct,
+      });
+      if (uniqueClients < goals.minUniqueClients) qualified = false;
+    }
+    if (goals.minSpecialServices != null) {
+      const pct = Math.min((spaServices / goals.minSpecialServices) * 100, 100);
+      progressBars.push({
+        label: `${spaServices}/${goals.minSpecialServices} SPA`,
+        current: spaServices,
+        goal: goals.minSpecialServices,
+        percent: pct,
+      });
+      if (spaServices < goals.minSpecialServices) qualified = false;
+    }
+  } else if (categoryKey === "estetica") {
+    const pct = Math.min(revenuePercentage, 100);
+    progressBars.push({
+      label: `${revenuePercentage}% da meta`,
+      current: revenuePercentage,
+      goal: 100,
+      percent: pct,
+    });
+    if (revenuePercentage < 100) qualified = false;
+  } else if (categoryKey === "maquiagem") {
+    if (goals.minServices != null) {
+      // V1: service count
+      const pct = Math.min((totalServices / goals.minServices) * 100, 100);
+      progressBars.push({
+        label: `${totalServices}/${goals.minServices} serviços`,
+        current: totalServices,
+        goal: goals.minServices,
+        percent: pct,
+      });
+      if (totalServices < goals.minServices) qualified = false;
+    } else if (goals.minRevenue != null) {
+      // V2: revenue percentage
+      const pct = Math.min(revenuePercentage, 100);
+      progressBars.push({
+        label: `${revenuePercentage}% da meta`,
+        current: revenuePercentage,
+        goal: 100,
+        percent: pct,
+      });
+      if (revenuePercentage < 100) qualified = false;
+    }
+  }
+
+  return {
+    professional: leader.professional,
+    points: leader.points,
+    uniqueClients,
+    treatmentServices,
+    spaServices,
+    totalServices,
+    revenuePercentage,
+    starCount,
+    starPoints,
+    qualified,
+    progressBars,
+  };
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  cabelo: "Cabelo",
+  unhas: "Unhas",
+  estetica: "Estética",
+  maquiagem: "Make",
+};
 
 export default function PremiacaoPanel({ hairData, manicureData, esteticaData, maquiagemData, loading }: PremiacaoPanelProps) {
   const currentMonth = getCurrentMonthName();
+  const { getFilteredDateRange } = useDateFilter();
+  const { startDate } = getFilteredDateRange();
+  const rules = getRulesForDate(startDate);
 
-  const getCategoryWinner = (data: any[], config: CategoryConfig) => {
+  const getWinner = (data: any[], categoryKey: string): WinnerInfo | null => {
     if (!data || data.length === 0) return null;
-
-    const leader = data[0];
-
-    const starCount = leader.starCount || 0;
-    const starPoints = leader.starPoints || 0;
-
-    if (config.type === 'revenue') {
-      const totalRevenue = leader.totalRevenue || 0;
-      const revenuePercentage = leader.revenuePercentage || 0;
-      const qualified = totalRevenue >= config.minimo;
-
-      return {
-        professional: leader.professional,
-        points: leader.points,
-        totalRevenue,
-        revenuePercentage,
-        qualified,
-        starCount,
-        starPoints,
-        type: 'revenue' as const,
-      };
-    } else if (config.type === 'services') {
-      const totalServices = leader.totalServices || 0;
-      const qualified = totalServices >= config.minimo;
-
-      return {
-        professional: leader.professional,
-        points: leader.points,
-        totalServices,
-        qualified,
-        starCount,
-        starPoints,
-        type: 'services' as const,
-      };
-    } else {
-      const uniqueClients = leader.uniqueClientDays || 0;
-      const qualified = uniqueClients >= config.minimo;
-
-      return {
-        professional: leader.professional,
-        points: leader.points,
-        uniqueClients,
-        qualified,
-        starCount,
-        starPoints,
-        type: 'clients' as const,
-      };
-    }
+    const categoryRules = getCategoryRules(rules, categoryKey);
+    return buildWinner(data[0], categoryKey, categoryRules);
   };
 
-  const hairWinner = getCategoryWinner(hairData, PREMIACAO_CONFIG.cabelo);
-  const manicureWinner = getCategoryWinner(manicureData, PREMIACAO_CONFIG.unhas);
-  const esteticaWinner = getCategoryWinner(esteticaData, PREMIACAO_CONFIG.estetica);
-  const maquiagemWinner = getCategoryWinner(maquiagemData, PREMIACAO_CONFIG.maquiagem);
+  const hairWinner = getWinner(hairData, "cabelo");
+  const manicureWinner = getWinner(manicureData, "unhas");
+  const esteticaWinner = getWinner(esteticaData, "estetica");
+  const maquiagemWinner = getWinner(maquiagemData, "maquiagem");
 
   if (loading) {
     return (
@@ -113,56 +180,56 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
     );
   }
 
-  const getProgressPercent = (winner: ReturnType<typeof getCategoryWinner>, config: CategoryConfig): number => {
-    if (!winner) return 0;
-    if (winner.type === 'revenue') return Math.min(winner.revenuePercentage, 100);
-    if (winner.type === 'services') return Math.min((winner.totalServices / config.minimo) * 100, 100);
-    return Math.min((winner.uniqueClients / config.minimo) * 100, 100);
+  const getPointsDisplay = (winner: WinnerInfo, categoryKey: string): string => {
+    const categoryRules = getCategoryRules(rules, categoryKey);
+    if (categoryRules.scoringModel === 'revenue-percentage' || categoryRules.scoringModel === 'revenue-points') {
+      if (categoryKey === 'estetica' || (categoryKey === 'maquiagem' && categoryRules.qualificationGoals.minRevenue != null)) {
+        return `${winner.revenuePercentage}% da meta`;
+      }
+    }
+    return `${winner.points} pontos`;
+  };
+
+  const getMinimumLabel = (categoryKey: string): string => {
+    const categoryRules = getCategoryRules(rules, categoryKey);
+    const goals = categoryRules.qualificationGoals;
+
+    if (categoryKey === "cabelo" || categoryKey === "unhas") {
+      const parts: string[] = [];
+      if (goals.minUniqueClients != null) parts.push(`${goals.minUniqueClients} clientes`);
+      if (goals.minSpecialServices != null) parts.push(`${goals.minSpecialServices} ${categoryRules.specialServiceLabel}`);
+      return parts.length > 0 ? `Min. ${parts.join(" + ")}` : "";
+    }
+    if (goals.minRevenue != null) return `Meta de faturamento`;
+    if (goals.minServices != null) return `Min. ${goals.minServices} serviços`;
+    return "";
+  };
+
+  const getStatusLabel = (winner: WinnerInfo, categoryKey: string): string => {
+    const bars = winner.progressBars;
+    const unmet = bars.filter(b => b.percent < 100);
+    if (unmet.length === 0) return "";
+
+    if (categoryKey === "estetica" || (categoryKey === "maquiagem" && bars.length === 1 && bars[0].goal === 100)) {
+      const faltam = Math.ceil(100 - winner.revenuePercentage);
+      return `Faltam ${faltam}% para meta mínima`;
+    }
+
+    const parts = unmet.map(b => {
+      const remaining = b.goal - b.current;
+      return `${remaining} ${b.label.split(" ").slice(1).join(" ")}`;
+    });
+    return `Faltam ${parts.join(" e ")}`;
   };
 
   const renderCategoryAward = (
-    config: CategoryConfig,
-    winner: ReturnType<typeof getCategoryWinner>,
-    colorScheme: { gradient: string; bgLight: string; text: string; progressBg: string; progressFill: string; iconBg: string },
+    categoryKey: string,
+    winner: WinnerInfo | null,
+    colorScheme: ColorScheme,
     index: number
   ) => {
-    const progress = getProgressPercent(winner, config);
-
-    const getStatusLabel = () => {
-      if (!winner) return 'Em andamento';
-      if (winner.type === 'revenue') {
-        const faltam = Math.ceil(100 - winner.revenuePercentage);
-        return `Faltam ${faltam}% para meta mínima`;
-      }
-      if (winner.type === 'services') {
-        const faltam = config.minimo - winner.totalServices;
-        return `Faltam ${faltam} serviços para o mínimo`;
-      }
-      const faltam = config.minimo - winner.uniqueClients;
-      return `Faltam ${faltam} clientes para o mínimo`;
-    };
-
-    const getMinimumLabel = () => {
-      if (config.type === 'revenue') return `Meta de faturamento`;
-      if (config.type === 'services') return `Min. ${config.minimo} serviços`;
-      return `Min. ${config.minimo} clientes`;
-    };
-
-    const getPointsDisplay = () => {
-      if (!winner) return '';
-      if (winner.type === 'revenue') return `${winner.revenuePercentage}% da meta`;
-      return `${winner.points} pontos`;
-    };
-
-    const getProgressLabel = () => {
-      if (!winner) return '';
-      if (winner.type === 'revenue') {
-        return `${winner.revenuePercentage}% da meta de faturamento`;
-      } else if (winner.type === 'services') {
-        return `${winner.totalServices} / ${config.minimo} serviços`;
-      }
-      return `${winner.uniqueClients} / ${config.minimo} clientes`;
-    };
+    const categoryRules = getCategoryRules(rules, categoryKey);
+    const label = CATEGORY_LABELS[categoryKey] || categoryKey;
 
     return (
       <div
@@ -174,8 +241,8 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
               <Award className="h-4.5 w-4.5 text-white" />
             </div>
             <div>
-              <h4 className="font-display font-semibold text-base text-gray-800">{config.label}</h4>
-              <p className="text-[11px] text-gray-500 font-body">{getMinimumLabel()}</p>
+              <h4 className="font-display font-semibold text-base text-gray-800">{label}</h4>
+              <p className="text-[11px] text-gray-500 font-body">{getMinimumLabel(categoryKey)}</p>
             </div>
           </div>
           {winner && (
@@ -187,7 +254,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             ) : (
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold">
                 <AlertCircle className="h-3 w-3" />
-                {getStatusLabel()}
+                {getStatusLabel(winner, categoryKey)}
               </span>
             )
           )}
@@ -207,18 +274,28 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
                 )}
               </div>
               <span className={`font-mono-num font-bold text-sm ${colorScheme.text}`}>
-                {getPointsDisplay()}
+                {getPointsDisplay(winner, categoryKey)}
               </span>
             </div>
 
-            <div className="space-y-1">
-              <div className={`w-full h-2 rounded-full ${colorScheme.progressBg} overflow-hidden`}>
-                <div
-                  className={`h-full rounded-full ${colorScheme.progressFill} animate-progress-fill`}
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-gray-500 font-body">{getProgressLabel()}</p>
+            <div className="flex items-end justify-between gap-2">
+              <span className="text-[11px] text-gray-500 font-body whitespace-nowrap">
+                {categoryRules.prize}
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              {winner.progressBars.map((bar, bIdx) => (
+                <div key={bIdx} className="space-y-0.5">
+                  <div className={`w-full h-2 rounded-full ${colorScheme.progressBg} overflow-hidden`}>
+                    <div
+                      className={`h-full rounded-full ${colorScheme.progressFill} animate-progress-fill`}
+                      style={{ width: `${bar.percent}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-500 font-body">{bar.label}</p>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
@@ -246,7 +323,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
       <CardContent className="px-4 pb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {renderCategoryAward(
-            PREMIACAO_CONFIG.cabelo,
+            "cabelo",
             hairWinner,
             {
               gradient: "gradient-cabelo",
@@ -259,7 +336,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             0
           )}
           {renderCategoryAward(
-            PREMIACAO_CONFIG.unhas,
+            "unhas",
             manicureWinner,
             {
               gradient: "gradient-unhas",
@@ -272,7 +349,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             1
           )}
           {renderCategoryAward(
-            PREMIACAO_CONFIG.maquiagem,
+            "maquiagem",
             maquiagemWinner,
             {
               gradient: "gradient-make",
@@ -285,7 +362,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             2
           )}
           {renderCategoryAward(
-            PREMIACAO_CONFIG.estetica,
+            "estetica",
             esteticaWinner,
             {
               gradient: "gradient-estetica",

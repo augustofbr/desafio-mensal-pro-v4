@@ -5,6 +5,8 @@ import ProfessionalModal from "@/components/ProfessionalModal";
 import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryEnabled } from "@/lib/categoryDisplayNames";
 import { BarChart3 } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
+import { getRulesForDate, getCategoryRules } from "@/lib/rulesConfig";
+import { useDateFilter } from "@/contexts/DateFilterContext";
 
 interface DataRankingsProps {
   hairData: any[];
@@ -59,6 +61,9 @@ export default function DataRankings({
   onCloseDetails
 }: DataRankingsProps) {
   const currentMonth = getCurrentMonthName();
+  const { getFilteredDateRange } = useDateFilter();
+  const { startDate } = getFilteredDateRange();
+  const rules = getRulesForDate(startDate);
 
   const categories = [
     { key: PROF_CATEGORIES.CABELO, data: hairData, enabled: isCategoryEnabled(PROF_CATEGORIES.CABELO) },
@@ -109,6 +114,7 @@ export default function DataRankings({
                     data={category.data}
                     categoryKey={category.key}
                     onSelectProfessional={(professional) => onSelectProfessional(professional, category.key)}
+                    rules={getCategoryRules(rules, category.key)}
                   />
                 )}
               </div>
@@ -123,6 +129,7 @@ export default function DataRankings({
       onClose={onCloseDetails}
       details={professionalDetails}
       category={selectedCategory}
+      rules={selectedCategory ? getCategoryRules(rules, selectedCategory) : undefined}
     />
     </>
   );

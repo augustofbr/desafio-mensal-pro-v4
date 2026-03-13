@@ -1,12 +1,14 @@
 
 import { getCurrentMonthName } from "@/lib/utils";
-import { Star, Trophy } from "lucide-react";
+import { Star, Trophy, AlertTriangle } from "lucide-react";
 import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
+import { CategoryRules } from "@/lib/rulesConfig";
 
 interface ProfessionalRankingProps {
   data: any[];
   categoryKey: string;
   onSelectProfessional: (professional: string) => void;
+  rules: CategoryRules;
 }
 
 const CATEGORY_COLORS: Record<string, {
@@ -55,6 +57,7 @@ export default function ProfessionalRanking({
   data,
   categoryKey,
   onSelectProfessional,
+  rules,
 }: ProfessionalRankingProps) {
   const currentMonth = getCurrentMonthName();
   const colors = CATEGORY_COLORS[categoryKey] || CATEGORY_COLORS[PROF_CATEGORIES.CABELO];
@@ -76,7 +79,7 @@ export default function ProfessionalRanking({
     <div className="space-y-2.5">
         {data.map((item, index) => {
           const isFirst = index === 0;
-          const score = item.revenuePercentage !== undefined
+          const score = rules.scoringModel === 'revenue-percentage'
             ? `${item.revenuePercentage}%`
             : `${item.points} Pts`;
 
@@ -128,6 +131,12 @@ export default function ProfessionalRanking({
                         <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
                           <span className="font-mono-num">{item.treatmentServices}</span><span className="text-slate-400 ml-0.5">tratam</span>
                         </span>
+                        {rules.manufacturerConstraints && item.invalidTreatmentCount > 0 && (
+                          <span className="inline-flex items-center gap-0.5 bg-orange-100 text-orange-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
+                            <AlertTriangle className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                            <span className="font-mono-num">{item.invalidTreatmentCount}</span>
+                          </span>
+                        )}
                       </>
                     )}
                     {categoryKey === PROF_CATEGORIES.UNHAS && (
@@ -142,7 +151,7 @@ export default function ProfessionalRanking({
                     )}
                     {categoryKey === PROF_CATEGORIES.MAQUIAGEM && (
                       <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                        <span className="font-mono-num">{item.totalServices}</span><span className="text-slate-400 ml-0.5">serv</span>
+                        <span className="font-mono-num">{rules.scoringModel === 'revenue-points' ? item.serviceCount ?? item.totalServices : item.totalServices}</span><span className="text-slate-400 ml-0.5">serv</span>
                       </span>
                     )}
                     {categoryKey === PROF_CATEGORIES.ESTETICA && (
