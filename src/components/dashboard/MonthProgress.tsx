@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 
 interface MonthProgressProps {
   workedDays: number | null | undefined;
+  todayCount: number | null | undefined;
   remainingDays: number | null | undefined;
   totalDays: number | null | undefined;
   className?: string;
@@ -11,13 +12,15 @@ interface MonthProgressProps {
 
 const MonthProgress: React.FC<MonthProgressProps> = ({
   workedDays,
+  todayCount,
   remainingDays,
   totalDays,
   className
 }) => {
   const worked = workedDays ?? 0;
+  const today = todayCount ?? 0;
   const total = totalDays ?? 1;
-  const progressPercent = total > 0 ? Math.round((worked / total) * 100) : 0;
+  const progressPercent = total > 0 ? Math.round(((worked + today) / total) * 100) : 0;
 
   return (
     <div className={cn("rounded-2xl bg-white border border-gray-100 shadow-sm overflow-hidden", className)}>
@@ -39,12 +42,18 @@ const MonthProgress: React.FC<MonthProgressProps> = ({
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <div className="text-center p-2.5 rounded-xl bg-emerald-50">
             <p className="font-mono-num text-xl font-bold text-emerald-600">
               {workedDays ?? '...'}
             </p>
             <p className="text-[11px] text-emerald-700 font-medium font-body mt-0.5">Trabalhados</p>
+          </div>
+          <div className="text-center p-2.5 rounded-xl bg-indigo-50">
+            <p className="font-mono-num text-xl font-bold text-indigo-600">
+              {todayCount ?? '...'}
+            </p>
+            <p className="text-[11px] text-indigo-700 font-medium font-body mt-0.5">Hoje</p>
           </div>
           <div className="text-center p-2.5 rounded-xl bg-amber-50">
             <p className="font-mono-num text-xl font-bold text-amber-600">

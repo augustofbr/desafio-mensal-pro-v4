@@ -3,7 +3,7 @@
  * 0 = Domingo, 1 = Segunda, 2 = Terça, 3 = Quarta, 4 = Quinta, 5 = Sexta, 6 = Sábado
  */
 export const WORKING_DAYS = {
-  0: true,  // Domingo - é dia útil
+  0: false, // Domingo - NÃO é dia útil
   1: true,   // Segunda - é dia útil
   2: true,   // Terça - é dia útil
   3: true,   // Quarta - é dia útil

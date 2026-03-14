@@ -33,7 +33,7 @@ function DashboardContent() {
     activeProfessionals
   } = useDashboardData();
 
-  const { workedDays, remainingDays, totalDays } = useMonthProgress();
+  const { workedDays, todayCount, remainingDays, totalDays } = useMonthProgress();
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -140,6 +140,7 @@ function DashboardContent() {
           <div className="animate-fade-slide-up stagger-4">
             <MonthProgress
               workedDays={workedDays}
+              todayCount={todayCount}
               remainingDays={remainingDays}
               totalDays={totalDays}
               className="mb-5"

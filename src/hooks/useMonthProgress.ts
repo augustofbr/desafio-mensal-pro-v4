@@ -1,28 +1,34 @@
 import { useEffect, useState } from 'react';
 import { useDateFilter } from '@/contexts/DateFilterContext';
-import { isWorkingDay } from '@/lib/workingDaysConfig';
+import { isWorkingWeekday } from '@/lib/workingDaysConfig';
 
 interface MonthProgressData {
   workedDays: number;
+  todayCount: number;
   remainingDays: number;
   totalDays: number;
 }
 
 /**
- * Calcula dias úteis trabalhados no mês atual (do início do mês até ontem)
- * O dia atual não é contado como trabalhado
+ * Verifica se uma data é dia válido (seg-sáb), ignorando feriados
+ */
+function isValidDay(date: Date): boolean {
+  return isWorkingWeekday(date.getDay());
+}
+
+/**
+ * Calcula dias válidos trabalhados no mês atual (do início do mês até ontem)
  */
 function calculateWorkedDays(): number {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
+  today.setHours(0, 0, 0, 0);
 
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  startOfMonth.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
+  startOfMonth.setHours(0, 0, 0, 0);
 
-  // Se ontem foi antes do início do mês, não há dias trabalhados ainda
   if (yesterday < startOfMonth) {
     return 0;
   }
@@ -31,7 +37,7 @@ function calculateWorkedDays(): number {
   const currentDate = new Date(startOfMonth);
 
   while (currentDate <= yesterday) {
-    if (isWorkingDay(currentDate)) {
+    if (isValidDay(currentDate)) {
       workedDays++;
     }
     currentDate.setDate(currentDate.getDate() + 1);
@@ -41,55 +47,31 @@ function calculateWorkedDays(): number {
 }
 
 /**
- * Calcula dias úteis restantes no mês atual (de amanhã até o fim do mês)
- * O dia atual não é incluído nos dias restantes
+ * Retorna 1 se hoje é dia válido (seg-sáb), 0 se domingo
  */
-function calculateRemainingDays(): number {
+function calculateTodayCount(): number {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
-
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  endOfMonth.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
-
-  // Se amanhã já passou do último dia do mês, retorna 0
-  if (tomorrow > endOfMonth) {
-    return 0;
-  }
-
-  let remainingDays = 0;
-  const currentDate = new Date(tomorrow);
-
-  while (currentDate <= endOfMonth) {
-    if (isWorkingDay(currentDate)) {
-      remainingDays++;
-    }
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  return remainingDays;
+  return isWorkingWeekday(today.getDay()) ? 1 : 0;
 }
 
 /**
- * Calcula total de dias úteis no mês atual
+ * Calcula total de dias válidos (seg-sáb) no mês atual
  */
 function calculateTotalWorkingDays(): number {
   const today = new Date();
-  today.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
+  today.setHours(0, 0, 0, 0);
 
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  startOfMonth.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
+  startOfMonth.setHours(0, 0, 0, 0);
 
   const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  endOfMonth.setHours(0, 0, 0, 0);  // Normaliza para meia-noite
+  endOfMonth.setHours(0, 0, 0, 0);
 
   let totalDays = 0;
   const currentDate = new Date(startOfMonth);
 
   while (currentDate <= endOfMonth) {
-    if (isWorkingDay(currentDate)) {
+    if (isValidDay(currentDate)) {
       totalDays++;
     }
     currentDate.setDate(currentDate.getDate() + 1);
@@ -116,11 +98,13 @@ export function useMonthProgress() {
       
       try {
         const workedDays = calculateWorkedDays();
-        const remainingDays = calculateRemainingDays();
+        const todayCount = calculateTodayCount();
         const totalDays = calculateTotalWorkingDays();
-        
+        const remainingDays = totalDays - workedDays - todayCount;
+
         setData({
           workedDays,
+          todayCount,
           remainingDays,
           totalDays
         });
@@ -160,6 +144,7 @@ export function useMonthProgress() {
   
   return {
     workedDays: data?.workedDays,
+    todayCount: data?.todayCount,
     remainingDays: data?.remainingDays,
     totalDays: data?.totalDays,
     loading,
