@@ -5,13 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import ProfessionalSelect from "@/components/avaliacoes/ProfessionalSelect";
 import { useActiveProfessionals } from "@/hooks/useActiveProfessionals";
 import { useMinhasAvaliacoes, type Avaliacao } from "@/hooks/useMinhasAvaliacoes";
 import { useEffect } from "react";
@@ -194,24 +188,12 @@ const MinhasAvaliacoes = () => {
                 ) : (
                   <>
                     {/* Professional select */}
-                    <Select
+                    <ProfessionalSelect
+                      professionals={sortedProfessionals}
                       value={selectedProfId ? String(selectedProfId) : ""}
                       onValueChange={(val) => setSelectedProfId(Number(val))}
-                    >
-                      <SelectTrigger className="border-violet-200 focus:ring-violet-400 mb-4">
-                        <SelectValue placeholder="Selecione o profissional" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sortedProfessionals.map((prof) => (
-                          <SelectItem
-                            key={prof.profissionalId}
-                            value={String(prof.profissionalId)}
-                          >
-                            {prof.nome_profissional}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      className="mb-4"
+                    />
 
                     {!selectedProfId ? (
                       <div className="text-center py-10">

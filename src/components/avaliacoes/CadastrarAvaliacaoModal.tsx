@@ -19,14 +19,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import ProfessionalSelect from "@/components/avaliacoes/ProfessionalSelect";
 import { Button } from "@/components/ui/button";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
@@ -141,26 +135,13 @@ export default function CadastrarAvaliacaoModal({
                   <FormLabel className="font-body text-sm font-medium text-gray-700">
                     Profissional
                   </FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="border-violet-200 focus:ring-violet-400">
-                        <SelectValue placeholder="Selecione o profissional" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {sortedProfessionals.map((prof) => (
-                        <SelectItem
-                          key={prof.profissionalId}
-                          value={String(prof.profissionalId)}
-                        >
-                          {prof.nome_profissional}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <ProfessionalSelect
+                      professionals={sortedProfessionals}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
