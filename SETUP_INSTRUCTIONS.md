@@ -2,7 +2,7 @@
 # Setup Instructions for "Profissional Destaque do Mês"
 
 ## Prerequisites
-- Supabase project connected to this Lovable application
+- Supabase project connected to esta aplicação
 - Supabase CLI installed for deploying edge functions
 
 ## Database Setup

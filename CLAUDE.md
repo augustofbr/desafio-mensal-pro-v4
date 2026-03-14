@@ -307,8 +307,7 @@ TRINKS_PASSWORD=<configured in dashboard>
 
 ## Deployment
 
-### Lovable Platform
-- Automatic deployments from git commits
+### Build & Deploy
 - Production builds: `npm run build`
 - Development builds: `npm run build:dev`
 - Preview locally: `npm run preview`
