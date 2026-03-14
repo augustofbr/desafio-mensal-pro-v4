@@ -80,6 +80,7 @@ export function useDashboardData() {
     refreshData: fetchServicesData,
     selectedProfessional,
     professionalDetails,
-    selectProfessional
+    selectProfessional,
+    activeProfessionals
   };
 }

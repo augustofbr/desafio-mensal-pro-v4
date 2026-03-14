@@ -13,8 +13,9 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { useMonthProgress } from "@/hooks/useMonthProgress";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cake } from "lucide-react";
+import { Cake, Star, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
 
 function DashboardContent() {
   const navigate = useNavigate();
@@ -28,13 +29,15 @@ function DashboardContent() {
     loading,
     refreshData,
     selectProfessional,
-    professionalDetails
+    professionalDetails,
+    activeProfessionals
   } = useDashboardData();
 
   const { workedDays, remainingDays, totalDays } = useMonthProgress();
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showCadastrarAvaliacao, setShowCadastrarAvaliacao] = useState(false);
   const { getFilteredDateRange } = useDateFilter();
 
   useEffect(() => {
@@ -88,16 +91,41 @@ function DashboardContent() {
             </p>
           </div>
 
-          <div className="flex justify-center mt-3 mb-1 animate-fade-slide-up stagger-2">
+          <div className="flex justify-center flex-wrap gap-3 mt-3 mb-1 animate-fade-slide-up stagger-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/aniversariantes')}
+              className="gap-2 border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-body shadow-sm shadow-rose-100/60"
+            >
+              <Cake className="h-4 w-4" />
+              Aniversariantes
+            </Button>
+
             <div className="relative">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate('/aniversariantes')}
-                className="gap-2 border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-body btn-novo-highlight shadow-sm shadow-rose-100/60"
+                onClick={() => setShowCadastrarAvaliacao(true)}
+                className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body btn-novo-highlight shadow-sm shadow-violet-100/60"
               >
-                <Cake className="h-4 w-4" />
-                Aniversariantes
+                <Star className="h-4 w-4" />
+                Cadastrar Avaliação
+              </Button>
+              <span className="absolute -top-2.5 -right-4 badge-novo text-[10px] font-body font-bold text-white px-2 py-0.5 rounded-full shadow-sm pointer-events-none">
+                NOVO
+              </span>
+            </div>
+
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/minhas-avaliacoes')}
+                className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body btn-novo-highlight shadow-sm shadow-violet-100/60"
+              >
+                <ClipboardList className="h-4 w-4" />
+                Minhas Avaliações
               </Button>
               <span className="absolute -top-2.5 -right-4 badge-novo text-[10px] font-body font-bold text-white px-2 py-0.5 rounded-full shadow-sm pointer-events-none">
                 NOVO
@@ -173,6 +201,12 @@ function DashboardContent() {
           </div>
         </div>
       </div>
+
+      <CadastrarAvaliacaoModal
+        isOpen={showCadastrarAvaliacao}
+        onClose={() => setShowCadastrarAvaliacao(false)}
+        activeProfessionals={activeProfessionals}
+      />
     </div>
   );
 }
