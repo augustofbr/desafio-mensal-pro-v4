@@ -13,9 +13,10 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { useMonthProgress } from "@/hooks/useMonthProgress";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cake, Star, ClipboardList } from "lucide-react";
+import { Cake, Star, ClipboardList, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
+import QrCodeOverlay from "@/components/QrCodeOverlay";
 
 function DashboardContent() {
   const navigate = useNavigate();
@@ -38,6 +39,7 @@ function DashboardContent() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showCadastrarAvaliacao, setShowCadastrarAvaliacao] = useState(false);
+  const [showQrCode, setShowQrCode] = useState(false);
   const { getFilteredDateRange } = useDateFilter();
 
   useEffect(() => {
@@ -131,6 +133,21 @@ function DashboardContent() {
                 NOVO
               </span>
             </div>
+
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowQrCode(true)}
+                className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60 btn-novo-highlight"
+              >
+                <QrCode className="h-4 w-4" />
+                QR Code Google
+              </Button>
+              <span className="absolute -top-2.5 -right-4 badge-novo text-[10px] font-body font-bold text-white px-2 py-0.5 rounded-full shadow-sm pointer-events-none">
+                NOVO
+              </span>
+            </div>
           </div>
 
           <div className="animate-fade-slide-up stagger-3">
@@ -207,6 +224,11 @@ function DashboardContent() {
         isOpen={showCadastrarAvaliacao}
         onClose={() => setShowCadastrarAvaliacao(false)}
         activeProfessionals={activeProfessionals}
+      />
+
+      <QrCodeOverlay
+        isOpen={showQrCode}
+        onClose={() => setShowQrCode(false)}
       />
     </div>
   );
