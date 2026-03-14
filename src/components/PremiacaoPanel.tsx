@@ -166,6 +166,15 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
   const esteticaWinner = getWinner(esteticaData, "estetica");
   const maquiagemWinner = getWinner(maquiagemData, "maquiagem");
 
+  const allPrizes = [
+    getCategoryRules(rules, 'cabelo').prize,
+    getCategoryRules(rules, 'unhas').prize,
+    getCategoryRules(rules, 'estetica').prize,
+    getCategoryRules(rules, 'maquiagem').prize,
+  ];
+  const allSamePrize = new Set(allPrizes).size === 1;
+  const commonPrize = allSamePrize ? allPrizes[0] : null;
+
   if (loading) {
     return (
       <Card className="mb-6">
@@ -266,11 +275,17 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
               <div className="flex items-center gap-2">
                 <p className="font-body font-bold text-gray-900 text-sm">{winner.professional}</p>
                 {winner.starCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-yellow-600 text-[11px] font-medium">
-                    <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-500" />
-                    {winner.starCount}
-                    {winner.starPoints > 0 && <span className="text-gray-500">(+{winner.starPoints}pts)</span>}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="inline-flex items-center gap-0.5 text-amber-600 text-[11px] font-medium">
+                      <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-500" />
+                      {winner.starCount} estrelas
+                    </span>
+                    {winner.starPoints > 0 && (
+                      <span className="text-emerald-600 text-[11px] font-medium">
+                        +{winner.starPoints} pts
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <span className={`font-mono-num font-bold text-sm ${colorScheme.text}`}>
@@ -278,22 +293,37 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
               </span>
             </div>
 
-            <div className="flex items-end justify-between gap-2">
-              <span className="text-[11px] text-gray-500 font-body whitespace-nowrap">
-                {categoryRules.prize}
-              </span>
-            </div>
+            {!allSamePrize && (
+              <div className="flex items-end justify-between gap-2">
+                <span className="text-[11px] text-gray-500 font-body whitespace-nowrap">
+                  {categoryRules.prize}
+                </span>
+              </div>
+            )}
 
-            <div className="space-y-1.5">
+            <div className="space-y-3">
               {winner.progressBars.map((bar, bIdx) => (
-                <div key={bIdx} className="space-y-0.5">
-                  <div className={`w-full h-2 rounded-full ${colorScheme.progressBg} overflow-hidden`}>
-                    <div
-                      className={`h-full rounded-full ${colorScheme.progressFill} animate-progress-fill`}
-                      style={{ width: `${bar.percent}%` }}
-                    />
+                <div key={bIdx}>
+                  <div className="relative pt-5">
+                    <div className={`w-full h-3 rounded-full ${colorScheme.progressBg} overflow-hidden`}>
+                      <div
+                        className={`h-full rounded-full ${colorScheme.progressFill} animate-progress-fill`}
+                        style={{ width: `${bar.percent}%` }}
+                      />
+                    </div>
+                    <span
+                      className={`absolute top-0 text-[10px] font-bold ${colorScheme.text}`}
+                      style={{ left: `${Math.min(bar.percent, 90)}%`, transform: 'translateX(-50%)' }}
+                    >
+                      {bar.current}
+                    </span>
+                    <span className="absolute top-0 right-0 text-[10px] text-gray-400">
+                      {bar.goal}
+                    </span>
                   </div>
-                  <p className="text-[11px] text-gray-500 font-body">{bar.label}</p>
+                  <p className="text-[10px] text-gray-500 font-body mt-0.5">
+                    {bar.label.replace(/^[\d.,]+\/[\d.,]+\s*/, '').replace(/^[\d.,]+%\s*/, '')}
+                  </p>
                 </div>
               ))}
             </div>
@@ -317,6 +347,9 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
           <div>
             <CardTitle className="font-display text-lg">Painel de Premiação</CardTitle>
             <p className="text-xs text-gray-500 font-body">Ganhadores atuais de {currentMonth}</p>
+            {commonPrize && (
+              <p className="text-[11px] text-amber-600 font-body font-medium mt-0.5">Prêmio: {commonPrize}</p>
+            )}
           </div>
         </div>
       </CardHeader>

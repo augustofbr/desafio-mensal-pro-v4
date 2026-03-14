@@ -118,10 +118,18 @@ export default function ProfessionalRanking({
                   {/* Stats badges - below name on mobile, inline on desktop */}
                   <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 text-[10px] sm:text-sm">
                     {item.starCount > 0 && (
-                      <span className="inline-flex items-center gap-0.5 font-semibold bg-amber-100 text-amber-800 rounded-full px-1.5 sm:px-2 py-0.5">
-                        <Star className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-amber-500 text-amber-500" />
-                        <span className="font-mono-num">{item.starCount}</span>
-                      </span>
+                      <>
+                        <span className="inline-flex items-center gap-0.5 font-semibold bg-amber-100 text-amber-800 rounded-full px-1.5 sm:px-2 py-0.5">
+                          <Star className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-amber-500 text-amber-500" />
+                          <span className="font-mono-num">{item.starCount}</span>
+                        </span>
+                        {rules.starsCountInScore && (
+                          <span className="inline-flex items-center gap-0.5 font-semibold bg-emerald-100 text-emerald-700 rounded-full px-1.5 sm:px-2 py-0.5">
+                            <span className="font-mono-num">+{item.starCount * rules.starPointValue}</span>
+                            <span className="text-emerald-500 ml-0.5">pts</span>
+                          </span>
+                        )}
+                      </>
                     )}
                     {categoryKey === PROF_CATEGORIES.CABELO && (
                       <>

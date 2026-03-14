@@ -147,6 +147,9 @@ export function useProfessionalDetails(
             hairClientPoints: clientServices.reduce((sum: number, s: any) => sum + s.points, 0),
             invalidTreatmentCount: professionalData.invalidTreatmentCount,
             invalidTreatments: invalidTreatmentsList,
+            allowedManufacturers: (manufacturerData && profissionalId)
+              ? manufacturerData.getProfessionalAllowedManufacturers(profissionalId)
+              : [],
             starCount,
             starPoints
           };
