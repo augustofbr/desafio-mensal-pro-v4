@@ -93,17 +93,11 @@ function DashboardContent() {
             </p>
           </div>
 
-          <div className="flex justify-center flex-wrap gap-3 mt-3 mb-1 animate-fade-slide-up stagger-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/aniversariantes')}
-              className="gap-2 border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-body shadow-sm shadow-rose-100/60"
-            >
-              <Cake className="h-4 w-4" />
-              Aniversariantes
-            </Button>
+          <div className="animate-fade-slide-up stagger-2">
+            <DateFilter />
+          </div>
 
+          <div className="flex justify-center flex-wrap gap-3 mt-3 mb-1 animate-fade-slide-up stagger-3">
             <Button
               variant="outline"
               size="sm"
@@ -117,11 +111,11 @@ function DashboardContent() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/minhas-avaliacoes')}
-              className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60"
+              onClick={() => navigate('/aniversariantes')}
+              className="gap-2 border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-body shadow-sm shadow-rose-100/60"
             >
-              <ClipboardList className="h-4 w-4" />
-              Minhas Avaliações
+              <Cake className="h-4 w-4" />
+              Aniversariantes
             </Button>
 
             <div className="relative">
@@ -139,6 +133,16 @@ function DashboardContent() {
               </span>
             </div>
 
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/minhas-avaliacoes')}
+              className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Minhas Avaliações
+            </Button>
+
             <div className="relative">
               <Button
                 variant="outline"
@@ -153,10 +157,6 @@ function DashboardContent() {
                 NOVO
               </span>
             </div>
-          </div>
-
-          <div className="animate-fade-slide-up stagger-3">
-            <DateFilter />
           </div>
 
           <div className="animate-fade-slide-up stagger-4">
