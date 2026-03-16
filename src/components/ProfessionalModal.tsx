@@ -40,7 +40,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                     <span className="text-sm text-gray-500">Tratamentos</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.treatmentPoints} pontos total</p>
-                  <p className="text-[10px] text-gray-400 mt-1">
+                  <p className="text-[11px] text-blue-600/70 mt-2 bg-blue-50 px-2 py-1 rounded-md leading-relaxed">
                     Cada tratamento {rules?.manufacturerConstraints ? 'da marca autorizada ' : ''}vale {rules?.specialServicePointValue} pts
                     {rules?.manufacturerConstraints && summary.allowedManufacturers?.length > 0 && `. Marcas: ${summary.allowedManufacturers.join(', ')}`}
                   </p>
@@ -62,7 +62,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                     <span className="text-sm text-gray-500">clientes</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.hairClientPoints} pontos total</p>
-                  <p className="text-[10px] text-gray-400 mt-1">Cada cliente único por dia vale 1 pt</p>
+                  <p className="text-[11px] text-green-600/70 mt-2 bg-green-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale 1 pt</p>
                 </div>
               </div>
             </CardContent>
@@ -81,7 +81,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                       <span className="text-2xl font-bold text-amber-600">{summary.invalidTreatmentCount}</span>
                       <span className="text-sm text-gray-500">tratamentos</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1">Tratamentos de marcas não autorizadas para este profissional</p>
+                    <p className="text-[11px] text-amber-600/70 mt-2 bg-amber-50 px-2 py-1 rounded-md leading-relaxed">Tratamentos de marcas não autorizadas para este profissional</p>
                   </div>
                 </div>
               </CardContent>
@@ -105,7 +105,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                     <span className="text-sm text-gray-500">SPA dos Pés</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.spaPoints} pontos total</p>
-                  <p className="text-[10px] text-gray-400 mt-1">Cada SPA dos Pés vale {rules?.specialServicePointValue} pts</p>
+                  <p className="text-[11px] text-red-600/70 mt-2 bg-red-50 px-2 py-1 rounded-md leading-relaxed">Cada SPA dos Pés vale {rules?.specialServicePointValue} pts</p>
                 </div>
               </div>
             </CardContent>
@@ -124,7 +124,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                     <span className="text-sm text-gray-500">clientes</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.manicureClientPoints} pontos total</p>
-                  <p className="text-[10px] text-gray-400 mt-1">Cada cliente único por dia vale 1 pt</p>
+                  <p className="text-[11px] text-red-600/70 mt-2 bg-red-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale 1 pt</p>
                 </div>
               </div>
             </CardContent>
@@ -165,7 +165,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                       <span className="text-2xl font-bold text-violet-600">{summary.revenuePoints}</span>
                       <span className="text-sm text-gray-500">pontos</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1">A cada R$ {(rules?.revenuePointConversion || 100).toFixed(2).replace('.', ',')} faturados = 1 pt</p>
+                    <p className="text-[11px] text-violet-600/70 mt-2 bg-violet-50 px-2 py-1 rounded-md leading-relaxed">A cada R$ {(rules?.revenuePointConversion || 100).toFixed(2).replace('.', ',')} faturados = 1 pt</p>
                   </div>
                 </div>
               </CardContent>
@@ -183,7 +183,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                       <span className="text-2xl font-bold text-violet-600">{summary.starPoints}</span>
                       <span className="text-sm text-gray-500">pontos</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1">Cada avaliação Google aprovada = {rules?.starPointValue} pts</p>
+                    <p className="text-[11px] text-violet-600/70 mt-2 bg-violet-50 px-2 py-1 rounded-md leading-relaxed">Cada avaliação Google aprovada = {rules?.starPointValue} pts</p>
                   </div>
                 </div>
               </CardContent>
@@ -247,7 +247,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                       <span className="text-2xl font-bold text-yellow-600">{summary.revenuePoints}</span>
                       <span className="text-sm text-gray-500">pontos</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1">A cada R$ {(rules?.revenuePointConversion || 100).toFixed(2).replace('.', ',')} faturados = 1 pt</p>
+                    <p className="text-[11px] text-yellow-600/70 mt-2 bg-yellow-50 px-2 py-1 rounded-md leading-relaxed">A cada R$ {(rules?.revenuePointConversion || 100).toFixed(2).replace('.', ',')} faturados = 1 pt</p>
                   </div>
                 </div>
               </CardContent>
@@ -265,7 +265,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                       <span className="text-2xl font-bold text-yellow-600">{summary.starPoints}</span>
                       <span className="text-sm text-gray-500">pontos</span>
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-1">Cada avaliação Google aprovada = {rules?.starPointValue} pts</p>
+                    <p className="text-[11px] text-yellow-600/70 mt-2 bg-yellow-50 px-2 py-1 rounded-md leading-relaxed">Cada avaliação Google aprovada = {rules?.starPointValue} pts</p>
                   </div>
                 </div>
               </CardContent>
