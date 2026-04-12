@@ -1,8 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy, Award, CheckCircle, AlertCircle, Star } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
-import { useDateFilter } from "@/contexts/DateFilterContext";
-import { getRulesForDate, getCategoryRules, CategoryRules, RulesVersion } from "@/lib/rulesConfig";
+import { getCategoryRules, CategoryRules, RulesVersion } from "@/lib/rulesConfig";
 
 interface PremiacaoPanelProps {
   hairData: any[];
@@ -10,6 +9,7 @@ interface PremiacaoPanelProps {
   esteticaData: any[];
   maquiagemData: any[];
   loading: boolean;
+  rules: RulesVersion;
 }
 
 interface WinnerInfo {
@@ -149,11 +149,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   maquiagem: "Make",
 };
 
-export default function PremiacaoPanel({ hairData, manicureData, esteticaData, maquiagemData, loading }: PremiacaoPanelProps) {
+export default function PremiacaoPanel({ hairData, manicureData, esteticaData, maquiagemData, loading, rules }: PremiacaoPanelProps) {
   const currentMonth = getCurrentMonthName();
-  const { getFilteredDateRange } = useDateFilter();
-  const { startDate } = getFilteredDateRange();
-  const rules = getRulesForDate(startDate);
 
   const getWinner = (data: any[], categoryKey: string): WinnerInfo | null => {
     if (!data || data.length === 0) return null;

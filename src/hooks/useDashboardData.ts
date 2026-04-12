@@ -8,14 +8,16 @@ import { useEsteticaData } from "./useEsteticaData";
 import { useMaquiagemData } from "./useMaquiagemData";
 import { useProfessionalDetails } from "./useProfessionalDetails";
 import { useStarsData } from "./useStarsData";
-import { getRulesForDate } from "@/lib/rulesConfig";
+import { getRulesForDateFromVersions } from "@/lib/rulesConfig";
 import { useManufacturerData } from "./useManufacturerData";
+import { useRulesData } from "./useRulesData";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 
 export function useDashboardData() {
   const { getFilteredDateRange } = useDateFilter();
   const dateRange = getFilteredDateRange();
-  const rules = getRulesForDate(dateRange.startDate);
+  const { allVersions } = useRulesData();
+  const rules = getRulesForDateFromVersions(dateRange.startDate, allVersions);
 
   const {
     loading: servicesLoading,

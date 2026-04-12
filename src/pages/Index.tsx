@@ -13,7 +13,7 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { useMonthProgress } from "@/hooks/useMonthProgress";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cake, Star, ClipboardList, QrCode, ExternalLink } from "lucide-react";
+import { Cake, Star, ClipboardList, QrCode, ExternalLink, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
 import QrCodeOverlay from "@/components/QrCodeOverlay";
@@ -28,6 +28,7 @@ function DashboardContent() {
     lastUpdate,
     lastServiceDate,
     loading,
+    rules,
     refreshData,
     selectProfessional,
     professionalDetails,
@@ -97,65 +98,97 @@ function DashboardContent() {
             <DateFilter />
           </div>
 
-          <div className="flex justify-center flex-wrap gap-3 mt-3 mb-1 animate-fade-slide-up stagger-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowCadastrarAvaliacao(true)}
-              className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60"
-            >
-              <Star className="h-4 w-4" />
-              Cadastrar Avaliação
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
+          {/* Aniversariantes - card visivel separado do fluxo */}
+          <div className="flex justify-center mt-3 mb-2 animate-fade-slide-up stagger-3">
+            <button
               onClick={() => navigate('/aniversariantes')}
-              className="gap-2 border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 font-body shadow-sm shadow-rose-100/60"
+              className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-xl bg-rose-50 border-2 border-rose-200 text-rose-600 hover:bg-rose-100 hover:border-rose-400 active:bg-rose-200 transition-all duration-150 font-body text-sm font-semibold shadow-sm"
             >
-              <Cake className="h-4 w-4" />
-              Aniversariantes
-            </Button>
+              <Cake className="h-5 w-5" />
+              Aniversariantes do Mês
+              <ChevronRight className="h-4 w-4 opacity-60" />
+            </button>
+          </div>
 
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowQrCode(true)}
-                className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60 btn-novo-highlight"
-              >
-                <QrCode className="h-4 w-4" />
-                QR Code Google
-              </Button>
-              <span className="absolute -top-2.5 -right-4 badge-novo text-[10px] font-body font-bold text-white px-2 py-0.5 rounded-full shadow-sm pointer-events-none">
-                NOVO
-              </span>
-            </div>
+          {/* Passo a passo: Avaliacao Google - vertical mobile-first */}
+          <div className="animate-fade-slide-up stagger-3 mt-1 mb-1">
+            <div className="bg-white/80 rounded-xl border border-violet-100/70 shadow-sm px-4 py-4">
+              <p className="text-xs font-body text-violet-500 font-semibold text-center mb-3">
+                Como conseguir suas Estrelas do Google
+              </p>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/minhas-avaliacoes')}
-              className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60"
-            >
-              <ClipboardList className="h-4 w-4" />
-              Minhas Avaliações
-            </Button>
+              <div className="flex flex-col items-center gap-0">
+                {/* Passo 1 */}
+                <button
+                  onClick={() => setShowQrCode(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                >
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                    1
+                  </div>
+                  <div className="flex-1 text-left">
+                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 1</span>
+                    <p className="text-sm font-body text-gray-700 leading-tight">Mostre o QR Code para a cliente</p>
+                  </div>
+                  <QrCode className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                </button>
 
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.open('https://maps.app.goo.gl/8fND35FPPDSGUu3K8', '_blank')}
-                className="gap-2 border-violet-300 text-violet-600 hover:bg-violet-50 hover:text-violet-700 font-body shadow-sm shadow-violet-100/60 btn-novo-highlight"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Checar se cliente Avaliou Google
-              </Button>
-              <span className="absolute -top-2.5 -right-4 badge-novo text-[10px] font-body font-bold text-white px-2 py-0.5 rounded-full shadow-sm pointer-events-none">
-                NOVO
-              </span>
+                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+
+                {/* Passo 2 */}
+                <button
+                  onClick={() => window.open('https://maps.app.goo.gl/8fND35FPPDSGUu3K8', '_blank')}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                >
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                    2
+                  </div>
+                  <div className="flex-1 text-left">
+                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 2</span>
+                    <p className="text-sm font-body text-gray-700 leading-tight">Confirme se a cliente avaliou no Google</p>
+                  </div>
+                  <ExternalLink className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                </button>
+
+                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+
+                {/* Passo 3 */}
+                <div className="relative w-full">
+                  <span className="absolute top-1 right-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-body font-semibold text-amber-600 z-10 shadow-sm">
+                    Apenas se estrela entrou no Google
+                  </span>
+                  <button
+                    onClick={() => setShowCadastrarAvaliacao(true)}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                  >
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                      3
+                    </div>
+                    <div className="flex-1 text-left">
+                      <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 3</span>
+                      <p className="text-sm font-body text-gray-700 leading-tight">Cadastre a avaliação da sua cliente</p>
+                    </div>
+                    <Star className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                  </button>
+                </div>
+
+                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+
+                {/* Passo 4 */}
+                <button
+                  onClick={() => navigate('/minhas-avaliacoes')}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                >
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                    4
+                  </div>
+                  <div className="flex-1 text-left">
+                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 4</span>
+                    <p className="text-sm font-body text-gray-700 leading-tight">Veja suas avaliações cadastradas</p>
+                  </div>
+                  <ClipboardList className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -181,11 +214,12 @@ function DashboardContent() {
               esteticaData={esteticaData}
               maquiagemData={maquiagemData}
               loading={loading}
+              rules={rules}
             />
           </div>
 
           <div className="animate-fade-slide-up stagger-6">
-            <RegrasDoDesafio />
+            <RegrasDoDesafio rules={rules} />
           </div>
 
           <div className="animate-fade-slide-up stagger-7">
@@ -195,6 +229,7 @@ function DashboardContent() {
               esteticaData={esteticaData}
               maquiagemData={maquiagemData}
               loading={loading}
+              rules={rules}
               onSelectProfessional={handleSelectProfessional}
               professionalDetails={professionalDetails}
               selectedCategory={selectedCategory || ""}
@@ -219,6 +254,7 @@ function DashboardContent() {
                 manicureData={manicureData}
                 esteticaData={esteticaData}
                 maquiagemData={maquiagemData}
+                rules={rules}
               />
             )}
           </div>

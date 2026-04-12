@@ -1,8 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BookOpen, Scissors, Sparkles, Heart, Palette, LucideIcon } from "lucide-react";
-import { useDateFilter } from "@/contexts/DateFilterContext";
-import { getRulesForDate, RulesVersion, CategoryRules } from "@/lib/rulesConfig";
+import { RulesVersion, CategoryRules, getCategoryRules } from "@/lib/rulesConfig";
 
 interface CategoriaRegra {
   id: string;
@@ -22,185 +21,138 @@ interface CategoriaRegra {
   metaExcelencia?: string;
 }
 
-function buildRegras(rules: RulesVersion): CategoriaRegra[] {
-  if (rules.id === 'v2') {
-    return [
-      {
-        id: "cabelo",
-        label: "Cabelo",
-        premio: rules.cabelo.prize,
-        icon: Scissors,
-        colorScheme: {
-          gradient: "gradient-cabelo",
-          bgLight: "bg-blue-50/80",
-          text: "text-blue-700",
-          border: "border-blue-200",
-          badge: "bg-blue-100 text-blue-700",
-          bullet: "bg-blue-400",
-        },
-        regras: [
-          "Cada cliente atendido no dia vale 1 ponto (mesmo cliente no mesmo dia conta só 1 vez)",
-          "Cada tratamento capilar da marca autorizada vale 3 pontos",
-          "Cada avaliação Google aprovada vale 3 pontos",
-        ],
-        meta: "Metas mínimas: 50 clientes únicos + 40 tratamentos no mês",
-        metaExcelencia: "Meta excelência profissional: Estrelas Google: 30 estrelas",
-      },
-      {
-        id: "unhas",
-        label: "Unhas",
-        premio: rules.unhas.prize,
-        icon: Sparkles,
-        colorScheme: {
-          gradient: "gradient-unhas",
-          bgLight: "bg-red-50/80",
-          text: "text-red-700",
-          border: "border-red-200",
-          badge: "bg-red-100 text-red-700",
-          bullet: "bg-red-400",
-        },
-        regras: [
-          "Cada cliente atendido no dia vale 1 ponto (mesmo cliente no mesmo dia conta só 1 vez)",
-          "Cada SPA dos Pés realizado vale 3 pontos",
-          "Cada avaliação Google aprovada vale 3 pontos",
-        ],
-        meta: "Metas mínimas: 70 clientes únicos + 10 SPA dos Pés no mês",
-        metaExcelencia: "Meta excelência profissional: Estrelas Google: 30 estrelas",
-      },
-      {
-        id: "estetica",
-        label: "Estética",
-        premio: rules.estetica.prize,
-        icon: Heart,
-        colorScheme: {
-          gradient: "gradient-estetica",
-          bgLight: "bg-violet-50/80",
-          text: "text-violet-700",
-          border: "border-violet-200",
-          badge: "bg-violet-100 text-violet-700",
-          bullet: "bg-violet-400",
-        },
-        regras: [
-          "A pontuação é baseada no faturamento: a cada R$ 100,00 faturados, você ganha 1 ponto",
-          "Cada avaliação Google aprovada vale 3 pontos",
-          "Existe uma meta mínima de faturamento para se qualificar ao prêmio",
-        ],
-        meta: "Meta mínima: atingir a meta de faturamento do mês",
-        metaExcelencia: "Meta excelência profissional: Estrelas Google: 30 estrelas",
-      },
-      {
-        id: "maquiagem",
-        label: "Maquiagem",
-        premio: rules.maquiagem.prize,
-        icon: Palette,
-        colorScheme: {
-          gradient: "gradient-make",
-          bgLight: "bg-yellow-50/80",
-          text: "text-yellow-700",
-          border: "border-yellow-200",
-          badge: "bg-yellow-100 text-yellow-700",
-          bullet: "bg-yellow-400",
-        },
-        regras: [
-          "A pontuação é baseada no faturamento: a cada R$ 100,00 faturados, você ganha 1 ponto",
-          "Cada avaliação Google aprovada vale 3 pontos",
-          "Existe uma meta mínima de faturamento para se qualificar ao prêmio",
-        ],
-        meta: "Meta mínima: atingir a meta de faturamento do mês",
-        metaExcelencia: "Meta excelência profissional: Estrelas Google: 15 estrelas",
-      },
-    ];
+const CATEGORY_CONFIG: Record<string, { label: string; icon: LucideIcon; colorScheme: CategoriaRegra["colorScheme"] }> = {
+  cabelo: {
+    label: "Cabelo",
+    icon: Scissors,
+    colorScheme: {
+      gradient: "gradient-cabelo",
+      bgLight: "bg-blue-50/80",
+      text: "text-blue-700",
+      border: "border-blue-200",
+      badge: "bg-blue-100 text-blue-700",
+      bullet: "bg-blue-400",
+    },
+  },
+  unhas: {
+    label: "Unhas",
+    icon: Sparkles,
+    colorScheme: {
+      gradient: "gradient-unhas",
+      bgLight: "bg-red-50/80",
+      text: "text-red-700",
+      border: "border-red-200",
+      badge: "bg-red-100 text-red-700",
+      bullet: "bg-red-400",
+    },
+  },
+  estetica: {
+    label: "Estetica",
+    icon: Heart,
+    colorScheme: {
+      gradient: "gradient-estetica",
+      bgLight: "bg-violet-50/80",
+      text: "text-violet-700",
+      border: "border-violet-200",
+      badge: "bg-violet-100 text-violet-700",
+      bullet: "bg-violet-400",
+    },
+  },
+  maquiagem: {
+    label: "Maquiagem",
+    icon: Palette,
+    colorScheme: {
+      gradient: "gradient-make",
+      bgLight: "bg-yellow-50/80",
+      text: "text-yellow-700",
+      border: "border-yellow-200",
+      badge: "bg-yellow-100 text-yellow-700",
+      bullet: "bg-yellow-400",
+    },
+  },
+};
+
+function buildRegrasForCategory(catRules: CategoryRules, manufacturerLabel?: string): string[] {
+  const regras: string[] = [];
+
+  if (catRules.scoringModel === "points") {
+    if (catRules.clientPointValue > 0) {
+      regras.push(
+        `Cada cliente atendido no dia vale ${catRules.clientPointValue} ponto${catRules.clientPointValue > 1 ? "s" : ""} (mesmo cliente no mesmo dia conta so 1 vez)`
+      );
+    }
+    if (catRules.specialServicePointValue > 0) {
+      const label = catRules.specialServiceLabel || "servico especial";
+      const extra = catRules.manufacturerConstraints ? " da marca autorizada" : "";
+      regras.push(
+        `Cada ${label}${extra} vale ${catRules.specialServicePointValue} ponto${catRules.specialServicePointValue > 1 ? "s" : ""}`
+      );
+    }
+  } else if (catRules.scoringModel === "revenue-percentage") {
+    regras.push("A pontuacao e baseada no faturamento: quanto mais faturar, maior a pontuacao");
+  } else if (catRules.scoringModel === "revenue-points") {
+    const conv = catRules.revenuePointConversion || 100;
+    regras.push(
+      `A pontuacao e baseada no faturamento: a cada R$ ${conv.toLocaleString("pt-BR")} faturados, voce ganha 1 ponto`
+    );
   }
 
-  // V1 (default) - same texts as original
-  return [
-    {
-      id: "cabelo",
-      label: "Cabelo",
-      premio: rules.cabelo.prize,
-      icon: Scissors,
-      colorScheme: {
-        gradient: "gradient-cabelo",
-        bgLight: "bg-blue-50/80",
-        text: "text-blue-700",
-        border: "border-blue-200",
-        badge: "bg-blue-100 text-blue-700",
-        bullet: "bg-blue-400",
-      },
-      regras: [
-        "Cada cliente atendido no dia vale 1 ponto (mesmo cliente no mesmo dia conta só 1 vez)",
-        "Cada tratamento capilar realizado vale 2 pontos",
-        "Cada avaliação Google aprovada vale 3 pontos",
-      ],
-      meta: "Meta mínima: 60 clientes únicos no mês",
-    },
-    {
-      id: "unhas",
-      label: "Unhas",
-      premio: rules.unhas.prize,
-      icon: Sparkles,
-      colorScheme: {
-        gradient: "gradient-unhas",
-        bgLight: "bg-red-50/80",
-        text: "text-red-700",
-        border: "border-red-200",
-        badge: "bg-red-100 text-red-700",
-        bullet: "bg-red-400",
-      },
-      regras: [
-        "Cada cliente atendido no dia vale 1 ponto (mesmo cliente no mesmo dia conta só 1 vez)",
-        "Cada SPA dos Pés realizado vale 2 pontos",
-        "Cada avaliação Google aprovada vale 3 pontos",
-      ],
-      meta: "Meta mínima: 50 clientes únicos no mês",
-    },
-    {
-      id: "estetica",
-      label: "Estética",
-      premio: rules.estetica.prize,
-      icon: Heart,
-      colorScheme: {
-        gradient: "gradient-estetica",
-        bgLight: "bg-violet-50/80",
-        text: "text-violet-700",
-        border: "border-violet-200",
-        badge: "bg-violet-100 text-violet-700",
-        bullet: "bg-violet-400",
-      },
-      regras: [
-        "A pontuação é baseada no faturamento: quanto mais faturar, maior a pontuação",
-        "Existe uma meta mínima de faturamento para se qualificar ao prêmio",
-        "Avaliações Google aparecem no perfil, mas não somam pontos nesta categoria",
-      ],
-      meta: "Meta mínima: atingir a meta de faturamento do mês",
-    },
-    {
-      id: "maquiagem",
-      label: "Maquiagem",
-      premio: rules.maquiagem.prize,
-      icon: Palette,
-      colorScheme: {
-        gradient: "gradient-make",
-        bgLight: "bg-yellow-50/80",
-        text: "text-yellow-700",
-        border: "border-yellow-200",
-        badge: "bg-yellow-100 text-yellow-700",
-        bullet: "bg-yellow-400",
-      },
-      regras: [
-        "Cada serviço de maquiagem realizado vale 1 ponto",
-        "Todos os serviços contam — não há limite por cliente",
-        "Avaliações Google aparecem no perfil, mas não somam pontos nesta categoria",
-      ],
-      meta: "Meta mínima: 25 serviços no mês",
-    },
-  ];
+  if (catRules.starsCountInScore && catRules.starPointValue > 0) {
+    regras.push(
+      `Cada avaliacao Google aprovada vale ${catRules.starPointValue} ponto${catRules.starPointValue > 1 ? "s" : ""}`
+    );
+  } else if (!catRules.starsCountInScore) {
+    regras.push("Avaliacoes Google aparecem no perfil, mas nao somam pontos nesta categoria");
+  }
+
+  return regras;
 }
 
-export default function RegrasDoDesafio() {
-  const { getFilteredDateRange } = useDateFilter();
-  const { startDate } = getFilteredDateRange();
-  const rules = getRulesForDate(startDate);
+function buildMetaText(catRules: CategoryRules): string {
+  const parts: string[] = [];
+
+  if (catRules.qualificationGoals.minUniqueClients) {
+    parts.push(`${catRules.qualificationGoals.minUniqueClients} clientes unicos`);
+  }
+  if (catRules.qualificationGoals.minSpecialServices) {
+    parts.push(`${catRules.qualificationGoals.minSpecialServices} ${catRules.specialServiceLabel || "servicos especiais"}`);
+  }
+  if (catRules.qualificationGoals.minRevenue) {
+    parts.push(`faturamento de R$ ${catRules.qualificationGoals.minRevenue.toLocaleString("pt-BR")}`);
+  }
+  if (catRules.qualificationGoals.minServices) {
+    parts.push(`${catRules.qualificationGoals.minServices} servicos`);
+  }
+
+  if (parts.length === 0) return "Sem meta minima definida";
+  return `Meta minima: ${parts.join(" + ")} no mes`;
+}
+
+function buildMetaExcelencia(catRules: CategoryRules): string | undefined {
+  if (catRules.symbolicGoals.stars && catRules.symbolicGoals.stars > 0) {
+    return `Meta excelencia profissional: ${catRules.symbolicGoals.stars} estrelas Google`;
+  }
+  return undefined;
+}
+
+function buildRegras(rules: RulesVersion): CategoriaRegra[] {
+  return (["cabelo", "unhas", "estetica", "maquiagem"] as const).map((catKey) => {
+    const catRules = getCategoryRules(rules, catKey);
+    const config = CATEGORY_CONFIG[catKey];
+    return {
+      id: catKey,
+      label: config.label,
+      premio: catRules.prize,
+      icon: config.icon,
+      colorScheme: config.colorScheme,
+      regras: buildRegrasForCategory(catRules),
+      meta: buildMetaText(catRules),
+      metaExcelencia: buildMetaExcelencia(catRules),
+    };
+  });
+}
+
+export default function RegrasDoDesafio({ rules }: { rules: RulesVersion }) {
   const regras = buildRegras(rules);
 
   return (
@@ -212,7 +164,7 @@ export default function RegrasDoDesafio() {
           </div>
           <div>
             <CardTitle className="font-display text-lg">Regras do Desafio</CardTitle>
-            <p className="text-xs text-gray-500 font-body">Como funciona a pontuação de cada categoria</p>
+            <p className="text-xs text-gray-500 font-body">Como funciona a pontuacao de cada categoria</p>
           </div>
         </div>
       </CardHeader>
@@ -235,7 +187,7 @@ export default function RegrasDoDesafio() {
                       {categoria.label}
                     </span>
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${categoria.colorScheme.badge}`}>
-                      Prêmio {categoria.premio}
+                      Premio {categoria.premio}
                     </span>
                   </div>
                 </AccordionTrigger>

@@ -22,6 +22,7 @@ export interface CategoryRules {
 export interface RulesVersion {
   id: string;
   validFrom: string;
+  label?: string;
   cabelo: CategoryRules;
   unhas: CategoryRules;
   estetica: CategoryRules;
@@ -148,6 +149,19 @@ export function getRulesForDate(startDate: string): RulesVersion {
     }
   }
   return selectedVersion;
+}
+
+export function getRulesForDateFromVersions(
+  startDate: string,
+  versions: RulesVersion[]
+): RulesVersion {
+  if (!versions.length) return getRulesForDate(startDate);
+  const yearMonth = startDate.substring(0, 7);
+  let selected = versions[0];
+  for (const v of versions) {
+    if (yearMonth >= v.validFrom) selected = v;
+  }
+  return selected;
 }
 
 export function getCategoryRules(

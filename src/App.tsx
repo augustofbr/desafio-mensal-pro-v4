@@ -8,7 +8,10 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Aniversariantes from "./pages/Aniversariantes";
 import MinhasAvaliacoes from "./pages/MinhasAvaliacoes";
+import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
+import { AuthProvider } from "./contexts/AuthContext";
+import { AdminRouteGuard } from "./components/admin/AdminRouteGuard";
 
 function App() {
   // Create a client
@@ -24,6 +27,16 @@ function App() {
             <Route path="/" element={<Index />} />
             <Route path="/aniversariantes" element={<Aniversariantes />} />
             <Route path="/minhas-avaliacoes" element={<MinhasAvaliacoes />} />
+            <Route
+              path="/admin"
+              element={
+                <AuthProvider>
+                  <AdminRouteGuard>
+                    <AdminPanel />
+                  </AdminRouteGuard>
+                </AuthProvider>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

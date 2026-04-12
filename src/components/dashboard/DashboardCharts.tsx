@@ -5,20 +5,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCurrentMonthName } from "@/lib/utils";
 import { EvolutionChartContainer } from "@/components/charts/EvolutionChartContainer";
 import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryEnabled } from "@/lib/categoryDisplayNames";
-import { getRulesForDate } from "@/lib/rulesConfig";
-import { useDateFilter } from "@/contexts/DateFilterContext";
+import type { RulesVersion } from "@/lib/rulesConfig";
 
 interface DashboardChartsProps {
   hairData: any[];
   manicureData: any[];
   esteticaData: any[];
   maquiagemData: any[];
+  rules: RulesVersion;
 }
 
-export default function DashboardCharts({ hairData, manicureData, esteticaData, maquiagemData }: DashboardChartsProps) {
-  const { getFilteredDateRange } = useDateFilter();
-  const { startDate } = getFilteredDateRange();
-  const rules = getRulesForDate(startDate);
+export default function DashboardCharts({ hairData, manicureData, esteticaData, maquiagemData, rules }: DashboardChartsProps) {
   const [hasData, setHasData] = useState(false);
   const [selectedProfessionals, setSelectedProfessionals] = useState<string[]>([]);
   const currentMonth = getCurrentMonthName();
