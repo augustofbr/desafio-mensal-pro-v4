@@ -159,8 +159,13 @@ The application uses background processor components for data handling:
     - `profissionalId`: Primary key (INTEGER)
     - `nome_profissional`: Professional name (TEXT)
     - `categoria`: Category assignment (TEXT) - "Cabelo", "Unhas", "Estetica", "Maquiagem"
+    - `apelido`: Short display name (TEXT, nullable) - used by the Aniversariantes page
+    - `ativo`: Active flag (BOOLEAN, default true)
+    - `dia_aniversario`: Birthday day 1-31 (SMALLINT, nullable)
+    - `mes_aniversario`: Birthday month 1-12 (SMALLINT, nullable) - birth year is NOT stored, for privacy
     - `created_at`: Timestamp
     - **IMPORTANT**: Professional category comes from THIS table, NOT from trinks_services.category
+    - **IMPORTANT**: Birthdays live HERE. The legacy `aniversarios` table is deprecated (see below)
 
   - `avaliacoes_cadastradas` - Google Stars reviews
     - `id`: Primary key (UUID)
@@ -180,6 +185,12 @@ The application uses background processor components for data handling:
     - `is_error`: Error flag (BOOLEAN)
     - `created_at`: Timestamp
     - Index on: created_at
+
+  - `aniversarios` - **DEPRECATED** (migrated 2026-07-25)
+    - Birthday data now lives in `profissionais_ativos.dia_aniversario` / `.mes_aniversario`
+    - Kept as a backup only; nothing in the app reads it. Safe to drop after validation
+    - Professionals that existed here but not in `profissionais_ativos` were intentionally
+      discarded — `profissionais_ativos` is the source of truth for the Studio X roster
 
 ### Business Rules & Scoring System
 
