@@ -34,10 +34,10 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                   <Scissors className="h-5 w-5 text-blue-600" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-semibold text-sm text-gray-700">Tratamentos</h4>
+                  <h4 className="font-semibold text-sm text-gray-700">{rules?.specialServiceLabel}</h4>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className="text-2xl font-bold text-blue-600">{summary.treatmentCount}</span>
-                    <span className="text-sm text-gray-500">Tratamentos</span>
+                    <span className="text-sm text-gray-500">{rules?.specialServiceLabel}</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.treatmentPoints} pontos total</p>
                   <p className="text-[11px] text-blue-600/70 mt-2 bg-blue-50 px-2 py-1 rounded-md leading-relaxed">
@@ -395,10 +395,8 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
       const isV2Cabelo = category === "Cabelo" && rules?.manufacturerConstraints;
 
       const sectionTitle = isV2Cabelo
-        ? 'Tratamentos Válidos'
-        : category === "Cabelo"
-          ? 'Tratamentos'
-          : 'SPA dos Pés';
+        ? `${rules?.specialServiceLabel} Válidos`
+        : rules?.specialServiceLabel;
 
       const sectionColor = category === "Cabelo" ? 'text-blue-700' : 'text-red-700';
 
