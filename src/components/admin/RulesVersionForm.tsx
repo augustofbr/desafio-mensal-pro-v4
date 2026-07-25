@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Loader2, Scissors, Sparkles, Heart, Palette } from "lucide-react";
-import type { CategoryRules, RulesVersion } from "@/lib/rulesConfig";
+import type { CategoryRules, RulesVersion, SpecialServiceMatchType } from "@/lib/rulesConfig";
 
 type ScoringModel = "points" | "revenue-percentage" | "revenue-points";
 
@@ -29,6 +29,7 @@ function defaultCategoryRules(): CategoryRules {
     qualificationGoals: {},
     symbolicGoals: {},
     manufacturerConstraints: false,
+    enabled: true,
     prize: "R$200",
   };
 }
@@ -93,6 +94,45 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
     }));
   };
 
+  const updateMatchType = (cat: string, type: SpecialServiceMatchType) => {
+    setCategories((prev) => ({
+      ...prev,
+      [cat]: {
+        ...prev[cat],
+        specialServiceMatch: {
+          type,
+          values: prev[cat].specialServiceMatch?.values ?? [],
+        },
+      },
+    }));
+  };
+
+  const updateMatchValues = (cat: string, raw: string) => {
+    const values = raw
+      .split(";")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    setCategories((prev) => ({
+      ...prev,
+      [cat]: {
+        ...prev[cat],
+        specialServiceMatch: {
+          type: prev[cat].specialServiceMatch?.type ?? "exact",
+          values,
+        },
+      },
+    }));
+  };
+
+  const normalizeCategory = (cat: CategoryRules): CategoryRules => {
+    const values = cat.specialServiceMatch?.values.filter((v) => v.trim().length > 0) ?? [];
+    if (values.length === 0) {
+      const { specialServiceMatch, ...rest } = cat;
+      return rest;
+    }
+    return { ...cat, specialServiceMatch: { type: cat.specialServiceMatch!.type, values } };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validFrom.match(/^\d{4}-\d{2}$/)) {
@@ -105,10 +145,10 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
       await onSubmit({
         valid_from: validFrom,
         label,
-        cabelo: categories.cabelo,
-        unhas: categories.unhas,
-        estetica: categories.estetica,
-        maquiagem: categories.maquiagem,
+        cabelo: normalizeCategory(categories.cabelo),
+        unhas: normalizeCategory(categories.unhas),
+        estetica: normalizeCategory(categories.estetica),
+        maquiagem: normalizeCategory(categories.maquiagem),
       });
       onOpenChange(false);
     } catch (err: any) {
@@ -241,6 +281,34 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
                       )}
                     </div>
 
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs text-gray-500">Deteccao do servico</Label>
+                        <Select
+                          value={cat.specialServiceMatch?.type ?? "exact"}
+                          onValueChange={(v) => updateMatchType(key, v as SpecialServiceMatchType)}
+                        >
+                          <SelectTrigger className="font-body text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="exact">Nome exato</SelectItem>
+                            <SelectItem value="prefix">Nome comeca com</SelectItem>
+                            <SelectItem value="category">Categoria do servico</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500">Valores (separados por ;)</Label>
+                        <Input
+                          value={(cat.specialServiceMatch?.values ?? []).join("; ")}
+                          onChange={(e) => updateMatchValues(key, e.target.value)}
+                          placeholder="Cronograma Capilar [pacote]"
+                          className="font-body text-sm"
+                        />
+                      </div>
+                    </div>
+
                     <div className="flex items-center gap-6">
                       <div className="flex items-center gap-2">
                         <Switch
@@ -255,6 +323,13 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
                           onCheckedChange={(v) => updateCategory(key, "manufacturerConstraints", v)}
                         />
                         <Label className="text-xs text-gray-500">Restricao de fabricante</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={cat.enabled !== false}
+                          onCheckedChange={(v) => updateCategory(key, "enabled", v)}
+                        />
+                        <Label className="text-xs text-gray-500">Categoria ativa</Label>
                       </div>
                     </div>
 

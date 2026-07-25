@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy, Award, CheckCircle, AlertCircle, Star } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
 import { getCategoryRules, CategoryRules, RulesVersion } from "@/lib/rulesConfig";
+import { isCategoryActive, PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
 
 interface PremiacaoPanelProps {
   hairData: any[];
@@ -45,6 +46,7 @@ function buildWinner(
   const uniqueClients = leader.uniqueClientDays || 0;
   const treatmentServices = leader.treatmentServices || 0;
   const spaServices = leader.spaServices || 0;
+  const specialServices = leader.specialServices || 0;
   const totalServices = leader.totalServices || 0;
   const revenuePercentage = leader.revenuePercentage || 0;
 
@@ -66,7 +68,7 @@ function buildWinner(
     if (goals.minSpecialServices != null) {
       const pct = Math.min((treatmentServices / goals.minSpecialServices) * 100, 100);
       progressBars.push({
-        label: `${treatmentServices}/${goals.minSpecialServices} tratamentos`,
+        label: `${treatmentServices}/${goals.minSpecialServices} ${categoryRules.specialServiceLabel}`,
         current: treatmentServices,
         goal: goals.minSpecialServices,
         percent: pct,
@@ -87,12 +89,33 @@ function buildWinner(
     if (goals.minSpecialServices != null) {
       const pct = Math.min((spaServices / goals.minSpecialServices) * 100, 100);
       progressBars.push({
-        label: `${spaServices}/${goals.minSpecialServices} SPA`,
+        label: `${spaServices}/${goals.minSpecialServices} ${categoryRules.specialServiceLabel}`,
         current: spaServices,
         goal: goals.minSpecialServices,
         percent: pct,
       });
       if (spaServices < goals.minSpecialServices) qualified = false;
+    }
+  } else if (categoryKey === "estetica" && categoryRules.scoringModel === "points") {
+    if (goals.minUniqueClients != null) {
+      const pct = Math.min((uniqueClients / goals.minUniqueClients) * 100, 100);
+      progressBars.push({
+        label: `${uniqueClients}/${goals.minUniqueClients} clientes`,
+        current: uniqueClients,
+        goal: goals.minUniqueClients,
+        percent: pct,
+      });
+      if (uniqueClients < goals.minUniqueClients) qualified = false;
+    }
+    if (goals.minSpecialServices != null) {
+      const pct = Math.min((specialServices / goals.minSpecialServices) * 100, 100);
+      progressBars.push({
+        label: `${specialServices}/${goals.minSpecialServices} ${categoryRules.specialServiceLabel}`,
+        current: specialServices,
+        goal: goals.minSpecialServices,
+        percent: pct,
+      });
+      if (specialServices < goals.minSpecialServices) qualified = false;
     }
   } else if (categoryKey === "estetica") {
     const pct = Math.min(revenuePercentage, 100);
@@ -163,13 +186,11 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
   const esteticaWinner = getWinner(esteticaData, "estetica");
   const maquiagemWinner = getWinner(maquiagemData, "maquiagem");
 
-  const allPrizes = [
-    getCategoryRules(rules, 'cabelo').prize,
-    getCategoryRules(rules, 'unhas').prize,
-    getCategoryRules(rules, 'estetica').prize,
-    getCategoryRules(rules, 'maquiagem').prize,
-  ];
-  const allSamePrize = new Set(allPrizes).size === 1;
+  const activeCategoryKeys = ['cabelo', 'unhas', 'estetica', 'maquiagem'].filter(
+    (key) => getCategoryRules(rules, key)?.enabled !== false
+  );
+  const allPrizes = activeCategoryKeys.map((key) => getCategoryRules(rules, key).prize);
+  const allSamePrize = allPrizes.length > 0 && new Set(allPrizes).size === 1;
   const commonPrize = allSamePrize ? allPrizes[0] : null;
 
   if (loading) {
@@ -200,7 +221,8 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
     const categoryRules = getCategoryRules(rules, categoryKey);
     const goals = categoryRules.qualificationGoals;
 
-    if (categoryKey === "cabelo" || categoryKey === "unhas") {
+    if (categoryKey === "cabelo" || categoryKey === "unhas" ||
+        (categoryKey === "estetica" && categoryRules.scoringModel === "points")) {
       const parts: string[] = [];
       if (goals.minUniqueClients != null) parts.push(`${goals.minUniqueClients} clientes`);
       if (goals.minSpecialServices != null) parts.push(`${goals.minSpecialServices} ${categoryRules.specialServiceLabel}`);
@@ -216,7 +238,9 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
     const unmet = bars.filter(b => b.percent < 100);
     if (unmet.length === 0) return "";
 
-    if (categoryKey === "estetica" || (categoryKey === "maquiagem" && bars.length === 1 && bars[0].goal === 100)) {
+    const esteticaPorFaturamento =
+      categoryKey === "estetica" && getCategoryRules(rules, categoryKey).scoringModel !== "points";
+    if (esteticaPorFaturamento || (categoryKey === "maquiagem" && bars.length === 1 && bars[0].goal === 100)) {
       const faltam = Math.ceil(100 - winner.revenuePercentage);
       return `Faltam ${faltam}% para meta mínima`;
     }
@@ -352,7 +376,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
       </CardHeader>
       <CardContent className="px-4 pb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.CABELO) && renderCategoryAward(
             "cabelo",
             hairWinner,
             {
@@ -365,7 +389,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             },
             0
           )}
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.UNHAS) && renderCategoryAward(
             "unhas",
             manicureWinner,
             {
@@ -378,7 +402,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             },
             1
           )}
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) && renderCategoryAward(
             "maquiagem",
             maquiagemWinner,
             {
@@ -391,7 +415,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             },
             2
           )}
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) && renderCategoryAward(
             "estetica",
             esteticaWinner,
             {

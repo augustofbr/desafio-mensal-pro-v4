@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ProfessionalRanking from "@/components/ProfessionalRanking";
 import ProfessionalModal from "@/components/ProfessionalModal";
-import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryEnabled } from "@/lib/categoryDisplayNames";
+import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryActive } from "@/lib/categoryDisplayNames";
 import { BarChart3 } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
 import { getCategoryRules, RulesVersion } from "@/lib/rulesConfig";
@@ -64,10 +64,10 @@ export default function DataRankings({
   const currentMonth = getCurrentMonthName();
 
   const categories = [
-    { key: PROF_CATEGORIES.CABELO, data: hairData, enabled: isCategoryEnabled(PROF_CATEGORIES.CABELO) },
-    { key: PROF_CATEGORIES.UNHAS, data: manicureData, enabled: isCategoryEnabled(PROF_CATEGORIES.UNHAS) },
-    { key: PROF_CATEGORIES.MAQUIAGEM, data: maquiagemData, enabled: isCategoryEnabled(PROF_CATEGORIES.MAQUIAGEM) },
-    { key: PROF_CATEGORIES.ESTETICA, data: esteticaData, enabled: isCategoryEnabled(PROF_CATEGORIES.ESTETICA) },
+    { key: PROF_CATEGORIES.CABELO, data: hairData, enabled: isCategoryActive(rules, PROF_CATEGORIES.CABELO) },
+    { key: PROF_CATEGORIES.UNHAS, data: manicureData, enabled: isCategoryActive(rules, PROF_CATEGORIES.UNHAS) },
+    { key: PROF_CATEGORIES.MAQUIAGEM, data: maquiagemData, enabled: isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) },
+    { key: PROF_CATEGORIES.ESTETICA, data: esteticaData, enabled: isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) },
   ];
 
   const enabledCategories = categories.filter(c => c.enabled);

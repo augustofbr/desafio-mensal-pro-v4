@@ -34,14 +34,14 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                   <Scissors className="h-5 w-5 text-blue-600" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-semibold text-sm text-gray-700">Tratamentos</h4>
+                  <h4 className="font-semibold text-sm text-gray-700">{rules?.specialServiceLabel}</h4>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className="text-2xl font-bold text-blue-600">{summary.treatmentCount}</span>
-                    <span className="text-sm text-gray-500">Tratamentos</span>
+                    <span className="text-sm text-gray-500">{rules?.specialServiceLabel}</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.treatmentPoints} pontos total</p>
                   <p className="text-[11px] text-blue-600/70 mt-2 bg-blue-50 px-2 py-1 rounded-md leading-relaxed">
-                    Cada tratamento {rules?.manufacturerConstraints ? 'da marca autorizada ' : ''}vale {rules?.specialServicePointValue} pts
+                    Cada {rules?.specialServiceLabel} {rules?.manufacturerConstraints ? 'da marca autorizada ' : ''}vale {rules?.specialServicePointValue} pts
                     {rules?.manufacturerConstraints && summary.allowedManufacturers?.length > 0 && `. Marcas: ${summary.allowedManufacturers.join(', ')}`}
                   </p>
                 </div>
@@ -62,7 +62,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                     <span className="text-sm text-gray-500">clientes</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.hairClientPoints} pontos total</p>
-                  <p className="text-[11px] text-green-600/70 mt-2 bg-green-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale 1 pt</p>
+                  <p className="text-[11px] text-green-600/70 mt-2 bg-green-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale {rules?.clientPointValue} pt{(rules?.clientPointValue ?? 1) > 1 ? 's' : ''}</p>
                 </div>
               </div>
             </CardContent>
@@ -99,13 +99,13 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                   <Sparkles className="h-5 w-5 text-red-600" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-semibold text-sm text-gray-700">SPA dos Pés</h4>
+                  <h4 className="font-semibold text-sm text-gray-700">{rules?.specialServiceLabel}</h4>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className="text-2xl font-bold text-red-600">{summary.spaCount}</span>
-                    <span className="text-sm text-gray-500">SPA dos Pés</span>
+                    <span className="text-sm text-gray-500">{rules?.specialServiceLabel}</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.spaPoints} pontos total</p>
-                  <p className="text-[11px] text-red-600/70 mt-2 bg-red-50 px-2 py-1 rounded-md leading-relaxed">Cada SPA dos Pés vale {rules?.specialServicePointValue} pts</p>
+                  <p className="text-[11px] text-red-600/70 mt-2 bg-red-50 px-2 py-1 rounded-md leading-relaxed">Cada {rules?.specialServiceLabel} vale {rules?.specialServicePointValue} pts</p>
                 </div>
               </div>
             </CardContent>
@@ -124,7 +124,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
                     <span className="text-sm text-gray-500">clientes</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1">{summary.manicureClientPoints} pontos total</p>
-                  <p className="text-[11px] text-red-600/70 mt-2 bg-red-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale 1 pt</p>
+                  <p className="text-[11px] text-red-600/70 mt-2 bg-red-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale {rules?.clientPointValue} pt{(rules?.clientPointValue ?? 1) > 1 ? 's' : ''}</p>
                 </div>
               </div>
             </CardContent>
@@ -132,6 +132,49 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
         </div>
       );
     } else if (category === "Estetica") {
+      if (rules?.scoringModel === 'points') {
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="border-violet-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-violet-100 rounded-lg">
+                    <Sparkles className="h-5 w-5 text-violet-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">{rules?.specialServiceLabel}</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-violet-600">{summary.esteticaSpecialCount}</span>
+                      <span className="text-sm text-gray-500">serviços</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">{summary.esteticaSpecialPoints} pontos total</p>
+                    <p className="text-[11px] text-violet-600/70 mt-2 bg-violet-50 px-2 py-1 rounded-md leading-relaxed">Cada {rules?.specialServiceLabel} vale {rules?.specialServicePointValue} pts</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-violet-200">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-violet-100 rounded-lg">
+                    <Heart className="h-5 w-5 text-violet-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm text-gray-700">Clientes Únicas</h4>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="text-2xl font-bold text-violet-600">{summary.esteticaUniqueClients}</span>
+                      <span className="text-sm text-gray-500">clientes</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">{summary.esteticaClientPoints} pontos total</p>
+                    <p className="text-[11px] text-violet-600/70 mt-2 bg-violet-50 px-2 py-1 rounded-md leading-relaxed">Cada cliente único por dia vale {rules?.clientPointValue} pt{(rules?.clientPointValue ?? 1) > 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      }
       if (rules?.scoringModel === 'revenue-points') {
         return (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -352,10 +395,8 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
       const isV2Cabelo = category === "Cabelo" && rules?.manufacturerConstraints;
 
       const sectionTitle = isV2Cabelo
-        ? 'Tratamentos Válidos'
-        : category === "Cabelo"
-          ? 'Tratamentos'
-          : 'SPA dos Pés';
+        ? `${rules?.specialServiceLabel} Válidos`
+        : rules?.specialServiceLabel;
 
       const sectionColor = category === "Cabelo" ? 'text-blue-700' : 'text-red-700';
 
@@ -500,7 +541,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
 
   const shouldShowPointsColumn = () => {
     if (category === "Estetica") {
-      return rules?.scoringModel === 'revenue-points';
+      return rules?.scoringModel === 'revenue-points' || rules?.scoringModel === 'points';
     }
     return true;
   };
@@ -517,7 +558,7 @@ export default function ProfessionalModal({ isOpen, onClose, details, category, 
           <DialogDescription className="mt-1">
             {displayCategory}: {details.totalServices} serviços | {rules?.scoringModel === 'revenue-points'
               ? `${details.totalPoints} Pts`
-              : category === "Estetica"
+              : category === "Estetica" && rules?.scoringModel !== 'points'
                 ? `${details.totalPoints}% da meta`
                 : `${details.totalPoints} pontos`
             }

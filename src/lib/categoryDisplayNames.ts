@@ -1,3 +1,6 @@
+import type { RulesVersion } from "@/lib/rulesConfig";
+import { getCategoryRules } from "@/lib/rulesConfig";
+
 /**
  * Categorias baseadas na tabela profissionais_ativos
  * Os valores correspondem à coluna 'categoria' da tabela 'profissionais_ativos'
@@ -56,4 +59,18 @@ export function getServiceTypeDisplayName(serviceType: string): string {
  */
 export function isCategoryEnabled(category: string): boolean {
   return ENABLED_PROF_CATEGORIES[category] ?? true;
+}
+
+/**
+ * Uma categoria participa do desafio quando esta habilitada no dashboard
+ * E a versao de regra vigente nao a desativou (campo enabled).
+ */
+export function isCategoryActive(
+  rules: RulesVersion | null | undefined,
+  category: string
+): boolean {
+  if (!isCategoryEnabled(category)) return false;
+  if (!rules) return true;
+  const categoryRules = getCategoryRules(rules, category);
+  return categoryRules?.enabled !== false;
 }

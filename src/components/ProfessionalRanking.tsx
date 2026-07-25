@@ -116,7 +116,7 @@ export default function ProfessionalRanking({
                   </span>
 
                   {/* Stats badges - below name on mobile, inline on desktop */}
-                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 text-[10px] sm:text-sm">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-1.5 shrink-0 text-[10px] sm:text-sm">
                     {item.starCount > 0 && (
                       <>
                         <span className="inline-flex items-center gap-0.5 font-semibold bg-amber-100 text-amber-800 rounded-full px-1.5 sm:px-2 py-0.5">
@@ -137,7 +137,7 @@ export default function ProfessionalRanking({
                           <span className="font-mono-num">{item.uniqueClientDays}</span><span className="text-slate-400 ml-0.5">cli</span>
                         </span>
                         <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.treatmentServices}</span><span className="text-slate-400 ml-0.5">tratam</span>
+                          <span className="font-mono-num">{item.treatmentServices}</span><span className="text-slate-400 ml-0.5">{rules.specialServiceLabel}</span>
                         </span>
                         {rules.manufacturerConstraints && item.invalidTreatmentCount > 0 && (
                           <span className="inline-flex items-center gap-0.5 bg-orange-100 text-orange-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
@@ -153,7 +153,7 @@ export default function ProfessionalRanking({
                           <span className="font-mono-num">{item.uniqueClientDays}</span><span className="text-slate-400 ml-0.5">cli</span>
                         </span>
                         <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.spaServices}</span><span className="text-slate-400 ml-0.5">SPA</span>
+                          <span className="font-mono-num">{item.spaServices}</span><span className="text-slate-400 ml-0.5">{rules.specialServiceLabel}</span>
                         </span>
                       </>
                     )}
@@ -163,9 +163,20 @@ export default function ProfessionalRanking({
                       </span>
                     )}
                     {categoryKey === PROF_CATEGORIES.ESTETICA && (
-                      <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                        <span className="font-mono-num">{item.serviceCount}</span><span className="text-slate-400 ml-0.5">serv</span>
-                      </span>
+                      rules.scoringModel === 'points' ? (
+                        <>
+                          <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
+                            <span className="font-mono-num">{item.uniqueClientDays}</span><span className="text-slate-400 ml-0.5">cli</span>
+                          </span>
+                          <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
+                            <span className="font-mono-num">{item.specialServices}</span><span className="text-slate-400 ml-0.5">{rules.specialServiceLabel}</span>
+                          </span>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
+                          <span className="font-mono-num">{item.serviceCount}</span><span className="text-slate-400 ml-0.5">serv</span>
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
