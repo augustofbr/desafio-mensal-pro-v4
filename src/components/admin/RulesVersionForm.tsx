@@ -29,7 +29,6 @@ function defaultCategoryRules(): CategoryRules {
     qualificationGoals: {},
     symbolicGoals: {},
     manufacturerConstraints: false,
-    specialServiceMatch: { type: "exact", values: [] },
     enabled: true,
     prize: "R$200",
   };
@@ -125,6 +124,15 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
     }));
   };
 
+  const normalizeCategory = (cat: CategoryRules): CategoryRules => {
+    const values = cat.specialServiceMatch?.values.filter((v) => v.trim().length > 0) ?? [];
+    if (values.length === 0) {
+      const { specialServiceMatch, ...rest } = cat;
+      return rest;
+    }
+    return { ...cat, specialServiceMatch: { type: cat.specialServiceMatch!.type, values } };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validFrom.match(/^\d{4}-\d{2}$/)) {
@@ -137,10 +145,10 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
       await onSubmit({
         valid_from: validFrom,
         label,
-        cabelo: categories.cabelo,
-        unhas: categories.unhas,
-        estetica: categories.estetica,
-        maquiagem: categories.maquiagem,
+        cabelo: normalizeCategory(categories.cabelo),
+        unhas: normalizeCategory(categories.unhas),
+        estetica: normalizeCategory(categories.estetica),
+        maquiagem: normalizeCategory(categories.maquiagem),
       });
       onOpenChange(false);
     } catch (err: any) {
