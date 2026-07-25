@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getCurrentMonthName } from "@/lib/utils";
 import { EvolutionChartContainer } from "@/components/charts/EvolutionChartContainer";
-import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryEnabled } from "@/lib/categoryDisplayNames";
+import { getCategoryDisplayName, PROF_CATEGORIES, isCategoryActive } from "@/lib/categoryDisplayNames";
 import type { RulesVersion } from "@/lib/rulesConfig";
 
 interface DashboardChartsProps {
@@ -21,10 +21,10 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
   const currentMonth = getCurrentMonthName();
 
   const enabledTabs = [
-    isCategoryEnabled(PROF_CATEGORIES.CABELO) && { key: "hair", category: PROF_CATEGORIES.CABELO },
-    isCategoryEnabled(PROF_CATEGORIES.UNHAS) && { key: "manicure", category: PROF_CATEGORIES.UNHAS },
-    isCategoryEnabled(PROF_CATEGORIES.MAQUIAGEM) && { key: "maquiagem", category: PROF_CATEGORIES.MAQUIAGEM },
-    isCategoryEnabled(PROF_CATEGORIES.ESTETICA) && { key: "estetica", category: PROF_CATEGORIES.ESTETICA },
+    isCategoryActive(rules, PROF_CATEGORIES.CABELO) && { key: "hair", category: PROF_CATEGORIES.CABELO },
+    isCategoryActive(rules, PROF_CATEGORIES.UNHAS) && { key: "manicure", category: PROF_CATEGORIES.UNHAS },
+    isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) && { key: "maquiagem", category: PROF_CATEGORIES.MAQUIAGEM },
+    isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) && { key: "estetica", category: PROF_CATEGORIES.ESTETICA },
   ].filter(Boolean) as { key: string; category: string }[];
 
   const [activeTab, setActiveTab] = useState(enabledTabs[0]?.key || "hair");
@@ -104,7 +104,7 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
               ))}
             </TabsList>
 
-            {isCategoryEnabled(PROF_CATEGORIES.CABELO) && (
+            {isCategoryActive(rules, PROF_CATEGORIES.CABELO) && (
               <TabsContent value="hair" className="w-full">
                 <EvolutionChartContainer
                   data={hairData}
@@ -117,7 +117,7 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
               </TabsContent>
             )}
 
-            {isCategoryEnabled(PROF_CATEGORIES.UNHAS) && (
+            {isCategoryActive(rules, PROF_CATEGORIES.UNHAS) && (
               <TabsContent value="manicure" className="w-full">
                 <EvolutionChartContainer
                   data={manicureData}
@@ -130,7 +130,7 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
               </TabsContent>
             )}
 
-            {isCategoryEnabled(PROF_CATEGORIES.MAQUIAGEM) && (
+            {isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) && (
               <TabsContent value="maquiagem" className="w-full">
                 <EvolutionChartContainer
                   data={maquiagemData}
@@ -144,7 +144,7 @@ export default function DashboardCharts({ hairData, manicureData, esteticaData, 
               </TabsContent>
             )}
 
-            {isCategoryEnabled(PROF_CATEGORIES.ESTETICA) && (
+            {isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) && (
               <TabsContent value="estetica" className="w-full">
                 <EvolutionChartContainer
                   data={esteticaData}
