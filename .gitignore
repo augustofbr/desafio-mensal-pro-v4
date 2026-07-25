@@ -39,3 +39,4 @@ console-output.txt
 # Secrets
 *.pem
 *.key
+.superpowers/
