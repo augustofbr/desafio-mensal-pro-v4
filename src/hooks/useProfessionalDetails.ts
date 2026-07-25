@@ -6,6 +6,7 @@ import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
 import { RulesVersion, getCategoryRules } from "@/lib/rulesConfig";
+import { matchesSpecialService } from "@/lib/scoring";
 import { ManufacturerData } from "@/hooks/useManufacturerData";
 import { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
@@ -53,15 +54,16 @@ export function useProfessionalDetails(
         let filteredData = filterDataByDateRange(servicesData, dateRange);
         const allProfessionalServices = [...filteredData];
 
-        if (category) {
-          if (category === "Cabelo") {
-            filteredData = filteredData.filter(service => service.category === "Tratamentos para Cabelo");
-          } else if (category === "Unhas") {
-            filteredData = filteredData.filter(service => service.category === "Manicure e Pedicure");
-          }
+        const categoryRules = category ? getCategoryRules(rules, category) : null;
+
+        if (category === "Cabelo" && categoryRules) {
+          filteredData = filteredData.filter(service =>
+            matchesSpecialService(service, categoryRules, "cabelo")
+          );
+        } else if (category === "Unhas") {
+          filteredData = filteredData.filter(service => service.category === "Manicure e Pedicure");
         }
 
-        const categoryRules = category ? getCategoryRules(rules, category) : null;
         const starCategoryKey = (category?.toLowerCase() || '') as keyof StarsByCategory;
         const starCount = starsData[starCategoryKey]?.get(professional) || 0;
         const profissionalId = profLookup.get(professional)?.profissionalId;
@@ -119,17 +121,17 @@ export function useProfessionalDetails(
                 rawServices.push({
                   date: convertDateFormat(service.service_date),
                   name: `Cliente: ${clientName}`,
-                  points: 1,
+                  points: categoryRules.clientPointValue,
                   type: 'client',
                   clientName
                 });
                 const clientServiceName = `Cliente: ${clientName}`;
                 if (!serviceSummary[clientServiceName]) {
-                  serviceSummary[clientServiceName] = { name: clientServiceName, count: 0, points: 0, pointsPerService: 1 };
+                  serviceSummary[clientServiceName] = { name: clientServiceName, count: 0, points: 0, pointsPerService: categoryRules.clientPointValue };
                 }
                 serviceSummary[clientServiceName].count++;
-                serviceSummary[clientServiceName].points += 1;
-                professionalData.points += 1;
+                serviceSummary[clientServiceName].points += categoryRules.clientPointValue;
+                professionalData.points += categoryRules.clientPointValue;
               }
             }
           });
@@ -160,7 +162,7 @@ export function useProfessionalDetails(
 
           filteredData.forEach(service => {
             const serviceName = service.service_name || '';
-            if (serviceName === "SPA dos Pés") {
+            if (matchesSpecialService(service, categoryRules, "unhas")) {
               rawServices.push({
                 date: convertDateFormat(service.service_date),
                 name: serviceName,
@@ -187,17 +189,17 @@ export function useProfessionalDetails(
                 rawServices.push({
                   date: convertDateFormat(service.service_date),
                   name: `Cliente: ${clientName}`,
-                  points: 1,
+                  points: categoryRules.clientPointValue,
                   type: 'client',
                   clientName
                 });
                 const clientServiceName = `Cliente: ${clientName}`;
                 if (!serviceSummary[clientServiceName]) {
-                  serviceSummary[clientServiceName] = { name: clientServiceName, count: 0, points: 0, pointsPerService: 1 };
+                  serviceSummary[clientServiceName] = { name: clientServiceName, count: 0, points: 0, pointsPerService: categoryRules.clientPointValue };
                 }
                 serviceSummary[clientServiceName].count++;
-                serviceSummary[clientServiceName].points += 1;
-                professionalData.points += 1;
+                serviceSummary[clientServiceName].points += categoryRules.clientPointValue;
+                professionalData.points += categoryRules.clientPointValue;
               }
             }
           });
@@ -205,7 +207,9 @@ export function useProfessionalDetails(
           const starPoints = categoryRules.starsCountInScore ? starCount * categoryRules.starPointValue : 0;
           totalPoints = professionalData.points + starPoints;
 
-          const spaServicesSummary = Object.values(serviceSummary).find((s: any) => s.name === "SPA dos Pés") as any;
+          const spaServicesSummary = Object.values(serviceSummary).find(
+            (s: any) => !s.name.startsWith("Cliente:")
+          ) as any;
           const clientServices = Object.values(serviceSummary).filter((s: any) => s.name.startsWith("Cliente:"));
 
           summaryData = {
@@ -215,6 +219,70 @@ export function useProfessionalDetails(
             manicureClientPoints: clientServices.reduce((sum: number, s: any) => sum + s.points, 0),
             starCount,
             starPoints
+          };
+
+        } else if (category === "Estetica" && categoryRules && categoryRules.scoringModel === 'points') {
+          const professionalData = { clientDays: new Set<string>(), specialServices: 0, points: 0 };
+
+          filteredData.forEach(service => {
+            if (!matchesSpecialService(service, categoryRules, "estetica")) return;
+            const serviceName = service.service_name || "Limpeza de Pele";
+
+            rawServices.push({
+              date: convertDateFormat(service.service_date),
+              name: serviceName,
+              points: categoryRules.specialServicePointValue,
+              type: 'special'
+            });
+            if (!serviceSummary[serviceName]) {
+              serviceSummary[serviceName] = { name: serviceName, count: 0, points: 0, pointsPerService: categoryRules.specialServicePointValue };
+            }
+            serviceSummary[serviceName].count++;
+            serviceSummary[serviceName].points += categoryRules.specialServicePointValue;
+            professionalData.points += categoryRules.specialServicePointValue;
+            professionalData.specialServices++;
+          });
+
+          allProfessionalServices.forEach(service => {
+            const clientName = service.client_name;
+            const serviceDate = service.service_date;
+            if (clientName && clientName.trim()) {
+              const clientDayKey = `${clientName.trim()}-${serviceDate}`;
+              if (!professionalData.clientDays.has(clientDayKey)) {
+                professionalData.clientDays.add(clientDayKey);
+                rawServices.push({
+                  date: convertDateFormat(service.service_date),
+                  name: `Cliente: ${clientName}`,
+                  points: categoryRules.clientPointValue,
+                  type: 'client',
+                  clientName
+                });
+                const clientServiceName = `Cliente: ${clientName}`;
+                if (!serviceSummary[clientServiceName]) {
+                  serviceSummary[clientServiceName] = { name: clientServiceName, count: 0, points: 0, pointsPerService: categoryRules.clientPointValue };
+                }
+                serviceSummary[clientServiceName].count++;
+                serviceSummary[clientServiceName].points += categoryRules.clientPointValue;
+                professionalData.points += categoryRules.clientPointValue;
+              }
+            }
+          });
+
+          const starPoints = categoryRules.starsCountInScore ? starCount * categoryRules.starPointValue : 0;
+          totalPoints = professionalData.points + starPoints;
+
+          const specialSummary = Object.values(serviceSummary).filter((s: any) => !s.name.startsWith("Cliente:"));
+          const clientServices = Object.values(serviceSummary).filter((s: any) => s.name.startsWith("Cliente:"));
+
+          summaryData = {
+            esteticaSpecialCount: professionalData.specialServices,
+            esteticaSpecialPoints: specialSummary.reduce((sum: number, s: any) => sum + s.points, 0),
+            esteticaUniqueClients: professionalData.clientDays.size,
+            esteticaClientPoints: clientServices.reduce((sum: number, s: any) => sum + s.points, 0),
+            esteticaServiceCount: filteredData.length,
+            starCount,
+            starPoints,
+            totalPoints
           };
 
         } else if (category === "Estetica" && categoryRules) {
