@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy, Award, CheckCircle, AlertCircle, Star } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
 import { getCategoryRules, CategoryRules, RulesVersion } from "@/lib/rulesConfig";
+import { isCategoryActive, PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
 
 interface PremiacaoPanelProps {
   hairData: any[];
@@ -163,13 +164,11 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
   const esteticaWinner = getWinner(esteticaData, "estetica");
   const maquiagemWinner = getWinner(maquiagemData, "maquiagem");
 
-  const allPrizes = [
-    getCategoryRules(rules, 'cabelo').prize,
-    getCategoryRules(rules, 'unhas').prize,
-    getCategoryRules(rules, 'estetica').prize,
-    getCategoryRules(rules, 'maquiagem').prize,
-  ];
-  const allSamePrize = new Set(allPrizes).size === 1;
+  const activeCategoryKeys = ['cabelo', 'unhas', 'estetica', 'maquiagem'].filter(
+    (key) => getCategoryRules(rules, key)?.enabled !== false
+  );
+  const allPrizes = activeCategoryKeys.map((key) => getCategoryRules(rules, key).prize);
+  const allSamePrize = allPrizes.length > 0 && new Set(allPrizes).size === 1;
   const commonPrize = allSamePrize ? allPrizes[0] : null;
 
   if (loading) {
@@ -352,7 +351,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
       </CardHeader>
       <CardContent className="px-4 pb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.CABELO) && renderCategoryAward(
             "cabelo",
             hairWinner,
             {
@@ -365,7 +364,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             },
             0
           )}
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.UNHAS) && renderCategoryAward(
             "unhas",
             manicureWinner,
             {
@@ -378,7 +377,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             },
             1
           )}
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) && renderCategoryAward(
             "maquiagem",
             maquiagemWinner,
             {
@@ -391,7 +390,7 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
             },
             2
           )}
-          {renderCategoryAward(
+          {isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) && renderCategoryAward(
             "estetica",
             esteticaWinner,
             {
