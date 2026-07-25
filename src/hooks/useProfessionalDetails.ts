@@ -207,14 +207,12 @@ export function useProfessionalDetails(
           const starPoints = categoryRules.starsCountInScore ? starCount * categoryRules.starPointValue : 0;
           totalPoints = professionalData.points + starPoints;
 
-          const spaServicesSummary = Object.values(serviceSummary).find(
-            (s: any) => !s.name.startsWith("Cliente:")
-          ) as any;
+          const spaSummaryServices = Object.values(serviceSummary).filter((s: any) => !s.name.startsWith("Cliente:"));
           const clientServices = Object.values(serviceSummary).filter((s: any) => s.name.startsWith("Cliente:"));
 
           summaryData = {
             spaCount: professionalData.spaServices,
-            spaPoints: spaServicesSummary?.points || 0,
+            spaPoints: spaSummaryServices.reduce((sum: number, s: any) => sum + s.points, 0),
             manicureUniqueClients: professionalData.clientDays.size,
             manicureClientPoints: clientServices.reduce((sum: number, s: any) => sum + s.points, 0),
             starCount,
