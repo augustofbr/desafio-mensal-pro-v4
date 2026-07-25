@@ -64,4 +64,5 @@ VALUES (
     "enabled": false,
     "prize": "Fora do desafio em agosto"
   }'::jsonb
-);
+)
+ON CONFLICT (valid_from) DO NOTHING;

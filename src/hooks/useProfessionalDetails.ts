@@ -60,8 +60,6 @@ export function useProfessionalDetails(
           filteredData = filteredData.filter(service =>
             matchesSpecialService(service, categoryRules, "cabelo")
           );
-        } else if (category === "Unhas") {
-          filteredData = filteredData.filter(service => service.category === "Manicure e Pedicure");
         }
 
         const starCategoryKey = (category?.toLowerCase() || '') as keyof StarsByCategory;

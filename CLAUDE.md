@@ -200,6 +200,11 @@ The application uses background processor components for data handling:
 
 #### Category Scoring Rules
 
+**Note**: The numbered rules below (1-4) describe the rules through July 2026. Starting
+August 2026, the "Versionamento de Regras (V4 — Agosto/2026)" subsection further down
+governs instead — see it for what's actually live. Months before August 2026 are still
+viewable in the app and are scored by the rules described here.
+
 1. **Cabelo (Hair)** - Prize: R$300, Goal: 60 unique clients
    - Treatments: 2 points each (`category === "Tratamentos para Cabelo"`)
    - Unique client/day: 1 point each (ALL services, deduplicated by `clientName + date`)
