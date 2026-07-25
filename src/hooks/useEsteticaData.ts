@@ -3,6 +3,7 @@ import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
 import { CategoryRules } from "@/lib/rulesConfig";
+import { computePointsRanking, ServiceRecord } from "@/lib/scoring";
 
 export function useEsteticaData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
   const [esteticaData, setEsteticaData] = useState<any[]>([]);
@@ -105,18 +106,49 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
     setEsteticaData(sortedData);
   };
 
+  const processPointsData = (data: ServiceRecord[], rules: CategoryRules) => {
+    const ranking = computePointsRanking({
+      categoryServices: data,
+      categoryProfessionals,
+      starsByProfessional,
+      rules,
+      categoryKey: "estetica",
+      specialServiceType: "special",
+    });
+
+    setEsteticaData(
+      ranking.map((entry) => ({
+        ...entry,
+        services: entry.services.map((service) => ({
+          ...service,
+          date: service.date ? convertDateFormat(service.date) : "",
+        })),
+        // Campos de faturamento zerados: a UI legada ainda os le em alguns pontos
+        totalRevenue: 0,
+        revenuePercentage: 0,
+        revenuePoints: 0,
+      }))
+    );
+  };
+
   useEffect(() => {
+    const dateRange = getFilteredDateRange();
+    const filteredData = filterDataByDateRange(allServicesData || [], dateRange);
+    const categoryServices = filteredData.filter(
+      (service: any) => categoryProfessionals.includes(service.professional)
+    );
+
+    if (rules.scoringModel === 'points') {
+      if (categoryServices.length === 0 && starsByProfessional.size === 0 && categoryProfessionals.length === 0) {
+        setEsteticaData([]);
+        return;
+      }
+      processPointsData(categoryServices, rules);
+      return;
+    }
+
     if (allServicesData && allServicesData.length > 0 && categoryProfessionals.length > 0) {
-      const dateRange = getFilteredDateRange();
-      const filteredData = filterDataByDateRange(allServicesData, dateRange);
-
-      // Filter services by professionals in this category
-      const categoryServices = filteredData.filter(
-        service => categoryProfessionals.includes(service.professional)
-      );
-
       console.log("Estética services found:", categoryServices.length, "from", categoryProfessionals.length, "professionals");
-
       processEsteticaData(categoryServices, rules);
     } else if (starsByProfessional.size > 0) {
       processEsteticaData([], rules);
