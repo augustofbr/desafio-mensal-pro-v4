@@ -165,7 +165,7 @@ The application uses background processor components for data handling:
     - `mes_aniversario`: Birthday month 1-12 (SMALLINT, nullable) - birth year is NOT stored, for privacy
     - `created_at`: Timestamp
     - **IMPORTANT**: Professional category comes from THIS table, NOT from trinks_services.category
-    - **IMPORTANT**: Birthdays live HERE. The legacy `aniversarios` table is deprecated (see below)
+    - **IMPORTANT**: Birthdays live HERE. The legacy `aniversarios` table was dropped (see below)
 
   - `avaliacoes_cadastradas` - Google Stars reviews
     - `id`: Primary key (UUID)
@@ -186,11 +186,13 @@ The application uses background processor components for data handling:
     - `created_at`: Timestamp
     - Index on: created_at
 
-  - `aniversarios` - **DEPRECATED** (migrated 2026-07-25)
-    - Birthday data now lives in `profissionais_ativos.dia_aniversario` / `.mes_aniversario`
-    - Kept as a backup only; nothing in the app reads it. Safe to drop after validation
+  - `aniversarios` - **REMOVED** (dropped 2026-07-25)
+    - Birthday data lives in `profissionais_ativos.dia_aniversario` / `.mes_aniversario`
+    - Migrated by `20260725_move_aniversarios_to_profissionais_ativos.sql`, then dropped by
+      `20260725111653_drop_deprecated_aniversarios.sql`. Do not recreate it
     - Professionals that existed here but not in `profissionais_ativos` were intentionally
-      discarded — `profissionais_ativos` is the source of truth for the Studio X roster
+      discarded — `profissionais_ativos` is the source of truth for the Studio X roster.
+      Their dates remain versioned in the seed of `20260222_create_aniversarios.sql`
 
 ### Business Rules & Scoring System
 
