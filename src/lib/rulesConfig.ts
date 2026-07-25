@@ -1,3 +1,19 @@
+export type CategoryKey = 'cabelo' | 'unhas' | 'estetica' | 'maquiagem';
+
+export type SpecialServiceMatchType = 'exact' | 'prefix' | 'category';
+
+/**
+ * Define como identificar o "servico especial" de uma categoria.
+ * - exact: service_name igual a algum valor
+ * - prefix: service_name comeca com algum valor
+ * - category: category igual a algum valor
+ * Comparacao sempre com trim e case-insensitive.
+ */
+export interface SpecialServiceMatch {
+  type: SpecialServiceMatchType;
+  values: string[];
+}
+
 export interface CategoryRules {
   scoringModel: 'points' | 'revenue-percentage' | 'revenue-points';
   clientPointValue: number;
@@ -16,6 +32,10 @@ export interface CategoryRules {
     stars?: number;
   };
   manufacturerConstraints: boolean;
+  /** Ausente = fallback legado por categoria (ver resolveSpecialServiceMatch) */
+  specialServiceMatch?: SpecialServiceMatch;
+  /** Ausente = true. Quando false, a categoria fica fora do desafio no periodo. */
+  enabled?: boolean;
   prize: string;
 }
 
