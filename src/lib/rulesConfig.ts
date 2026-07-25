@@ -158,7 +158,69 @@ const RULES_V2: RulesVersion = {
   },
 };
 
-const RULES_VERSIONS: RulesVersion[] = [RULES_V1, RULES_V2];
+const RULES_V4: RulesVersion = {
+  id: 'v4',
+  validFrom: '2026-08',
+  label: 'V4 - Agosto 2026',
+  cabelo: {
+    scoringModel: 'points',
+    clientPointValue: 2,
+    specialServicePointValue: 5,
+    specialServiceLabel: 'Cronograma Capilar',
+    specialServiceMatch: { type: 'exact', values: ['Cronograma Capilar [pacote]'] },
+    starPointValue: 3,
+    starsCountInScore: true,
+    qualificationGoals: { minUniqueClients: 60, minSpecialServices: 10 },
+    symbolicGoals: { stars: 10 },
+    manufacturerConstraints: false,
+    enabled: true,
+    prize: 'A definir',
+  },
+  unhas: {
+    scoringModel: 'points',
+    clientPointValue: 2,
+    specialServicePointValue: 3,
+    specialServiceLabel: 'SPA dos Pés',
+    specialServiceMatch: { type: 'exact', values: ['SPA dos Pés'] },
+    starPointValue: 3,
+    starsCountInScore: true,
+    qualificationGoals: { minUniqueClients: 80, minSpecialServices: 10 },
+    symbolicGoals: { stars: 10 },
+    manufacturerConstraints: false,
+    enabled: true,
+    prize: 'A definir',
+  },
+  estetica: {
+    scoringModel: 'points',
+    clientPointValue: 2,
+    specialServicePointValue: 3,
+    specialServiceLabel: 'Limpeza de Pele',
+    specialServiceMatch: { type: 'prefix', values: ['Limpeza de Pele'] },
+    starPointValue: 3,
+    starsCountInScore: true,
+    qualificationGoals: { minUniqueClients: 80, minSpecialServices: 10 },
+    symbolicGoals: { stars: 10 },
+    manufacturerConstraints: false,
+    enabled: true,
+    prize: 'A definir',
+  },
+  maquiagem: {
+    scoringModel: 'revenue-points',
+    clientPointValue: 1,
+    specialServicePointValue: 0,
+    specialServiceLabel: 'Serviços',
+    starPointValue: 2,
+    starsCountInScore: true,
+    revenuePointConversion: 140,
+    qualificationGoals: { minRevenue: 3500 },
+    symbolicGoals: { stars: 10 },
+    manufacturerConstraints: false,
+    enabled: false,
+    prize: 'Fora do desafio em agosto',
+  },
+};
+
+const RULES_VERSIONS: RulesVersion[] = [RULES_V1, RULES_V2, RULES_V4];
 
 export function getRulesForDate(startDate: string): RulesVersion {
   const yearMonth = startDate.substring(0, 7);
