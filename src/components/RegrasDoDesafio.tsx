@@ -136,7 +136,9 @@ function buildMetaExcelencia(catRules: CategoryRules): string | undefined {
 }
 
 function buildRegras(rules: RulesVersion): CategoriaRegra[] {
-  return (["cabelo", "unhas", "estetica", "maquiagem"] as const).map((catKey) => {
+  return (["cabelo", "unhas", "estetica", "maquiagem"] as const)
+    .filter((catKey) => getCategoryRules(rules, catKey)?.enabled !== false)
+    .map((catKey) => {
     const catRules = getCategoryRules(rules, catKey);
     const config = CATEGORY_CONFIG[catKey];
     return {
