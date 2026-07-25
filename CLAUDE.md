@@ -220,6 +220,33 @@ The application uses background processor components for data handling:
    - 1 point per service (no deduplication)
    - Google Stars: displayed but DON'T count toward score
 
+#### Versionamento de Regras (V4 — Agosto/2026)
+
+A partir de agosto/2026, a deteccao do servico especial e **configuravel por regra**
+via `CategoryRules.specialServiceMatch` (`exact` | `prefix` | `category`), resolvida
+por `matchesSpecialService()` em `src/lib/scoring.ts`. Quando o campo esta ausente,
+vale o fallback legado: Cabelo por `category === "Tratamentos para Cabelo"`, Unhas por
+`service_name === "SPA dos Pés"`. Comparacao sempre com trim e case-insensitive.
+
+O calculo do modelo `points` (servico especial + cliente unico/dia + estrelas) vive em
+`computePointsRanking()`, compartilhado por Cabelo, Unhas e Estetica. `useProfessionalDetails`
+continua reimplementando o scoring — mudancas de regra seguem exigindo alteracao nos dois lugares.
+
+`CategoryRules.enabled = false` remove a categoria do desafio no periodo (abas, graficos e
+painel de premiacao), via `isCategoryActive()` em `src/lib/categoryDisplayNames.ts`.
+Componentes que listam categorias precisam consultar essa funcao — nao a constante estatica
+`ENABLED_PROF_CATEGORIES`, que nao varia por mes.
+
+**Componentes de grafico nao utilizados:** `src/components/charts/ComparisonChart.tsx` e
+`src/components/charts/DistributionChart.tsx` nao sao importados por nenhum arquivo. Ambos
+ainda usam deteccao e rotulos antigos ("Tratamentos" fixo, `isCategoryEnabled`), o que e
+inofensivo enquanto seguirem desmontados. Quem for reativar um deles precisa migra-lo para
+`isCategoryActive` e para `rules.specialServiceLabel` antes.
+
+**V4 (ago/2026):** Cabelo 5 pts por `Cronograma Capilar [pacote]`; Unhas 3 pts por SPA dos Pes;
+Estetica migra para `points` com 3 pts por `Limpeza de Pele*`; volume de atendimento vale 2 pts
+nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
+
 #### Key Components
 
 - `PremiacaoPanel`: Prize qualification panel showing leaders and prize status per category
@@ -311,7 +338,8 @@ TRINKS_PASSWORD=<configured in dashboard>
 ### Code Quality Tools
 - **ESLint**: Configured with TypeScript and React rules
 - **TypeScript**: Strict mode enabled in tsconfig
-- **No test framework**: Currently no unit/integration tests
+- **Vitest**: testes unitarios do motor de scoring em `src/lib/scoring.test.ts`. Rode com `npm test`.
+  Componentes React e hooks ainda nao possuem testes.
 
 ### Linting Rules
 - React hooks rules enforced
