@@ -116,7 +116,7 @@ export default function ProfessionalRanking({
                   </span>
 
                   {/* Stats badges - below name on mobile, inline on desktop */}
-                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 text-[10px] sm:text-sm">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-1.5 shrink-0 text-[10px] sm:text-sm">
                     {item.starCount > 0 && (
                       <>
                         <span className="inline-flex items-center gap-0.5 font-semibold bg-amber-100 text-amber-800 rounded-full px-1.5 sm:px-2 py-0.5">
