@@ -47,14 +47,14 @@ function DashboardContent() {
     setShowDetails(!!professionalDetails);
   }, [professionalDetails]);
 
-  const handleSelectProfessional = (professional: string, category: string) => {
+  const handleSelectProfessional = (professionalId: string, professional: string, category: string) => {
     setSelectedCategory(category);
-    selectProfessional(professional, category);
+    selectProfessional(professionalId, professional, category);
   };
 
   const handleCloseDetails = () => {
     setShowDetails(false);
-    selectProfessional(null, null);
+    selectProfessional(null, null, null);
   };
 
   const getDataPeriodFromFilter = (): string => {

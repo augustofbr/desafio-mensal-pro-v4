@@ -5,6 +5,7 @@ import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
 const STAR_POINTS_VALUE = 3;
 
+/** Mapas chaveados por profissionalId (string) → total de estrelas aprovadas. */
 export interface StarsByCategory {
   cabelo: Map<string, number>;
   unhas: Map<string, number>;
@@ -45,7 +46,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
       // Buscar estrelas aprovadas
       const { data: avaliacoes, error } = await supabase
         .from('avaliacoes_cadastradas' as any)
-        .select('nome_profissional, profissional_id, data_hora_cadastro')
+        .select('profissional_id, data_hora_cadastro')
         .eq('status', 'aprovada')
         .not('data_aprovacao', 'is', null);
 
@@ -63,13 +64,9 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
 
       // Criar mapa profissionalId → categoria
       const idToCategory = new Map<number, string>();
-      const idToName = new Map<number, string>();
       activeProfessionals.forEach((prof) => {
         if (prof.categoria) {
           idToCategory.set(prof.profissionalId, prof.categoria.trim());
-        }
-        if (prof.nome_profissional) {
-          idToName.set(prof.profissionalId, prof.nome_profissional);
         }
       });
 
@@ -98,10 +95,6 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
         const manausDate = getManausDate(dataHoraCadastro);
         if (manausDate < startDate || manausDate > endDate) return;
 
-        // Usar nome_profissional da avaliação
-        const nomeProfissional = av.nome_profissional;
-        if (!nomeProfissional) return;
-
         // Mapear para categoria do resultado
         let categoryMap: Map<string, number> | null = null;
         switch (categoria) {
@@ -121,8 +114,11 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
 
         if (!categoryMap) return;
 
-        const currentCount = categoryMap.get(nomeProfissional) || 0;
-        categoryMap.set(nomeProfissional, currentCount + 1);
+        // Chave = profissionalId (mesma chave da associacao de servicos).
+        // nome_profissional na avaliacao e apenas um snapshot historico.
+        const key = String(profId);
+        const currentCount = categoryMap.get(key) || 0;
+        categoryMap.set(key, currentCount + 1);
       });
 
       console.log("Estrelas processadas:", {

@@ -30,7 +30,7 @@ export function useDashboardData() {
   const {
     activeProfessionals,
     getProfessionalsByCategory,
-    profLookup,
+    profById,
     loading: profsLoading,
     fetchActiveProfessionals
   } = useActiveProfessionals();
@@ -45,7 +45,7 @@ export function useDashboardData() {
 
   const { hairData, invalidTreatments } = useHairTreatmentData(
     allServicesData, cabeloProfessionals, starsData.cabelo,
-    rules.cabelo, manufacturerData, profLookup
+    rules.cabelo, manufacturerData, profById
   );
   const manicureData = useManicurePedicureData(allServicesData, unhasProfessionals, starsData.unhas, rules.unhas);
   const esteticaData = useEsteticaData(allServicesData, esteticaProfessionals, starsData.estetica, rules.estetica);
@@ -57,7 +57,7 @@ export function useDashboardData() {
     professionalDetails,
     loading: detailsLoading,
     selectProfessional
-  } = useProfessionalDetails(rules, manufacturerData, profLookup, starsData);
+  } = useProfessionalDetails(rules, manufacturerData, profById, starsData);
 
   // Fetch data on initial load
   useEffect(() => {

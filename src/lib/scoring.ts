@@ -2,12 +2,36 @@ import type { CategoryKey, CategoryRules, SpecialServiceMatch } from "@/lib/rule
 
 /** Formato bruto de uma linha de trinks_services usada pelo scoring. */
 export interface ServiceRecord {
+  /** Chave de associacao com o profissional (id do espaco E, TEXT). */
+  profissionalid?: string | null;
+  /** Apenas exibicao/diagnostico — NAO usar para associar servico a profissional. */
   professional?: string | null;
   service_name?: string | null;
   category?: string | null;
   client_name?: string | null;
   service_date?: string | null;
   value?: number | string | null;
+}
+
+/**
+ * Profissional da categoria: `id` e a chave de associacao (profissionais_ativos.profissionalId
+ * convertido para string) e `name` e apenas o rotulo exibido.
+ */
+export interface RankedProfessional {
+  id: string;
+  name: string;
+}
+
+/**
+ * Normaliza a chave de associacao vinda do banco (TEXT em trinks_services,
+ * INTEGER em profissionais_ativos) para uma forma unica: string com trim.
+ * Retorna null quando nao ha id — linhas sem id ficam FORA do ranking
+ * (produtos de balcao/payload sem id). Nao existe fallback por nome.
+ */
+export function normalizeProfessionalId(value: string | number | null | undefined): string | null {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized === "" ? null : normalized;
 }
 
 /**
@@ -55,6 +79,9 @@ export interface ScoredService {
 }
 
 export interface PointsRankingEntry {
+  /** Chave de associacao (profissionalId como string). */
+  professionalId: string;
+  /** Nome de exibicao. */
   professional: string;
   points: number;
   services: ScoredService[];
@@ -68,7 +95,8 @@ export interface PointsRankingEntry {
 
 export interface PointsRankingInput {
   categoryServices: ServiceRecord[];
-  categoryProfessionals: string[];
+  categoryProfessionals: RankedProfessional[];
+  /** Chaveado por profissionalId (string), nao por nome. */
   starsByProfessional: Map<string, number>;
   rules: CategoryRules;
   categoryKey: CategoryKey;
@@ -82,8 +110,9 @@ interface Accumulator extends PointsRankingEntry {
   clientDays: Set<string>;
 }
 
-function createEntry(professional: string): Accumulator {
+function createEntry(professionalId: string, professional: string): Accumulator {
   return {
+    professionalId,
     professional,
     points: 0,
     services: [],
@@ -112,20 +141,21 @@ export function computePointsRanking(input: PointsRankingInput): PointsRankingEn
     isSpecialServiceValid,
   } = input;
 
+  // Acumuladores chaveados por profissionalId — o nome e so rotulo.
   const accumulators = new Map<string, Accumulator>();
 
-  for (const professional of categoryProfessionals) {
-    accumulators.set(professional, createEntry(professional));
+  for (const { id, name } of categoryProfessionals) {
+    accumulators.set(id, createEntry(id, name));
   }
 
   for (const service of categoryServices) {
-    const professional = service.professional;
-    if (!professional) continue;
+    const professionalId = normalizeProfessionalId(service.profissionalid);
+    if (!professionalId) continue;
 
-    let entry = accumulators.get(professional);
+    let entry = accumulators.get(professionalId);
     if (!entry) {
-      entry = createEntry(professional);
-      accumulators.set(professional, entry);
+      entry = createEntry(professionalId, service.professional || professionalId);
+      accumulators.set(professionalId, entry);
     }
 
     entry.serviceCount += 1;
@@ -165,11 +195,11 @@ export function computePointsRanking(input: PointsRankingInput): PointsRankingEn
     }
   }
 
-  starsByProfessional.forEach((starCount, professional) => {
-    let entry = accumulators.get(professional);
+  starsByProfessional.forEach((starCount, professionalId) => {
+    let entry = accumulators.get(professionalId);
     if (!entry) {
-      entry = createEntry(professional);
-      accumulators.set(professional, entry);
+      entry = createEntry(professionalId, professionalId);
+      accumulators.set(professionalId, entry);
     }
 
     const starPoints = rules.starsCountInScore ? starCount * rules.starPointValue : 0;

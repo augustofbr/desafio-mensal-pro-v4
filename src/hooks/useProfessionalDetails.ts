@@ -10,6 +10,7 @@ import { matchesSpecialService } from "@/lib/scoring";
 import { ManufacturerData } from "@/hooks/useManufacturerData";
 import { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
+/** Mapas chaveados por profissionalId (string). */
 interface StarsByCategory {
   cabelo: Map<string, number>;
   unhas: Map<string, number>;
@@ -20,7 +21,7 @@ interface StarsByCategory {
 export function useProfessionalDetails(
   rules: RulesVersion,
   manufacturerData: ManufacturerData | null,
-  profLookup: Map<string, ProfissionalAtivo>,
+  profById: Map<string, ProfissionalAtivo>,
   starsData: StarsByCategory
 ) {
   const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null);
@@ -30,8 +31,12 @@ export function useProfessionalDetails(
   const { toast } = useToast();
   const { getFilteredDateRange } = useDateFilter();
 
-  const fetchProfessionalDetails = useCallback(async (professional: string, category: string | null) => {
-    if (!professional) {
+  const fetchProfessionalDetails = useCallback(async (
+    professionalId: string,
+    professional: string,
+    category: string | null
+  ) => {
+    if (!professionalId) {
       setProfessionalDetails(null);
       return;
     }
@@ -39,10 +44,11 @@ export function useProfessionalDetails(
     try {
       setLoading(true);
 
+      // Associacao por id — o nome so entra no titulo do modal.
       const { data: servicesData, error: servicesError } = await supabase
         .from('trinks_services')
         .select('*')
-        .eq('professional', professional);
+        .eq('profissionalid', professionalId);
 
       if (servicesError) {
         console.error("Error fetching professional services:", servicesError);
@@ -63,8 +69,9 @@ export function useProfessionalDetails(
         }
 
         const starCategoryKey = (category?.toLowerCase() || '') as keyof StarsByCategory;
-        const starCount = starsData[starCategoryKey]?.get(professional) || 0;
-        const profissionalId = profLookup.get(professional)?.profissionalId;
+        const starCount = starsData[starCategoryKey]?.get(professionalId) || 0;
+        // manufacturerData indexa por profissionalId numerico (profissionais_ativos.profissionalId)
+        const profIdNumber = profById.get(professionalId)?.profissionalId;
 
         let rawServices: any[] = [];
         let serviceSummary: any = {};
@@ -80,8 +87,8 @@ export function useProfessionalDetails(
             const serviceName = service.service_name || "Unknown Service";
             let isValid = true;
 
-            if (categoryRules.manufacturerConstraints && manufacturerData && profissionalId) {
-              isValid = manufacturerData.isTreatmentAllowed(serviceName, profissionalId);
+            if (categoryRules.manufacturerConstraints && manufacturerData && profIdNumber) {
+              isValid = manufacturerData.isTreatmentAllowed(serviceName, profIdNumber);
             }
 
             if (isValid) {
@@ -147,8 +154,8 @@ export function useProfessionalDetails(
             hairClientPoints: clientServices.reduce((sum: number, s: any) => sum + s.points, 0),
             invalidTreatmentCount: professionalData.invalidTreatmentCount,
             invalidTreatments: invalidTreatmentsList,
-            allowedManufacturers: (manufacturerData && profissionalId)
-              ? manufacturerData.getProfessionalAllowedManufacturers(profissionalId)
+            allowedManufacturers: (manufacturerData && profIdNumber)
+              ? manufacturerData.getProfessionalAllowedManufacturers(profIdNumber)
               : [],
             starCount,
             starPoints
@@ -453,13 +460,17 @@ export function useProfessionalDetails(
     } finally {
       setLoading(false);
     }
-  }, [toast, getFilteredDateRange, rules, manufacturerData, profLookup, starsData]);
+  }, [toast, getFilteredDateRange, rules, manufacturerData, profById, starsData]);
 
-  const selectProfessional = useCallback((professional: string | null, category: string | null) => {
+  const selectProfessional = useCallback((
+    professionalId: string | null,
+    professional: string | null,
+    category: string | null
+  ) => {
     setSelectedProfessional(professional);
     setSelectedCategory(category);
-    if (professional) {
-      fetchProfessionalDetails(professional, category);
+    if (professionalId) {
+      fetchProfessionalDetails(professionalId, professional || "", category);
     } else {
       setProfessionalDetails(null);
     }

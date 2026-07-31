@@ -7,7 +7,7 @@ import { CategoryRules } from "@/lib/rulesConfig";
 interface ProfessionalRankingProps {
   data: any[];
   categoryKey: string;
-  onSelectProfessional: (professional: string) => void;
+  onSelectProfessional: (professionalId: string, professional: string) => void;
   rules: CategoryRules;
 }
 
@@ -85,7 +85,7 @@ export default function ProfessionalRanking({
 
           return (
             <div
-              key={item.professional}
+              key={item.professionalId ?? item.professional}
               className={`
                 ranking-card-touch rounded-xl p-2.5 sm:p-3.5 cursor-pointer
                 animate-fade-slide-up stagger-${Math.min(index + 1, 8)}
@@ -94,7 +94,7 @@ export default function ProfessionalRanking({
                   : "bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm"
                 }
               `}
-              onClick={() => onSelectProfessional(item.professional)}
+              onClick={() => onSelectProfessional(item.professionalId, item.professional)}
             >
               <div className="flex items-start sm:items-center gap-1.5 sm:gap-2 min-w-0">
                 {/* Position badge */}

@@ -14,7 +14,7 @@ interface DataRankingsProps {
   maquiagemData: any[];
   loading: boolean;
   rules: RulesVersion;
-  onSelectProfessional: (professional: string, category: string) => void;
+  onSelectProfessional: (professionalId: string, professional: string, category: string) => void;
   professionalDetails: any;
   selectedCategory: string;
   showDetails: boolean;
@@ -111,7 +111,9 @@ export default function DataRankings({
                   <ProfessionalRanking
                     data={category.data}
                     categoryKey={category.key}
-                    onSelectProfessional={(professional) => onSelectProfessional(professional, category.key)}
+                    onSelectProfessional={(professionalId, professional) =>
+                      onSelectProfessional(professionalId, professional, category.key)
+                    }
                     rules={getCategoryRules(rules, category.key)}
                   />
                 )}

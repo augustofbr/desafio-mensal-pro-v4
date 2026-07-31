@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import type { ProfissionalAtivo, CategoriaAtiva } from "@/types/profissionaisAtivos";
+import { normalizeProfessionalId, type RankedProfessional } from "@/lib/scoring";
 
 export function useActiveProfessionals() {
   const [activeProfessionals, setActiveProfessionals] = useState<ProfissionalAtivo[]>([]);
@@ -82,7 +83,9 @@ export function useActiveProfessionals() {
       if (allConsistent && checkedCount > 0) {
         console.log(`✅ Validação de IDs: todos os ${checkedCount} profissionais verificados são consistentes`);
       } else if (!allConsistent) {
-        console.warn("⚠️ Inconsistências encontradas nos IDs — usando matching por nome");
+        // Diagnostico apenas: a associacao profissional↔servico e feita por
+        // profissionalid, entao um nome divergente nao afeta a pontuacao.
+        console.warn("⚠️ Nome divergente entre profissionais_ativos e trinks_services (associação segue por profissionalid)");
       }
 
       setActiveProfessionals(typedProfData);
@@ -110,6 +113,19 @@ export function useActiveProfessionals() {
     return map;
   }, [activeProfessionals]);
 
+  // Lookup Map: profissionalId (string) → ProfissionalAtivo.
+  // Esta e a chave de associacao com trinks_services.profissionalid.
+  const profById = useMemo(() => {
+    const map = new Map<string, ProfissionalAtivo>();
+    activeProfessionals.forEach((prof) => {
+      const id = normalizeProfessionalId(prof.profissionalId);
+      if (id) {
+        map.set(id, prof);
+      }
+    });
+    return map;
+  }, [activeProfessionals]);
+
   const isActiveProfessional = useCallback((name: string): boolean => {
     return profLookup.has(name);
   }, [profLookup]);
@@ -118,15 +134,18 @@ export function useActiveProfessionals() {
     return profLookup.get(name)?.categoria ?? null;
   }, [profLookup]);
 
-  const getProfessionalsByCategory = useCallback((categoria: CategoriaAtiva): string[] => {
+  /** Profissionais da categoria como pares { id (chave), name (exibicao) }. */
+  const getProfessionalsByCategory = useCallback((categoria: CategoriaAtiva): RankedProfessional[] => {
     return activeProfessionals
       .filter((p) => p.categoria === categoria && p.nome_profissional)
-      .map((p) => p.nome_profissional!);
+      .map((p) => ({ id: String(p.profissionalId), name: p.nome_profissional! }))
+      .filter((p) => p.id !== "");
   }, [activeProfessionals]);
 
   return {
     activeProfessionals,
     profLookup,
+    profById,
     loading,
     isActiveProfessional,
     getProfessionalCategory,

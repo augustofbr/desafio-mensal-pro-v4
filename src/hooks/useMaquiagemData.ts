@@ -3,8 +3,35 @@ import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
 import { CategoryRules } from "@/lib/rulesConfig";
+import { normalizeProfessionalId, RankedProfessional } from "@/lib/scoring";
 
-export function useMaquiagemData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
+interface MaquiagemServiceEntry {
+  date: string;
+  name: string;
+  points: number;
+  type: string;
+  clientName?: string | null;
+  value?: number;
+}
+
+/** Acumuladores agrupados por profissionalId. */
+interface MaquiagemRevenueAccumulator {
+  professionalId: string;
+  professional: string;
+  totalRevenue: number;
+  totalServices: number;
+  services: MaquiagemServiceEntry[];
+}
+
+interface MaquiagemPointsAccumulator {
+  professionalId: string;
+  professional: string;
+  points: number;
+  totalServices: number;
+  services: MaquiagemServiceEntry[];
+}
+
+export function useMaquiagemData(allServicesData: any[], categoryProfessionals: RankedProfessional[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
   const [maquiagemData, setMaquiagemData] = useState<any[]>([]);
   const { getFilteredDateRange } = useDateFilter();
 
@@ -17,27 +44,35 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
 
     console.log("Processing maquiagem data:", data.length, "services");
 
+    // Nome de exibicao por id — o agrupamento e sempre por profissionalId.
+    const nameById = new Map(categoryProfessionals.map((p) => [p.id, p.name]));
+
     if (rules.scoringModel === 'revenue-points') {
       // V2: Revenue-based points scoring
-      const professionalData = data.reduce((acc: any, service: any) => {
-        const professional = service.professional;
+      // Map (e nao objeto) para preservar a ordem de insercao: chaves de id sao
+      // numericas e um objeto as reordenaria, mudando o desempate do ranking.
+      const professionalData = data.reduce((acc: Map<string, MaquiagemRevenueAccumulator>, service: any) => {
+        const professionalId = normalizeProfessionalId(service.profissionalid);
 
-        if (!professional) return acc;
+        if (!professionalId) return acc;
 
-        if (!acc[professional]) {
-          acc[professional] = {
-            professional,
+        let prof = acc.get(professionalId);
+        if (!prof) {
+          prof = {
+            professionalId,
+            professional: nameById.get(professionalId) || service.professional || professionalId,
             totalRevenue: 0,
             totalServices: 0,
             services: [],
           };
+          acc.set(professionalId, prof);
         }
 
         const serviceValue = parseFloat(service.value || '0');
-        acc[professional].totalRevenue += serviceValue;
-        acc[professional].totalServices += 1;
+        prof.totalRevenue += serviceValue;
+        prof.totalServices += 1;
 
-        acc[professional].services.push({
+        prof.services.push({
           date: convertDateFormat(service.service_date),
           name: service.service_name || "Serviço de Maquiagem",
           points: 0,
@@ -47,22 +82,23 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
         });
 
         return acc;
-      }, {});
+      }, new Map<string, MaquiagemRevenueAccumulator>());
 
       // Add professionals who only have stars (with 0 revenue)
-      starsByProfessional.forEach((starCount, professional) => {
-        if (!professionalData[professional]) {
-          professionalData[professional] = {
-            professional,
+      starsByProfessional.forEach((starCount, professionalId) => {
+        if (!professionalData.has(professionalId)) {
+          professionalData.set(professionalId, {
+            professionalId,
+            professional: nameById.get(professionalId) || professionalId,
             totalRevenue: 0,
             totalServices: 0,
             services: [],
-          };
+          });
         }
       });
 
-      const cleanedData = Object.values(professionalData).map((prof: any) => {
-        const starCount = starsByProfessional.get(prof.professional) || 0;
+      const cleanedData = Array.from(professionalData.values()).map((prof: any) => {
+        const starCount = starsByProfessional.get(prof.professionalId) || 0;
         const revenuePoints = Math.floor(prof.totalRevenue / rules.revenuePointConversion!);
         const starPoints = starCount * rules.starPointValue;
         const totalPoints = revenuePoints + starPoints;
@@ -70,6 +106,7 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
         const revenuePercentage = Math.round(((prof.totalRevenue / minRevenue) * 100) * 10) / 10;
 
         return {
+          professionalId: prof.professionalId,
           professional: prof.professional,
           points: totalPoints,
           services: prof.services,
@@ -90,25 +127,28 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
       setMaquiagemData(sortedData);
     } else {
       // V1: Points-based scoring (1 point per service, no deduplication)
-      const professionalPoints = data.reduce((acc: any, service: any) => {
-        const professional = service.professional;
+      const professionalPoints = data.reduce((acc: Map<string, MaquiagemPointsAccumulator>, service: any) => {
+        const professionalId = normalizeProfessionalId(service.profissionalid);
 
-        if (!professional) return acc;
+        if (!professionalId) return acc;
 
-        if (!acc[professional]) {
-          acc[professional] = {
-            professional,
+        let prof = acc.get(professionalId);
+        if (!prof) {
+          prof = {
+            professionalId,
+            professional: nameById.get(professionalId) || service.professional || professionalId,
             points: 0,
             services: [],
             totalServices: 0
           };
+          acc.set(professionalId, prof);
         }
 
         // Pontuação: 1 ponto por serviço realizado (sem deduplicação)
-        acc[professional].points += 1;
-        acc[professional].totalServices += 1;
+        prof.points += 1;
+        prof.totalServices += 1;
 
-        acc[professional].services.push({
+        prof.services.push({
           date: convertDateFormat(service.service_date),
           name: service.service_name || "Serviço de Maquiagem",
           points: 1,
@@ -117,23 +157,25 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
         });
 
         return acc;
-      }, {});
+      }, new Map<string, MaquiagemPointsAccumulator>());
 
       // Add professionals who only have stars (with 0 points)
-      starsByProfessional.forEach((starCount, professional) => {
-        if (!professionalPoints[professional]) {
-          professionalPoints[professional] = {
-            professional,
+      starsByProfessional.forEach((starCount, professionalId) => {
+        if (!professionalPoints.has(professionalId)) {
+          professionalPoints.set(professionalId, {
+            professionalId,
+            professional: nameById.get(professionalId) || professionalId,
             points: 0,
             services: [],
             totalServices: 0
-          };
+          });
         }
       });
 
-      const cleanedData = Object.values(professionalPoints).map((prof: any) => {
-        const starCount = starsByProfessional.get(prof.professional) || 0;
+      const cleanedData = Array.from(professionalPoints.values()).map((prof: any) => {
+        const starCount = starsByProfessional.get(prof.professionalId) || 0;
         return {
+          professionalId: prof.professionalId,
           professional: prof.professional,
           points: prof.points,
           services: prof.services,
@@ -161,9 +203,11 @@ export function useMaquiagemData(allServicesData: any[], categoryProfessionals: 
       const filteredData = filterDataByDateRange(allServicesData, dateRange);
 
       // Filter services by professionals in this category
-      const categoryServices = filteredData.filter(
-        service => categoryProfessionals.includes(service.professional)
-      );
+      const categoryIds = new Set(categoryProfessionals.map((p) => p.id));
+      const categoryServices = filteredData.filter(service => {
+        const id = normalizeProfessionalId(service.profissionalid);
+        return id != null && categoryIds.has(id);
+      });
 
       console.log("Maquiagem services found:", categoryServices.length, "from", categoryProfessionals.length, "professionals");
 

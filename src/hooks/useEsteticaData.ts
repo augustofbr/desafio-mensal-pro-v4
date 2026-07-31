@@ -3,9 +3,26 @@ import { convertDateFormat } from "@/lib/utils";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import { filterDataByDateRange } from "@/lib/dateUtils";
 import { CategoryRules } from "@/lib/rulesConfig";
-import { computePointsRanking, ServiceRecord } from "@/lib/scoring";
+import { computePointsRanking, normalizeProfessionalId, RankedProfessional, ServiceRecord } from "@/lib/scoring";
 
-export function useEsteticaData(allServicesData: any[], categoryProfessionals: string[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
+interface EsteticaServiceEntry {
+  date: string;
+  name: string;
+  points: number;
+  type: string;
+  value: number;
+}
+
+/** Acumulador do modelo de faturamento (pre-V4), agrupado por profissionalId. */
+interface EsteticaRevenueAccumulator {
+  professionalId: string;
+  professional: string;
+  totalRevenue: number;
+  services: EsteticaServiceEntry[];
+  serviceCount: number;
+}
+
+export function useEsteticaData(allServicesData: any[], categoryProfessionals: RankedProfessional[], starsByProfessional: Map<string, number> = new Map(), rules: CategoryRules) {
   const [esteticaData, setEsteticaData] = useState<any[]>([]);
   const { getFilteredDateRange } = useDateFilter();
 
@@ -18,25 +35,33 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
 
     console.log("Processing estética data:", data.length, "services");
 
-    const professionalRevenue = data.reduce((acc: any, service: any) => {
-      const professional = service.professional;
+    // Nome de exibicao por id — o agrupamento e sempre por profissionalId.
+    const nameById = new Map(categoryProfessionals.map((p) => [p.id, p.name]));
+
+    // Map (e nao objeto) para preservar a ordem de insercao: chaves de id sao
+    // numericas e um objeto as reordenaria, mudando o desempate do ranking.
+    const professionalRevenue = data.reduce((acc: Map<string, EsteticaRevenueAccumulator>, service: any) => {
+      const professionalId = normalizeProfessionalId(service.profissionalid);
       const revenue = parseFloat(service.value) || 0;
 
-      if (!professional) return acc;
+      if (!professionalId) return acc;
 
-      if (!acc[professional]) {
-        acc[professional] = {
-          professional,
+      let prof = acc.get(professionalId);
+      if (!prof) {
+        prof = {
+          professionalId,
+          professional: nameById.get(professionalId) || service.professional || professionalId,
           totalRevenue: 0,
           services: [],
           serviceCount: 0
         };
+        acc.set(professionalId, prof);
       }
 
-      acc[professional].totalRevenue += revenue;
-      acc[professional].serviceCount += 1;
+      prof.totalRevenue += revenue;
+      prof.serviceCount += 1;
 
-      acc[professional].services.push({
+      prof.services.push({
         date: convertDateFormat(service.service_date),
         name: service.service_name,
         points: 1,
@@ -45,22 +70,23 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
       });
 
       return acc;
-    }, {});
+    }, new Map<string, EsteticaRevenueAccumulator>());
 
     // Add professionals who only have stars (with 0 revenue)
-    starsByProfessional.forEach((starCount, professional) => {
-      if (!professionalRevenue[professional]) {
-        professionalRevenue[professional] = {
-          professional,
+    starsByProfessional.forEach((starCount, professionalId) => {
+      if (!professionalRevenue.has(professionalId)) {
+        professionalRevenue.set(professionalId, {
+          professionalId,
+          professional: nameById.get(professionalId) || professionalId,
           totalRevenue: 0,
           services: [],
           serviceCount: 0
-        };
+        });
       }
     });
 
-    const cleanedData = Object.values(professionalRevenue).map((prof: any) => {
-      const starCount = starsByProfessional.get(prof.professional) || 0;
+    const cleanedData = Array.from(professionalRevenue.values()).map((prof: any) => {
+      const starCount = starsByProfessional.get(prof.professionalId) || 0;
       const revenuePercentage = Math.round(((prof.totalRevenue / rules.qualificationGoals.minRevenue!) * 100) * 10) / 10;
 
       if (rules.scoringModel === 'revenue-points') {
@@ -69,6 +95,7 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
         const totalPoints = revenuePoints + starPoints;
 
         return {
+          professionalId: prof.professionalId,
           professional: prof.professional,
           totalRevenue: prof.totalRevenue,
           revenuePercentage,
@@ -83,6 +110,7 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
 
       // V1: revenue-percentage mode
       return {
+        professionalId: prof.professionalId,
         professional: prof.professional,
         totalRevenue: prof.totalRevenue,
         revenuePercentage,
@@ -134,9 +162,11 @@ export function useEsteticaData(allServicesData: any[], categoryProfessionals: s
   useEffect(() => {
     const dateRange = getFilteredDateRange();
     const filteredData = filterDataByDateRange(allServicesData || [], dateRange);
-    const categoryServices = filteredData.filter(
-      (service: any) => categoryProfessionals.includes(service.professional)
-    );
+    const categoryIds = new Set(categoryProfessionals.map((p) => p.id));
+    const categoryServices = filteredData.filter((service: any) => {
+      const id = normalizeProfessionalId(service.profissionalid);
+      return id != null && categoryIds.has(id);
+    });
 
     if (rules.scoringModel === 'points') {
       if (categoryServices.length === 0 && starsByProfessional.size === 0 && categoryProfessionals.length === 0) {
