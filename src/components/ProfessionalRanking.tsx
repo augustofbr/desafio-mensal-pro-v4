@@ -1,7 +1,7 @@
 
-import { getCurrentMonthName } from "@/lib/utils";
 import { Star, Trophy, AlertTriangle } from "lucide-react";
 import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
+import { calcularPosicoes } from "@/lib/posicoes";
 import { CategoryRules } from "@/lib/rulesConfig";
 
 interface ProfessionalRankingProps {
@@ -59,17 +59,26 @@ export default function ProfessionalRanking({
   onSelectProfessional,
   rules,
 }: ProfessionalRankingProps) {
-  const currentMonth = getCurrentMonthName();
   const colors = CATEGORY_COLORS[categoryKey] || CATEGORY_COLORS[PROF_CATEGORIES.CABELO];
 
-  if (data.length === 0) {
+  // `points` e o valor pelo qual TODOS os modelos ordenam (no revenue-percentage
+  // ele ja e o proprio percentual da meta), o mesmo que a Corrida usa.
+  const valores = data.map(item =>
+    typeof item?.points === 'number' && Number.isFinite(item.points) ? item.points : 0
+  );
+  const posicoes = calcularPosicoes(valores);
+  // Todo mundo zerado nao e empate no 1o lugar: e uma corrida que ainda nao
+  // comecou. Sem isso o mes recem-aberto entrega podio a equipe inteira.
+  const corridaComecou = valores.some(valor => valor > 0);
+
+  if (data.length === 0 || !corridaComecou) {
     return (
       <div className="text-center py-8">
         <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
           <Trophy className="h-6 w-6 text-gray-300" />
         </div>
         <p className="text-gray-500 font-body text-sm">
-          Nenhum profissional com pontuação em {currentMonth}.
+          Nenhum atendimento na categoria neste período.
         </p>
       </div>
     );
@@ -78,7 +87,10 @@ export default function ProfessionalRanking({
   return (
     <div className="space-y-2.5">
         {data.map((item, index) => {
-          const isFirst = index === 0;
+          const posicao = posicoes[index];
+          // Empate na lideranca destaca as duas — a mesma regra da Corrida, que
+          // repete a medalha.
+          const isFirst = posicao === 1;
           const score = rules.scoringModel === 'revenue-percentage'
             ? `${item.revenuePercentage}%`
             : `${item.points} Pts`;
@@ -105,7 +117,7 @@ export default function ProfessionalRanking({
                     : "bg-gray-100 text-gray-500"
                   }
                 `}>
-                  {index + 1}º
+                  {posicao}º
                 </div>
 
                 {/* Content wrapper - two lines on mobile, single line on desktop */}

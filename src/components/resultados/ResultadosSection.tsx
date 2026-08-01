@@ -9,6 +9,7 @@ import {
   getCategoryDisplayName,
   isCategoryActive,
 } from "@/lib/categoryDisplayNames";
+import { calcularPosicoes } from "@/lib/posicoes";
 import { getCategoryRules, type RulesVersion } from "@/lib/rulesConfig";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import type { ServicoDoDia } from "@/lib/semana";
@@ -40,23 +41,6 @@ const ORDEM_CATEGORIAS: string[] = [
 function numeroDoEntry(entry: Record<string, unknown>, campo: string): number {
   const valor = entry[campo];
   return typeof valor === "number" && Number.isFinite(valor) ? valor : 0;
-}
-
-/**
- * Posicao 1-based do entry dentro do ranking ja ordenado.
- * Empate de pontos repete a posicao (1, 1, 3...) — mesma regra da Corrida.
- */
-function posicaoNoRanking(
-  entries: Record<string, unknown>[],
-  indiceAlvo: number
-): number {
-  let posicao = 1;
-  for (let i = 1; i <= indiceAlvo; i++) {
-    if (numeroDoEntry(entries[i], "points") !== numeroDoEntry(entries[i - 1], "points")) {
-      posicao = i + 1;
-    }
-  }
-  return posicao;
 }
 
 /**
@@ -154,9 +138,14 @@ export default function ResultadosSection({
       return { entry: null, posicao: null, liderPontos, servicos };
     }
 
+    // Mesma regra de empate do ranking e da Corrida (1, 1, 3...).
+    const posicoes = calcularPosicoes(
+      entries.map((item) => numeroDoEntry(item, "points"))
+    );
+
     return {
       entry: entries[indice],
-      posicao: posicaoNoRanking(entries, indice),
+      posicao: posicoes[indice],
       liderPontos,
       servicos,
     };

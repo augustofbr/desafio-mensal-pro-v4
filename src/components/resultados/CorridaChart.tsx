@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { calcularPosicoes } from "@/lib/posicoes";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
 
@@ -80,25 +81,19 @@ export function CorridaChart({ entries, perfilId, unidade, metaValor }: CorridaC
     // batido nada.
     const topo = meta !== null ? Math.max(maior, meta) : maior;
 
-    let posicaoAnterior = 0;
-    let valorAnterior: number | null = null;
+    // Empate mantem a posicao e quem vem depois pula os lugares ocupados
+    // (1, 1, 3) — regra compartilhada com o ranking do dashboard.
+    const posicoes = calcularPosicoes(valores);
 
     const montadas = entries.map((entry, indice) => {
       const valor = valores[indice];
       const id = normalizeProfessionalId(entry.professionalId as string | number | null | undefined);
-
-      // Empate mantem a posicao do anterior; quem vem depois pula os lugares
-      // ocupados (1, 1, 3) — mesma regra do ranking do dashboard.
-      const posicao = valorAnterior !== null && valor === valorAnterior ? posicaoAnterior : indice + 1;
-      posicaoAnterior = posicao;
-      valorAnterior = valor;
-
       const nome = textoDoEntry(entry, "professional") || (id ?? "Sem nome");
 
       return {
         chave: id ?? `sem-id-${indice}`,
         nome,
-        posicao,
+        posicao: posicoes[indice],
         valorTexto: percentual
           ? `${FORMATO_DECIMAL.format(valor)}%`
           : FORMATO_INTEIRO.format(valor),
