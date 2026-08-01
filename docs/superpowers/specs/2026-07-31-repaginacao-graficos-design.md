@@ -142,3 +142,10 @@ mesma ordem. `CorridaChart.tsx` foi deletado (política do repo: sem componente 
 **`RegrasDoDesafio` fica entre o ranking e a premiação.** O owner não especificou o slot; a decisão
 do orquestrador é mantê-la logo depois do ranking — quem acabou de ler os números é quem pergunta
 como eles são contados —, deixando a premiação como o fecho da página.
+
+**Redesign das seções antigas na linguagem da família `resultados/` (2026-08-01).**
+`PremiacaoPanel` e `DataRankings`/`ProfessionalRanking` foram re-vestidos com a mesma anatomia do
+`MeuCartao`/`MinhaSemana`: `Card` do tema, avatares de inicial, números em `.font-mono-num`,
+`Progress` para metas, alvo de toque ≥ 44px e texto-base ≥ 16px. As paletas hardcoded por categoria
+(azul/vermelho/amarelo/violeta) deram lugar à matiz única da marca, com a identidade da categoria
+dita por texto e badge. Nenhuma mudança de dados, ordenação, posições, medalhas ou seleção.

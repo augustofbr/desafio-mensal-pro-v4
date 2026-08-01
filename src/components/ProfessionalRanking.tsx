@@ -1,8 +1,11 @@
 
 import { Star, Trophy, AlertTriangle } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
 import { calcularPosicoes, medalhaPara } from "@/lib/posicoes";
 import { CategoryRules } from "@/lib/rulesConfig";
+import { cn } from "@/lib/utils";
 
 interface ProfessionalRankingProps {
   data: any[];
@@ -11,47 +14,28 @@ interface ProfessionalRankingProps {
   rules: CategoryRules;
 }
 
-const CATEGORY_COLORS: Record<string, {
-  firstBg: string;
-  firstBorder: string;
-  firstBadgeBg: string;
-  firstBadgeText: string;
-  firstNameText: string;
-  firstScoreText: string;
-}> = {
-  [PROF_CATEGORIES.CABELO]: {
-    firstBg: "bg-blue-50/80",
-    firstBorder: "border-blue-200/60",
-    firstBadgeBg: "bg-white",
-    firstBadgeText: "text-blue-600",
-    firstNameText: "text-blue-900",
-    firstScoreText: "text-blue-700",
-  },
-  [PROF_CATEGORIES.UNHAS]: {
-    firstBg: "bg-red-50/80",
-    firstBorder: "border-red-200/60",
-    firstBadgeBg: "bg-white",
-    firstBadgeText: "text-red-500",
-    firstNameText: "text-red-900",
-    firstScoreText: "text-red-600",
-  },
-  [PROF_CATEGORIES.MAQUIAGEM]: {
-    firstBg: "bg-yellow-50/80",
-    firstBorder: "border-yellow-200/60",
-    firstBadgeBg: "bg-white",
-    firstBadgeText: "text-yellow-600",
-    firstNameText: "text-yellow-900",
-    firstScoreText: "text-yellow-700",
-  },
-  [PROF_CATEGORIES.ESTETICA]: {
-    firstBg: "bg-violet-50/80",
-    firstBorder: "border-violet-200/60",
-    firstBadgeBg: "bg-white",
-    firstBadgeText: "text-violet-600",
-    firstNameText: "text-violet-900",
-    firstScoreText: "text-violet-600",
-  },
-};
+function inicial(nome: string): string {
+  return (Array.from(String(nome ?? "").trim())[0] ?? "?").toUpperCase();
+}
+
+interface MetricaProps {
+  valor: number | string;
+  rotulo: string;
+}
+
+/**
+ * Badge de metrica: o numero em mono, a unidade em texto discreto.
+ * `whitespace-nowrap` porque rotulo longo ("Cronograma Capilar") quebrava
+ * DENTRO da pilula; melhor a pilula inteira descer para a linha de baixo.
+ */
+function Metrica({ valor, rotulo }: MetricaProps) {
+  return (
+    <Badge variant="secondary" className="gap-1 whitespace-nowrap text-sm font-normal">
+      <span className="font-mono-num font-semibold">{valor}</span>
+      <span className="text-muted-foreground">{rotulo}</span>
+    </Badge>
+  );
+}
 
 export default function ProfessionalRanking({
   data,
@@ -59,10 +43,8 @@ export default function ProfessionalRanking({
   onSelectProfessional,
   rules,
 }: ProfessionalRankingProps) {
-  const colors = CATEGORY_COLORS[categoryKey] || CATEGORY_COLORS[PROF_CATEGORIES.CABELO];
-
   // `points` e o valor pelo qual TODOS os modelos ordenam (no revenue-percentage
-  // ele ja e o proprio percentual da meta), o mesmo que a Corrida usa.
+  // ele ja e o proprio percentual da meta).
   const valores = data.map(item =>
     typeof item?.points === 'number' && Number.isFinite(item.points) ? item.points : 0
   );
@@ -73,11 +55,11 @@ export default function ProfessionalRanking({
 
   if (data.length === 0 || !corridaComecou) {
     return (
-      <div className="text-center py-8">
-        <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
-          <Trophy className="h-6 w-6 text-gray-300" />
-        </div>
-        <p className="text-gray-500 font-body text-sm">
+      <div className="py-8 text-center">
+        <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+          <Trophy className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+        </span>
+        <p className="text-base text-muted-foreground">
           Nenhum atendimento na categoria neste período.
         </p>
       </div>
@@ -85,123 +67,131 @@ export default function ProfessionalRanking({
   }
 
   return (
-    <div className="space-y-2.5">
+    <ol className="space-y-2.5">
         {data.map((item, index) => {
           const posicao = posicoes[index];
           // Destaque de lider = medalha de ouro: empate na lideranca destaca as
           // duas, e sem pontuacao ninguem sobe ao podio (medalhaPara devolve
           // null). A regra do "so com valor > 0" mora no helper.
-          const isFirst = medalhaPara(posicao, valores[index]) !== null && posicao === 1;
+          const medalha = medalhaPara(posicao, valores[index]);
+          const isFirst = medalha !== null && posicao === 1;
           const score = rules.scoringModel === 'revenue-percentage'
             ? `${item.revenuePercentage}%`
             : `${item.points} Pts`;
 
           return (
-            <div
-              key={item.professionalId ?? item.professional}
-              className={`
-                ranking-card-touch rounded-xl p-2.5 sm:p-3.5 cursor-pointer
-                animate-fade-slide-up stagger-${Math.min(index + 1, 8)}
-                ${isFirst
-                  ? `${colors.firstBg} border ${colors.firstBorder} shadow-sm`
-                  : "bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm"
-                }
-              `}
-              onClick={() => onSelectProfessional(item.professionalId, item.professional)}
-            >
-              <div className="flex items-start sm:items-center gap-1.5 sm:gap-2 min-w-0">
-                {/* Position badge */}
-                <div className={`
-                  flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full font-mono-num text-xs sm:text-sm font-bold shadow-sm shrink-0
-                  ${isFirst
-                    ? `${colors.firstBadgeBg} ${colors.firstBadgeText}`
-                    : "bg-gray-100 text-gray-500"
-                  }
-                `}>
+            <li key={item.professionalId ?? item.professional}>
+              <button
+                type="button"
+                onClick={() => onSelectProfessional(item.professionalId, item.professional)}
+                className={cn(
+                  "ranking-card-touch flex min-h-[56px] w-full items-center gap-2 rounded-xl border p-2.5 text-left transition-colors sm:gap-3 sm:p-3",
+                  `animate-fade-slide-up stagger-${Math.min(index + 1, 8)}`,
+                  // Hover neutro (mesma decisao do ToggleGroup da MinhaSemana):
+                  // `accent` aqui e o dourado da marca, nao um cinza de hover, e
+                  // no celular ele gruda depois do toque.
+                  isFirst ? "border-primary/40 bg-primary/5" : "bg-card hover:bg-muted/70"
+                )}
+              >
+                <span className="w-7 shrink-0 text-center font-mono-num text-sm font-semibold text-muted-foreground">
                   {posicao}º
-                </div>
+                </span>
 
-                {/* Content wrapper - two lines on mobile, single line on desktop */}
-                <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5">
-                  {/* Name */}
-                  <span className={`font-semibold font-body text-xs sm:text-sm truncate min-w-0 sm:flex-1 ${isFirst ? colors.firstNameText : "text-gray-800"}`}>
-                    {item.professional}
-                  </span>
+                <Avatar className="h-10 w-10 shrink-0">
+                  <AvatarFallback className="text-base font-semibold">
+                    {inicial(item.professional)}
+                  </AvatarFallback>
+                </Avatar>
 
-                  {/* Stats badges - below name on mobile, inline on desktop */}
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-1.5 shrink-0 text-[10px] sm:text-sm">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="flex items-center gap-1.5 text-base font-semibold">
+                    <span className="truncate">{item.professional}</span>
+                    {medalha && (
+                      <span role="img" aria-label={`${posicao}º lugar`} className="shrink-0">
+                        {medalha}
+                      </span>
+                    )}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
                     {item.starCount > 0 && (
                       <>
-                        <span className="inline-flex items-center gap-0.5 font-semibold bg-amber-100 text-amber-800 rounded-full px-1.5 sm:px-2 py-0.5">
-                          <Star className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-amber-500 text-amber-500" />
-                          <span className="font-mono-num">{item.starCount}</span>
-                        </span>
+                        <Badge variant="secondary" className="gap-1 text-sm font-normal">
+                          <Star
+                            className="h-3.5 w-3.5 fill-accent text-accent"
+                            aria-hidden="true"
+                          />
+                          <span className="font-mono-num font-semibold">{item.starCount}</span>
+                        </Badge>
                         {rules.starsCountInScore && (
-                          <span className="inline-flex items-center gap-0.5 font-semibold bg-emerald-100 text-emerald-700 rounded-full px-1.5 sm:px-2 py-0.5">
-                            <span className="font-mono-num">+{item.starCount * rules.starPointValue}</span>
-                            <span className="text-emerald-500 ml-0.5">pts</span>
-                          </span>
+                          <Metrica
+                            valor={`+${item.starCount * rules.starPointValue}`}
+                            rotulo="pts"
+                          />
                         )}
                       </>
                     )}
                     {categoryKey === PROF_CATEGORIES.CABELO && (
                       <>
-                        <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.uniqueClientDays}</span><span className="text-slate-400 ml-0.5">cli</span>
-                        </span>
-                        <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.treatmentServices}</span><span className="text-slate-400 ml-0.5">{rules.specialServiceLabel}</span>
-                        </span>
+                        <Metrica valor={item.uniqueClientDays} rotulo="cli" />
+                        <Metrica
+                          valor={item.treatmentServices}
+                          rotulo={rules.specialServiceLabel}
+                        />
                         {rules.manufacturerConstraints && item.invalidTreatmentCount > 0 && (
-                          <span className="inline-flex items-center gap-0.5 bg-orange-100 text-orange-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                            <AlertTriangle className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-                            <span className="font-mono-num">{item.invalidTreatmentCount}</span>
-                          </span>
+                          <Badge variant="outline" className="gap-1 text-sm font-normal">
+                            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                            <span className="font-mono-num font-semibold">
+                              {item.invalidTreatmentCount}
+                            </span>
+                          </Badge>
                         )}
                       </>
                     )}
                     {categoryKey === PROF_CATEGORIES.UNHAS && (
                       <>
-                        <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.uniqueClientDays}</span><span className="text-slate-400 ml-0.5">cli</span>
-                        </span>
-                        <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.spaServices}</span><span className="text-slate-400 ml-0.5">{rules.specialServiceLabel}</span>
-                        </span>
+                        <Metrica valor={item.uniqueClientDays} rotulo="cli" />
+                        <Metrica valor={item.spaServices} rotulo={rules.specialServiceLabel} />
                       </>
                     )}
                     {categoryKey === PROF_CATEGORIES.MAQUIAGEM && (
-                      <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                        <span className="font-mono-num">{rules.scoringModel === 'revenue-points' ? item.serviceCount ?? item.totalServices : item.totalServices}</span><span className="text-slate-400 ml-0.5">serv</span>
-                      </span>
+                      <Metrica
+                        valor={
+                          rules.scoringModel === 'revenue-points'
+                            ? item.serviceCount ?? item.totalServices
+                            : item.totalServices
+                        }
+                        rotulo="serv"
+                      />
                     )}
                     {categoryKey === PROF_CATEGORIES.ESTETICA && (
                       rules.scoringModel === 'points' ? (
                         <>
-                          <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                            <span className="font-mono-num">{item.uniqueClientDays}</span><span className="text-slate-400 ml-0.5">cli</span>
-                          </span>
-                          <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                            <span className="font-mono-num">{item.specialServices}</span><span className="text-slate-400 ml-0.5">{rules.specialServiceLabel}</span>
-                          </span>
+                          <Metrica valor={item.uniqueClientDays} rotulo="cli" />
+                          <Metrica
+                            valor={item.specialServices}
+                            rotulo={rules.specialServiceLabel}
+                          />
                         </>
                       ) : (
-                        <span className="inline-flex items-center bg-slate-100 text-slate-600 rounded-full px-1.5 sm:px-2 py-0.5 font-medium">
-                          <span className="font-mono-num">{item.serviceCount}</span><span className="text-slate-400 ml-0.5">serv</span>
-                        </span>
+                        <Metrica valor={item.serviceCount} rotulo="serv" />
                       )
                     )}
                   </div>
                 </div>
 
-                {/* Score - right-aligned */}
-                <span className={`font-mono-num text-sm sm:text-lg font-bold shrink-0 ${isFirst ? colors.firstScoreText : "text-gray-700"}`}>
+                <span
+                  className={cn(
+                    "shrink-0 font-mono-num text-base font-bold sm:text-lg",
+                    isFirst ? "text-primary" : "text-foreground"
+                  )}
+                >
                   {score}
                 </span>
-              </div>
-            </div>
+              </button>
+            </li>
           );
         })}
-    </div>
+    </ol>
   );
 }
