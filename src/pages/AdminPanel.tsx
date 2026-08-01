@@ -1,18 +1,27 @@
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, LogOut, Settings, Factory, CalendarOff } from "lucide-react";
+import { ArrowLeft, LogOut, Settings, Factory, CalendarOff, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { RulesManager } from "@/components/admin/RulesManager";
 import { ManufacturerManager } from "@/components/admin/ManufacturerManager";
 import { HolidaysManager } from "@/components/admin/HolidaysManager";
+// auth-kit: identidade e nível de acesso vêm do provider do kit (matriz de
+// páginas em destaque_perfis), não mais de uma lista de emails no bundle.
+import { useAcesso } from "@/auth/acesso";
+import { supabase } from "@/lib/supabase";
+import { PAGES } from "@/lib/pages";
 
 export default function AdminPanel() {
-  const { signOut, user } = useAuth();
+  const { acesso } = useAcesso();
   const navigate = useNavigate();
 
+  // O link para a tela de usuários só aparece para quem alcança aquela página.
+  // Isso é UX: quem forçar a URL bate no RequirePage de dentro de @/pages/Usuarios,
+  // e as mutações de lá passam pela Edge Function, que checa o nível de novo.
+  const podeVerUsuarios = acesso != null && acesso.paginas.usuarios !== "none";
+
   const handleLogout = async () => {
-    await signOut();
+    await supabase.auth.signOut();
   };
 
   return (
@@ -35,8 +44,19 @@ export default function AdminPanel() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
+            {podeVerUsuarios && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(PAGES.usuarios.href)}
+                className="gap-1 text-gray-500 hover:text-gray-700"
+              >
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">{PAGES.usuarios.label}</span>
+              </Button>
+            )}
             <span className="text-xs text-gray-400 font-body hidden sm:block">
-              {user?.email}
+              {acesso?.email}
             </span>
             <Button
               variant="outline"

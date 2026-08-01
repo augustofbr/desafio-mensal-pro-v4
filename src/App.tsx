@@ -10,8 +10,12 @@ import Aniversariantes from "./pages/Aniversariantes";
 import MinhasAvaliacoes from "./pages/MinhasAvaliacoes";
 import AdminPanel from "./pages/AdminPanel";
 import NotFound from "./pages/NotFound";
-import { AuthProvider } from "./contexts/AuthContext";
-import { AdminRouteGuard } from "./components/admin/AdminRouteGuard";
+// auth-kit: o provider monta SÓ na subárvore /admin — as rotas públicas
+// ("/", /aniversariantes, /minhas-avaliacoes) continuam sem auth nenhum,
+// por decisão de produto. Não mova o AuthProvider para fora do <Routes>.
+import { AuthProvider } from "./auth/AuthProvider";
+import { RequirePage } from "./auth/guards";
+import Usuarios from "./pages/Usuarios";
 
 function App() {
   // Create a client
@@ -31,9 +35,19 @@ function App() {
               path="/admin"
               element={
                 <AuthProvider>
-                  <AdminRouteGuard>
+                  <RequirePage chave="admin">
                     <AdminPanel />
-                  </AdminRouteGuard>
+                  </RequirePage>
+                </AuthProvider>
+              }
+            />
+            <Route
+              path="/admin/usuarios"
+              element={
+                // @/pages/Usuarios já se envolve no RequirePage chave="usuarios"
+                // (é assim que o kit entrega a página) — não duplicamos o guard.
+                <AuthProvider>
+                  <Usuarios />
                 </AuthProvider>
               }
             />

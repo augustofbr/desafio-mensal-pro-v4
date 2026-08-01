@@ -9,6 +9,9 @@ import { useAdminRules } from "@/hooks/useAdminRules";
 import { RulesVersionForm } from "./RulesVersionForm";
 import { useToast } from "@/hooks/use-toast";
 import type { RulesVersion, CategoryRules } from "@/lib/rulesConfig";
+// auth-kit: controles de escrita só para quem tem write na página "admin".
+// Isto é UX — quem burlar o DOM esbarra na RLS (policies destaque_can_write_page).
+import { RequireWrite } from "@/auth/guards";
 
 export function RulesManager() {
   const { allVersions, isLoading } = useRulesData();
@@ -90,10 +93,12 @@ export function RulesManager() {
           <h2 className="text-lg font-heading font-semibold text-gray-900">Regras do Desafio</h2>
           <p className="text-sm text-gray-500 font-body">Gerencie as versoes de regras por periodo</p>
         </div>
-        <Button onClick={handleCreate} className="gap-2 font-body">
-          <Plus className="h-4 w-4" />
-          Nova Versao
-        </Button>
+        <RequireWrite chave="admin">
+          <Button onClick={handleCreate} className="gap-2 font-body">
+            <Plus className="h-4 w-4" />
+            Nova Versao
+          </Button>
+        </RequireWrite>
       </div>
 
       {allVersions.length === 0 && (
@@ -118,17 +123,19 @@ export function RulesManager() {
                     {version.validFrom}
                   </Badge>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => handleEdit(version)} title="Editar">
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDuplicate(version)} title="Duplicar">
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(version)} title="Excluir" className="text-red-500 hover:text-red-700">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                <RequireWrite chave="admin">
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => handleEdit(version)} title="Editar">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleDuplicate(version)} title="Duplicar">
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(version)} title="Excluir" className="text-red-500 hover:text-red-700">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </RequireWrite>
               </div>
             </CardHeader>
             <CardContent className="px-4 pb-4">

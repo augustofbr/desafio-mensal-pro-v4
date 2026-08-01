@@ -7,6 +7,9 @@ import { Plus, Trash2, CalendarOff, Loader2 } from "lucide-react";
 import { useHolidays } from "@/hooks/useHolidays";
 import { useAdminHolidays } from "@/hooks/useAdminHolidays";
 import { useToast } from "@/hooks/use-toast";
+// auth-kit: controles de escrita só para quem tem write na página "admin".
+// Isto é UX — quem burlar o DOM esbarra na RLS (policies destaque_can_write_page).
+import { RequireWrite } from "@/auth/guards";
 
 export function HolidaysManager() {
   const { feriados, isLoading } = useHolidays();
@@ -62,6 +65,7 @@ export function HolidaysManager() {
 
       <Card>
         <CardContent className="pt-4 space-y-4">
+          <RequireWrite chave="admin">
           <div className="flex flex-wrap gap-2 items-end">
             <div className="min-w-[160px]">
               <label className="text-xs text-gray-500 font-body">Data</label>
@@ -91,6 +95,7 @@ export function HolidaysManager() {
               Adicionar
             </Button>
           </div>
+          </RequireWrite>
 
           {feriados.length === 0 ? (
             <div className="text-center py-8">
@@ -107,14 +112,16 @@ export function HolidaysManager() {
                     </span>
                     <span className="text-sm font-body text-gray-700">{f.descricao}</span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeleteTarget({ id: f.id, label: `${formatDate(f.data)} - ${f.descricao}` })}
-                    className="text-red-400 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <RequireWrite chave="admin">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeleteTarget({ id: f.id, label: `${formatDate(f.data)} - ${f.descricao}` })}
+                      className="text-red-400 hover:text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </RequireWrite>
                 </div>
               ))}
             </div>

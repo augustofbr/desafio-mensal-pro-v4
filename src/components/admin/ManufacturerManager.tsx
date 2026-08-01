@@ -11,6 +11,9 @@ import { useActiveProfessionals } from "@/hooks/useActiveProfessionals";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+// auth-kit: controles de escrita só para quem tem write na página "admin".
+// Isto é UX — quem burlar o DOM esbarra na RLS (policies destaque_can_write_page).
+import { RequireWrite } from "@/auth/guards";
 
 export function ManufacturerManager() {
   const {
@@ -171,6 +174,7 @@ export function ManufacturerManager() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <RequireWrite chave="admin">
           <div className="flex flex-wrap gap-2 items-end">
             <div className="flex-1 min-w-[180px]">
               <label className="text-xs text-gray-500 font-body">Fabricante existente</label>
@@ -213,6 +217,7 @@ export function ManufacturerManager() {
               Adicionar
             </Button>
           </div>
+          </RequireWrite>
 
           <div className="space-y-3">
             {Object.entries(treatmentsByBrand).map(([brand, items]) => (
@@ -222,12 +227,14 @@ export function ManufacturerManager() {
                   {items.map((t) => (
                     <Badge key={t.id} variant="secondary" className="font-body text-xs gap-1 pr-1">
                       {t.service_name}
-                      <button
-                        onClick={() => setDeleteTarget({ type: "treatment", id: t.id, label: `${t.service_name} (${brand})` })}
-                        className="ml-1 hover:text-red-500 transition-colors"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <RequireWrite chave="admin">
+                        <button
+                          onClick={() => setDeleteTarget({ type: "treatment", id: t.id, label: `${t.service_name} (${brand})` })}
+                          className="ml-1 hover:text-red-500 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </RequireWrite>
                     </Badge>
                   ))}
                 </div>
@@ -245,19 +252,22 @@ export function ManufacturerManager() {
               <User className="h-4 w-4 text-blue-500" />
               Profissional → Marcas Permitidas
             </CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSyncProfessionals}
-              disabled={syncing}
-              className="gap-1.5 font-body text-xs"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-              Sincronizar Profissionais
-            </Button>
+            <RequireWrite chave="admin">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSyncProfessionals}
+                disabled={syncing}
+                className="gap-1.5 font-body text-xs"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+                Sincronizar Profissionais
+              </Button>
+            </RequireWrite>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <RequireWrite chave="admin">
           <div className="flex flex-wrap gap-2 items-end">
             <div className="flex-1 min-w-[180px]">
               <label className="text-xs text-gray-500 font-body">Profissional (Cabelo)</label>
@@ -297,6 +307,7 @@ export function ManufacturerManager() {
               Autorizar
             </Button>
           </div>
+          </RequireWrite>
 
           <div className="space-y-3">
             {cabeloProfessionals.map((prof) => {
@@ -309,12 +320,14 @@ export function ManufacturerManager() {
                       {brands.map((p) => (
                         <Badge key={p.id} variant="outline" className="font-body text-xs gap-1 pr-1">
                           {p.fabricante}
-                          <button
-                            onClick={() => setDeleteTarget({ type: "profBrand", id: p.id, label: `${p.fabricante} de ${prof.nome_profissional}` })}
-                            className="ml-1 hover:text-red-500 transition-colors"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                          <RequireWrite chave="admin">
+                            <button
+                              onClick={() => setDeleteTarget({ type: "profBrand", id: p.id, label: `${p.fabricante} de ${prof.nome_profissional}` })}
+                              className="ml-1 hover:text-red-500 transition-colors"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </RequireWrite>
                         </Badge>
                       ))}
                     </div>
