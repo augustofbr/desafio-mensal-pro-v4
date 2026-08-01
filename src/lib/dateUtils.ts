@@ -25,6 +25,45 @@ export function formatDataHoraManaus(isoString: string): string {
   return manausDateTimeFormatter.format(new Date(isoString));
 }
 
+const manausMesFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Manaus",
+  year: "numeric",
+  month: "2-digit",
+});
+
+function mesDe(date: Date): string {
+  const partes = manausMesFormatter.formatToParts(date);
+  const ano = partes.find((p) => p.type === "year")?.value;
+  const mes = partes.find((p) => p.type === "month")?.value;
+  return `${ano}-${mes}`;
+}
+
+/**
+ * Mes "AAAA-MM" (fuso America/Manaus) de um timestamptz. Existe por causa da
+ * regra de atribuicao das estrelas: `useStarsData` filtra por
+ * `data_hora_cadastro`, entao a estrela pontua no mes em que foi CADASTRADA —
+ * nao no mes em que o admin decidiu. Aprovar uma pendente antiga mexe no
+ * ranking daquele mes, que provavelmente ja foi encerrado e premiado.
+ */
+export function mesManaus(isoString: string): string {
+  return mesDe(new Date(isoString));
+}
+
+export function mesManausAtual(): string {
+  return mesDe(new Date());
+}
+
+const manausMesExtensoFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Manaus",
+  month: "long",
+  year: "numeric",
+});
+
+/** "maio de 2026" — para dizer ao admin QUAL ranking ele vai mexer. */
+export function mesPorExtensoManaus(isoString: string): string {
+  return manausMesExtensoFormatter.format(new Date(isoString));
+}
+
 export function filterDataByDateRange(data: any[], dateRange: DateRange): any[] {
   if (!data || data.length === 0) return [];
   

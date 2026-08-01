@@ -22,7 +22,12 @@ import {
   HISTORICO_LIMITE,
   type AvaliacaoAdmin,
 } from "@/hooks/useAdminAvaliacoes";
-import { formatDataHoraManaus } from "@/lib/dateUtils";
+import {
+  formatDataHoraManaus,
+  mesManaus,
+  mesManausAtual,
+  mesPorExtensoManaus,
+} from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
 // auth-kit: controles de escrita só para quem tem write na página "admin".
 // Isto é UX — quem burlar o DOM esbarra na RLS (policies destaque_can_write_page).
@@ -83,6 +88,12 @@ function mensagemDoErro(erro: unknown): string {
   return erro instanceof Error ? erro.message : String(erro);
 }
 
+/** "1 avaliação" / "3 avaliações" — o caso de 1 é o comum aqui (fila pequena),
+ *  e "1 avaliação(ões) são" fica ruim justamente no caso mais frequente. */
+function plural(n: number, um: string, muitos: string): string {
+  return `${n} ${n === 1 ? um : muitos}`;
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (status === "aprovada") {
     return (
@@ -125,15 +136,26 @@ function Vazio({ texto }: { texto: string }) {
   );
 }
 
-/** Confirmação exigida só para o que atinge várias linhas de uma vez ou desfaz
- *  uma decisão já tomada. Aprovar/recusar uma avaliação isolada sai direto: é a
- *  tarefa repetitiva do painel, e o caminho de volta é o "Devolver para a fila"
- *  do histórico. */
+/**
+ * A estrela pontua no mês em que foi CADASTRADA (`useStarsData` filtra por
+ * `data_hora_cadastro`), não no mês da decisão. Aprovar uma pendente atrasada
+ * mexe no ranking de um mês que provavelmente já foi encerrado e premiado —
+ * por isso essas nunca passam sem aviso.
+ */
+function ehDeMesAnterior(avaliacao: AvaliacaoAdmin): boolean {
+  return mesManaus(avaliacao.data_hora_cadastro) < mesManausAtual();
+}
+
+/** Confirmação exigida para o que atinge várias linhas de uma vez, para o que
+ *  desfaz uma decisão já tomada e para o que mexe em mês fechado. Aprovar/
+ *  recusar uma avaliação isolada do mês corrente sai direto: é a tarefa
+ *  repetitiva do painel, e o caminho de volta é o "Devolver para a fila". */
 type Confirmacao = {
   acao: "aprovar" | "recusar" | "reverter";
   ids: string[];
   titulo: string;
   descricao: string;
+  aviso?: string;
 };
 
 export function AvaliacoesManager() {
@@ -231,6 +253,28 @@ export function AvaliacoesManager() {
     }
   };
 
+  /** Uma avaliação do mês corrente sai direto; uma atrasada passa pelo diálogo,
+   *  porque os 3 pontos caem num ranking que já foi encerrado. */
+  const aprovarUma = (avaliacao: AvaliacaoAdmin) => {
+    if (ehDeMesAnterior(avaliacao)) {
+      setConfirmacao({
+        acao: "aprovar",
+        ids: [avaliacao.id],
+        titulo: "Aprovar avaliação de mês anterior?",
+        descricao: `Esta avaliação foi cadastrada em ${mesPorExtensoManaus(
+          avaliacao.data_hora_cadastro,
+        )}. Os 3 pontos entram no ranking daquele mês, não no de hoje.`,
+        aviso: "O ranking desse mês já está encerrado.",
+      });
+      return;
+    }
+    executarDecisao(
+      [avaliacao.id],
+      "aprovada",
+      `Estrela de ${avaliacao.nome_cliente} aprovada`,
+    );
+  };
+
   const executarReversao = async (ids: string[]) => {
     try {
       await reverter.mutateAsync(ids);
@@ -252,13 +296,13 @@ export function AvaliacoesManager() {
       await executarDecisao(
         ids,
         "aprovada",
-        `${ids.length} avaliação(ões) aprovada(s)`,
+        `${plural(ids.length, "avaliação aprovada", "avaliações aprovadas")}`,
       );
     } else if (acao === "recusar") {
       await executarDecisao(
         ids,
         "rejeitada",
-        `${ids.length} avaliação(ões) recusada(s)`,
+        `${plural(ids.length, "avaliação recusada", "avaliações recusadas")}`,
       );
     } else {
       await executarReversao(ids);
@@ -285,7 +329,7 @@ export function AvaliacoesManager() {
         <h2 className="text-lg font-heading font-semibold text-gray-900">Aprovações</h2>
         <p className="font-body text-sm text-gray-500">
           Estrelas do Google cadastradas pelas clientes. Cada estrela aprovada vale 3
-          pontos no ranking do mês.
+          pontos no mês em que a avaliação foi cadastrada.
         </p>
       </div>
 
@@ -390,14 +434,24 @@ export function AvaliacoesManager() {
                     <div className="flex flex-1 flex-wrap gap-2">
                       <Button
                         size="sm"
-                        onClick={() =>
+                        onClick={() => {
+                          const atrasadas = filtradas.filter(
+                            (a) => selecionadas.has(a.id) && ehDeMesAnterior(a),
+                          );
                           setConfirmacao({
                             acao: "aprovar",
                             ids: selecionadasVisiveis,
-                            titulo: `Aprovar ${selecionadasVisiveis.length} avaliação(ões)?`,
-                            descricao: `Cada uma soma 3 pontos ao ranking do mês, ao vivo.`,
-                          })
-                        }
+                            titulo: `Aprovar ${plural(selecionadasVisiveis.length, "avaliação", "avaliações")}?`,
+                            descricao:
+                              "Cada aprovação soma 3 pontos no mês em que a avaliação foi cadastrada — não no mês de hoje.",
+                            aviso:
+                              atrasadas.length === 0
+                                ? undefined
+                                : atrasadas.length === 1
+                                  ? "Atenção: 1 avaliação é de um mês anterior — aprová-la altera um ranking já encerrado."
+                                  : `Atenção: ${atrasadas.length} avaliações são de meses anteriores — a aprovação altera rankings já encerrados.`,
+                          });
+                        }}
                         disabled={decidir.isPending}
                         className="min-h-[44px] flex-1 gap-1.5 bg-emerald-600 font-body hover:bg-emerald-700 sm:flex-none"
                       >
@@ -415,7 +469,7 @@ export function AvaliacoesManager() {
                           setConfirmacao({
                             acao: "recusar",
                             ids: selecionadasVisiveis,
-                            titulo: `Recusar ${selecionadasVisiveis.length} avaliação(ões)?`,
+                            titulo: `Recusar ${plural(selecionadasVisiveis.length, "avaliação", "avaliações")}?`,
                             descricao:
                               "Elas saem da fila e ficam no histórico como recusadas. Nada é apagado.",
                           })
@@ -485,13 +539,7 @@ export function AvaliacoesManager() {
                           <div className="flex shrink-0 gap-2">
                             <Button
                               size="sm"
-                              onClick={() =>
-                                executarDecisao(
-                                  [avaliacao.id],
-                                  "aprovada",
-                                  `Estrela de ${avaliacao.nome_cliente} aprovada`,
-                                )
-                              }
+                              onClick={() => aprovarUma(avaliacao)}
                               disabled={ocupada || decidir.isPending}
                               className="min-h-[44px] flex-1 gap-1.5 bg-emerald-600 font-body hover:bg-emerald-700 sm:flex-none"
                             >
@@ -539,12 +587,19 @@ export function AvaliacoesManager() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Input
-            value={buscaHistorico}
-            onChange={(e) => setBuscaHistorico(e.target.value)}
-            placeholder="Buscar por cliente ou profissional..."
-            className="h-11 font-body text-sm"
-          />
+          <div className="space-y-1.5">
+            <Input
+              value={buscaHistorico}
+              onChange={(e) => setBuscaHistorico(e.target.value)}
+              placeholder="Buscar por cliente ou profissional..."
+              className="h-11 font-body text-sm"
+            />
+            {/* Junto do campo de busca, não no rodapé: quem procura algo antigo
+                e não acha precisa saber AQUI que a lista é truncada. */}
+            <p className="font-body text-xs text-gray-400">
+              A busca cobre as {HISTORICO_LIMITE} decisões mais recentes.
+            </p>
+          </div>
 
           <Tabs defaultValue="aprovadas">
             <TabsList className="grid w-full grid-cols-2 sm:max-w-sm">
@@ -608,7 +663,9 @@ export function AvaliacoesManager() {
                                   titulo: "Devolver para a fila?",
                                   descricao: `A estrela de ${avaliacao.nome_cliente} volta a ficar pendente${
                                     avaliacao.status === "aprovada"
-                                      ? " e perde os 3 pontos no ranking do mês"
+                                      ? ` e perde os 3 pontos no ranking de ${mesPorExtensoManaus(
+                                          avaliacao.data_hora_cadastro,
+                                        )}, o mês do cadastro`
                                       : ""
                                   }.`,
                                 })
@@ -632,10 +689,6 @@ export function AvaliacoesManager() {
               </TabsContent>
             ))}
           </Tabs>
-
-          <p className="font-body text-xs text-gray-400">
-            Mostrando as {HISTORICO_LIMITE} decisões mais recentes.
-          </p>
         </CardContent>
       </Card>
 
@@ -651,6 +704,11 @@ export function AvaliacoesManager() {
             <AlertDialogDescription className="font-body">
               {confirmacao?.descricao}
             </AlertDialogDescription>
+            {confirmacao?.aviso && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 font-body text-sm text-amber-900">
+                {confirmacao.aviso}
+              </p>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="font-body">Cancelar</AlertDialogCancel>

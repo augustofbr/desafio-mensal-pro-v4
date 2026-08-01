@@ -114,6 +114,10 @@ edge function no load da pagina.**
   - Fetches approved reviews from `avaliacoes_cadastradas`
   - Returns stars count per professional per category
   - Stars worth 3 points each in Cabelo/Unhas (display-only in Estética/Maquiagem)
+  - **Mes de atribuicao = mes do `data_hora_cadastro`** (fuso `America/Manaus`), **nao** o
+    da aprovacao: aprovar hoje uma avaliacao cadastrada em maio soma os 3 pontos ao ranking
+    de MAIO, ja encerrado. A aba "Aprovacoes" avisa antes de decidir uma pendente atrasada;
+    quem mexer nessa copy ou no filtro tem de manter as duas pontas coerentes
 
 - `useHairTreatmentData`: Processes hair services
   - Scoring: Treatments (2pts) + Unique clients/day (1pt) + Google Stars (3pts each)
@@ -347,8 +351,10 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
 - Toda mutacao confere as linhas escritas (`.select("id")`): um UPDATE barrado pela RLS volta
   **sem erro e com zero linhas**, e sem essa conferencia a tela diria "salvo" sem ter salvado.
 - Datas sempre por `formatDataHoraManaus` (`src/lib/dateUtils.ts`), fuso `America/Manaus`.
-- Aprovar **muda o ranking ao vivo** (3 pts). Ao testar, use transacao com `ROLLBACK` — nunca
-  decida uma pendente real para "ver funcionando".
+- Aprovar **muda o ranking ao vivo** (3 pts), **no mes do `data_hora_cadastro`** — ver
+  `useStarsData` acima. Decidir uma pendente atrasada mexe em mes fechado, entao ela nunca
+  passa sem confirmacao (individual) e o lote conta quantas sao. Ao testar, use transacao com
+  `ROLLBACK` — nunca decida uma pendente real para "ver funcionando".
 
 ### Tabelas do kit e funcoes de gate
 
