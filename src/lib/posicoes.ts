@@ -14,6 +14,20 @@
  * Nao ordena nem julga se a corrida comecou: lista toda zerada devolve todo
  * mundo em 1o, e cabe a quem exibe decidir se aquilo e podio ou mes vazio.
  */
+const MEDALHAS: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+/**
+ * Medalha do pódio, ou `null` quando não há pódio a comemorar.
+ *
+ * Honra exige pontuação positiva: quem não atendeu no período continua com a
+ * posição honesta ("2º"), mas sem medalha — prata para zero ponto premiaria
+ * quem não correu. Mesma filosofia do pódio falso do mês recém-aberto.
+ */
+export function medalhaPara(posicao: number, valor: number): string | null {
+  if (valor <= 0) return null;
+  return MEDALHAS[posicao] ?? null;
+}
+
 export function calcularPosicoes(valores: number[]): number[] {
   const posicoes: number[] = [];
   let posicaoAnterior = 0;

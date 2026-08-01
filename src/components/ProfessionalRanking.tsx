@@ -1,7 +1,7 @@
 
 import { Star, Trophy, AlertTriangle } from "lucide-react";
 import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
-import { calcularPosicoes } from "@/lib/posicoes";
+import { calcularPosicoes, medalhaPara } from "@/lib/posicoes";
 import { CategoryRules } from "@/lib/rulesConfig";
 
 interface ProfessionalRankingProps {
@@ -88,9 +88,10 @@ export default function ProfessionalRanking({
     <div className="space-y-2.5">
         {data.map((item, index) => {
           const posicao = posicoes[index];
-          // Empate na lideranca destaca as duas — a mesma regra da Corrida, que
-          // repete a medalha.
-          const isFirst = posicao === 1;
+          // Destaque de lider = medalha de ouro: empate na lideranca destaca as
+          // duas, e sem pontuacao ninguem sobe ao podio (medalhaPara devolve
+          // null). A regra do "so com valor > 0" mora no helper.
+          const isFirst = medalhaPara(posicao, valores[index]) !== null && posicao === 1;
           const score = rules.scoringModel === 'revenue-percentage'
             ? `${item.revenuePercentage}%`
             : `${item.points} Pts`;

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { calcularPosicoes } from "@/lib/posicoes";
+import { calcularPosicoes, medalhaPara } from "@/lib/posicoes";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +26,6 @@ const FORMATO_DECIMAL = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 1,
 });
 
-const MEDALHAS: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
-
 /** Le um campo numerico do entry; ausente/invalido vira 0. */
 function numeroDoEntry(entry: Record<string, unknown>, campo: string): number {
   const valor = entry[campo];
@@ -48,6 +46,8 @@ interface Linha {
   nome: string;
   /** Posicao exibida, 1-based. Empate de valor repete a posicao (1, 1, 3...). */
   posicao: number;
+  /** Medalha do podio, ou null (fora do top 3 ou sem pontuacao). */
+  medalha: string | null;
   valorTexto: string;
   /** Largura da barra em % do lider. */
   largura: number;
@@ -94,6 +94,7 @@ export function CorridaChart({ entries, perfilId, unidade, metaValor }: CorridaC
         chave: id ?? `sem-id-${indice}`,
         nome,
         posicao: posicoes[indice],
+        medalha: medalhaPara(posicoes[indice], valor),
         valorTexto: percentual
           ? `${FORMATO_DECIMAL.format(valor)}%`
           : FORMATO_INTEIRO.format(valor),
@@ -149,7 +150,7 @@ export function CorridaChart({ entries, perfilId, unidade, metaValor }: CorridaC
 
       <ol className="space-y-1">
       {linhas.map((linha) => {
-        const medalha = MEDALHAS[linha.posicao];
+        const medalha = linha.medalha;
         return (
           <li
             key={linha.chave}
