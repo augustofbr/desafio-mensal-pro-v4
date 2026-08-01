@@ -1,5 +1,8 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Trophy, Award, CheckCircle, AlertCircle, Star } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Star, Trophy } from "lucide-react";
 import { getCurrentMonthName } from "@/lib/utils";
 import { getCategoryRules, CategoryRules, RulesVersion } from "@/lib/rulesConfig";
 import { isCategoryActive, PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
@@ -26,15 +29,6 @@ interface WinnerInfo {
   qualified: boolean;
   progressBars: { label: string; current: number; goal: number; percent: number }[];
 }
-
-type ColorScheme = {
-  gradient: string;
-  bgLight: string;
-  text: string;
-  progressBg: string;
-  progressFill: string;
-  iconBg: string;
-};
 
 function buildWinner(
   leader: any,
@@ -172,6 +166,46 @@ const CATEGORY_LABELS: Record<string, string> = {
   maquiagem: "Make",
 };
 
+type Barra = WinnerInfo["progressBars"][number];
+
+/**
+ * Barra de faturamento: o painel nunca expoe reais, so o percentual da meta
+ * (mesma convencao do MeuCartao). O marcador e o rotulo montado no buildWinner
+ * ("89% da meta"), e nao o scoringModel, porque Estetica e Make trocam de
+ * modelo entre as versoes de regra e a barra nem sempre acompanha.
+ */
+function ehPercentual(barra: Barra): boolean {
+  return barra.goal === 100 && barra.label.includes("%");
+}
+
+/** Nome da meta: o rotulo do buildWinner sem o prefixo numerico. */
+function rotuloDaBarra(barra: Barra): string {
+  if (ehPercentual(barra)) return "Meta do mês";
+  return barra.label
+    .replace(/^[\d.,]+\/[\d.,]+\s*/, "")
+    .replace(/^[\d.,]+%\s*/, "")
+    .trim();
+}
+
+/** Mesma leitura do MeuCartao: "73 de 60" ou "89% da meta". */
+function textoDaBarra(barra: Barra): string {
+  if (ehPercentual(barra)) return `${barra.current}% da meta`;
+  return `${barra.current} de ${barra.goal}`;
+}
+
+function inicial(nome: string): string {
+  return (Array.from(nome?.trim() ?? "")[0] ?? "?").toUpperCase();
+}
+
+/**
+ * Painel de Premiação: quem lidera cada categoria e o quanto falta para a
+ * premiação ser liberada.
+ *
+ * Veste a mesma anatomia da familia `resultados/` (MeuCartao/MinhaSemana):
+ * card por categoria, avatar de inicial, numero grande em `.font-mono-num` e
+ * as metas como `Progress`. `buildWinner` e os rotulos de status seguem
+ * intactos — a apresentacao mudou, os numeros nao.
+ */
 export default function PremiacaoPanel({ hairData, manicureData, esteticaData, maquiagemData, loading, rules }: PremiacaoPanelProps) {
   const currentMonth = getCurrentMonthName();
 
@@ -196,10 +230,10 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
   if (loading) {
     return (
       <Card className="mb-6">
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           <div className="space-y-3">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-20 rounded-xl animate-shimmer" />
+              <div key={i} className="h-20 rounded-2xl animate-shimmer" />
             ))}
           </div>
         </CardContent>
@@ -255,179 +289,142 @@ export default function PremiacaoPanel({ hairData, manicureData, esteticaData, m
   const renderCategoryAward = (
     categoryKey: string,
     winner: WinnerInfo | null,
-    colorScheme: ColorScheme,
     index: number
   ) => {
     const categoryRules = getCategoryRules(rules, categoryKey);
     const label = CATEGORY_LABELS[categoryKey] || categoryKey;
+    const statusPendente =
+      winner && !winner.qualified ? getStatusLabel(winner, categoryKey) : "";
+    // Com lider na tela as barras ja dizem cada alvo ("clientes · 73 de 60"):
+    // repetir "Min. 60 clientes + 5 Cronograma Capilar" no topo duplicaria os
+    // mesmos numeros. Sem lider nao ha barra, e a regra vira a unica informacao.
+    const regraDaCategoria = winner ? "" : getMinimumLabel(categoryKey);
 
     return (
       <div
-        className={`animate-fade-slide-up stagger-${index + 1} rounded-2xl ${colorScheme.bgLight} p-4 relative overflow-hidden`}
+        key={categoryKey}
+        className={`animate-fade-slide-up stagger-${index + 1} space-y-4 rounded-2xl border bg-muted/30 p-4`}
       >
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-2.5">
-            <div className={`w-9 h-9 rounded-xl ${colorScheme.gradient} flex items-center justify-center shadow-sm`}>
-              <Award className="h-4.5 w-4.5 text-white" />
-            </div>
-            <div>
-              <h4 className="font-display font-semibold text-base text-gray-800">{label}</h4>
-              <p className="text-[11px] text-gray-500 font-body">{getMinimumLabel(categoryKey)}</p>
-            </div>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold">{label}</h3>
+            {!allSamePrize && (
+              <p className="text-base text-muted-foreground">
+                Prêmio: {categoryRules.prize}
+              </p>
+            )}
           </div>
-          {winner && (
-            winner.qualified ? (
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
-                <CheckCircle className="h-3 w-3" />
-                Qualificado
+          {winner?.qualified && (
+            <Badge variant="secondary" className="shrink-0 text-sm">
+              <span aria-hidden="true" className="mr-1">
+                ✅
               </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-semibold">
-                <AlertCircle className="h-3 w-3" />
-                {getStatusLabel(winner, categoryKey)}
-              </span>
-            )
+              Qualificado
+            </Badge>
           )}
         </div>
 
         {winner ? (
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <p className="font-body font-bold text-gray-900 text-sm">{winner.professional}</p>
+          <>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-11 w-11 shrink-0">
+                <AvatarFallback className="text-base font-semibold">
+                  {inicial(winner.professional)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-semibold">{winner.professional}</p>
                 {winner.starCount > 0 && (
-                  <div className="flex items-center gap-1">
-                    <span className="inline-flex items-center gap-0.5 text-amber-600 text-[11px] font-medium">
-                      <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-500" />
-                      {winner.starCount} estrelas
+                  <p className="flex flex-wrap items-center gap-x-1.5 text-base text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Star className="h-4 w-4 fill-accent text-accent" aria-hidden="true" />
+                      <span className="font-mono-num">{winner.starCount}</span> estrelas
                     </span>
                     {winner.starPoints > 0 && (
-                      <span className="text-emerald-600 text-[11px] font-medium">
-                        +{winner.starPoints} pts
+                      <span>
+                        · <span className="font-mono-num">+{winner.starPoints}</span> pts
                       </span>
                     )}
-                  </div>
+                  </p>
                 )}
               </div>
-              <span className={`font-mono-num font-bold text-sm ${colorScheme.text}`}>
-                {getPointsDisplay(winner, categoryKey)}
-              </span>
-            </div>
-
-            {!allSamePrize && (
-              <div className="flex items-end justify-between gap-2">
-                <span className="text-[11px] text-gray-500 font-body whitespace-nowrap">
-                  {categoryRules.prize}
+              <div className="shrink-0 text-right">
+                <span className="font-mono-num text-2xl font-bold leading-none tracking-tight text-primary">
+                  {getPointsDisplay(winner, categoryKey).split(" ")[0]}
+                </span>
+                <span className="mt-0.5 block text-base text-muted-foreground">
+                  {getPointsDisplay(winner, categoryKey).split(" ").slice(1).join(" ")}
                 </span>
               </div>
-            )}
+            </div>
 
             <div className="space-y-3">
               {winner.progressBars.map((bar, bIdx) => (
-                <div key={bIdx}>
-                  <div className="relative pt-5">
-                    <div className={`w-full h-3 rounded-full ${colorScheme.progressBg} overflow-hidden`}>
-                      <div
-                        className={`h-full rounded-full ${colorScheme.progressFill} animate-progress-fill`}
-                        style={{ width: `${bar.percent}%` }}
-                      />
-                    </div>
-                    <span
-                      className={`absolute top-0 text-[10px] font-bold ${colorScheme.text}`}
-                      style={{ left: `${Math.min(bar.percent, 90)}%`, transform: 'translateX(-50%)' }}
-                    >
-                      {bar.current}
+                <div key={bIdx} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-base">
+                    <span className="min-w-0">
+                      <span className="font-medium">{rotuloDaBarra(bar)}</span>
+                      <span className="text-muted-foreground"> · </span>
+                      <span className="font-mono-num">{textoDaBarra(bar)}</span>
                     </span>
-                    <span className="absolute top-0 right-0 text-[10px] text-gray-400">
-                      {bar.goal}
-                    </span>
+                    {bar.percent >= 100 && (
+                      <span role="img" aria-label="meta batida" className="shrink-0">
+                        ✅
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[10px] text-gray-500 font-body mt-0.5">
-                    {bar.label.replace(/^[\d.,]+\/[\d.,]+\s*/, '').replace(/^[\d.,]+%\s*/, '')}
-                  </p>
+                  <Progress
+                    value={bar.percent}
+                    aria-label={`${rotuloDaBarra(bar)}: ${textoDaBarra(bar)}`}
+                    className="h-3"
+                  />
                 </div>
               ))}
             </div>
-          </div>
+
+            {statusPendente && (
+              <p className="text-base text-muted-foreground">{statusPendente}</p>
+            )}
+          </>
         ) : (
-          <p className="text-xs text-gray-500 font-body py-2">
-            Nenhum profissional com pontuação em {currentMonth}.
-          </p>
+          <div className="space-y-1">
+            <p className="text-base text-muted-foreground">
+              Nenhum profissional com pontuação em {currentMonth}.
+            </p>
+            {regraDaCategoria && (
+              <p className="text-base text-muted-foreground">{regraDaCategoria}</p>
+            )}
+          </div>
         )}
       </div>
     );
   };
 
   return (
-    <Card className="mb-6 border-0 shadow-md bg-gradient-to-br from-amber-50/80 via-white to-orange-50/50">
-      <CardHeader className="pb-3 px-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-sm">
-            <Trophy className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <CardTitle className="font-display text-lg">Painel de Premiação</CardTitle>
-            <p className="text-xs text-gray-500 font-body">Ganhadores atuais de {currentMonth}</p>
-            {commonPrize && (
-              <p className="text-[11px] text-amber-600 font-body font-medium mt-0.5">Prêmio: {commonPrize}</p>
-            )}
+    <Card className="mb-6">
+      <CardContent className="space-y-4 p-4 sm:p-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+            <Trophy className="h-6 w-6 text-primary" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">Painel de Premiação</h2>
+            <p className="text-base text-muted-foreground">
+              Ganhadores atuais de {currentMonth}
+            </p>
+            {commonPrize && <p className="text-base font-medium">Prêmio: {commonPrize}</p>}
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="px-4 pb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {isCategoryActive(rules, PROF_CATEGORIES.CABELO) && renderCategoryAward(
-            "cabelo",
-            hairWinner,
-            {
-              gradient: "gradient-cabelo",
-              bgLight: "bg-blue-50/80",
-              text: "text-blue-600",
-              progressBg: "bg-blue-100",
-              progressFill: "bg-gradient-to-r from-blue-400 to-blue-500",
-              iconBg: "bg-blue-500",
-            },
-            0
-          )}
-          {isCategoryActive(rules, PROF_CATEGORIES.UNHAS) && renderCategoryAward(
-            "unhas",
-            manicureWinner,
-            {
-              gradient: "gradient-unhas",
-              bgLight: "bg-red-50/80",
-              text: "text-red-600",
-              progressBg: "bg-red-100",
-              progressFill: "bg-gradient-to-r from-red-400 to-red-500",
-              iconBg: "bg-red-500",
-            },
-            1
-          )}
-          {isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) && renderCategoryAward(
-            "maquiagem",
-            maquiagemWinner,
-            {
-              gradient: "gradient-make",
-              bgLight: "bg-yellow-50/80",
-              text: "text-yellow-600",
-              progressBg: "bg-yellow-100",
-              progressFill: "bg-gradient-to-r from-yellow-400 to-yellow-500",
-              iconBg: "bg-yellow-500",
-            },
-            2
-          )}
-          {isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) && renderCategoryAward(
-            "estetica",
-            esteticaWinner,
-            {
-              gradient: "gradient-estetica",
-              bgLight: "bg-violet-50/80",
-              text: "text-violet-600",
-              progressBg: "bg-violet-100",
-              progressFill: "bg-gradient-to-r from-violet-400 to-violet-500",
-              iconBg: "bg-violet-500",
-            },
-            3
-          )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {isCategoryActive(rules, PROF_CATEGORIES.CABELO) &&
+            renderCategoryAward("cabelo", hairWinner, 0)}
+          {isCategoryActive(rules, PROF_CATEGORIES.UNHAS) &&
+            renderCategoryAward("unhas", manicureWinner, 1)}
+          {isCategoryActive(rules, PROF_CATEGORIES.MAQUIAGEM) &&
+            renderCategoryAward("maquiagem", maquiagemWinner, 2)}
+          {isCategoryActive(rules, PROF_CATEGORIES.ESTETICA) &&
+            renderCategoryAward("estetica", esteticaWinner, 3)}
         </div>
       </CardContent>
     </Card>
