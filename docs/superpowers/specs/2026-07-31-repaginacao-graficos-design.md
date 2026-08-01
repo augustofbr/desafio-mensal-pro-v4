@@ -112,3 +112,19 @@ aparece **apenas quando há meta na unidade da barra**, hoje o caso exclusivo de
 como prop opcional `metaValor?: number` no `CorridaChart`; sem ela, o comportamento é o anterior
 (escala pelo líder, sem linha). O acompanhamento das metas de qualificação continua sendo papel do
 `MeuCartao`, que as mostra em barra de progresso com o alvo explícito e a projeção de ritmo.
+
+**§4.5 — qual meta a barra do card compartilhável mostra.** A spec pede "barra da meta" sem dizer
+qual, e categorias `points` têm duas. O card usa a **primeira meta em aberto** — exatamente o mesmo
+seletor que o `MeuCartao` usa para a frase de ritmo (`metas.find(m => !m.batida)`), para a imagem
+nunca contradizer a tela que a gerou; com todas batidas, 100%. Média das metas foi descartada:
+esconderia o que falta (com clientes 96/80 ✅ e especial 7/10, mostraria 100% em vez de 70%).
+
+**§4.5 — "Desktop: download" vira detecção de recurso.** O caminho é decidido por
+`navigator.canShare({files})`, não pelo tipo de aparelho: onde o navegador compartilha arquivo de
+verdade (celular e também Chrome de desktop), abre a folha de compartilhamento; o download continua
+como **fallback universal** — inclusive quando a folha falha. Cancelamento pelo usuário (`AbortError`)
+não vira download nem erro.
+
+**§4.1 — a "busca simples" do seletor de perfil foi dispensada (YAGNI).** O roster tem ~22 nomes,
+agrupados por categoria numa folha rolável: um campo de busca custaria teclado abrindo em cima da
+lista no celular para poupar meio gesto de rolagem. Se o cadastro crescer, o requisito volta.

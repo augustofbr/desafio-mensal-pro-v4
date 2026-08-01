@@ -68,26 +68,19 @@ function diaEMes(iso: string): string {
 }
 
 /**
- * Converte o mapa de valores diarios na unidade exibida.
- * Faturamento nunca aparece em reais: no modelo revenue-points ele vira pontos
- * pela mesma conversao do ranking.
+ * Valores diarios ja na unidade exibida. Faturamento nunca aparece em reais: a
+ * conversao em pontos (pelo delta do acumulado, para fechar com o cartao) e o
+ * percentual da meta vivem em `valorPorDia`.
  */
 function valoresExibidos(
   services: ServicoDoDia[],
   regras: CategoryRules
 ): Record<string, number> {
-  const brutos = valorPorDia(
+  return valorPorDia(
     services,
     regras.scoringModel,
-    regras.qualificationGoals.minRevenue
-  );
-  if (regras.scoringModel !== "revenue-points") return brutos;
-
-  const conversao = regras.revenuePointConversion;
-  if (!conversao || conversao <= 0) return {};
-
-  return Object.fromEntries(
-    Object.entries(brutos).map(([data, valor]) => [data, Math.floor(valor / conversao)])
+    regras.qualificationGoals.minRevenue,
+    regras.revenuePointConversion
   );
 }
 

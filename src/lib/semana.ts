@@ -67,24 +67,68 @@ function faturamentoPorDia(services: ServicoDoDia[]): Record<string, number> {
 }
 
 /**
+ * Pontos de cada dia no modelo `revenue-points`, pelo **delta do acumulado**:
+ * `floor(acumulado ate o dia / conversao) - floor(acumulado ate a vespera / conversao)`.
+ *
+ * Converter cada dia isoladamente (`floor(receita do dia / conversao)`) joga fora
+ * o troco de todo dia e nao fecha com o cartao — que divide o faturamento do mes
+ * INTEIRO. Medido em dados reais (Estetica, maio/2026, conversao 100): Debora
+ * somava 52 pts nos blocos contra 59 no cartao, e 4 dias trabalhados apareciam
+ * como "0", visualmente iguais a folga. Este e o algoritmo do grafico de evolucao
+ * que existia antes da repaginacao.
+ *
+ * Invariante: a soma de um intervalo de dias e sempre o delta dos acumulados nas
+ * bordas — logo o mes inteiro soma exatamente os pontos de faturamento do cartao.
+ */
+function pontosPorDiaDoAcumulado(
+  faturamento: Record<string, number>,
+  conversao: number
+): Record<string, number> {
+  const pontos: Record<string, number> = {};
+  let acumulado = 0;
+  let pontosAteAVespera = 0;
+
+  for (const dia of Object.keys(faturamento).sort()) {
+    acumulado += faturamento[dia];
+    // Arredonda em centavos: dinheiro tem 2 casas, e sem isso um acumulado que
+    // deveria fechar redondo (500,00) pode virar 499,999... e perder 1 ponto.
+    const pontosAteHoje = Math.floor(Math.round(acumulado * 100) / 100 / conversao);
+    pontos[dia] = pontosAteHoje - pontosAteAVespera;
+    pontosAteAVespera = pontosAteHoje;
+  }
+
+  return pontos;
+}
+
+/**
  * Valor de cada dia na unidade que a categoria exibe:
  * - `points`: soma dos pontos do dia (reusa groupByDay, que ja ignora as
  *   entradas de estrela por elas nao terem dia);
  * - `revenue-percentage`: faturamento do dia como % da meta do mes;
- * - `revenue-points`: faturamento bruto do dia — a conversao em pontos depende
- *   de `revenuePointConversion` e acontece no componente.
+ * - `revenue-points`: pontos do dia pelo delta do acumulado (ver acima);
+ *   sem `revenuePointConversion` nao ha como converter e o mapa vem vazio.
  *
  * Dias sem atendimento simplesmente nao aparecem no mapa.
  */
 export function valorPorDia(
   services: ServicoDoDia[],
   modelo: CategoryRules["scoringModel"],
-  minRevenue?: number
+  minRevenue?: number,
+  /** Aditivo: so o modelo revenue-points usa (regras.revenuePointConversion). */
+  revenuePointConversion?: number
 ): Record<string, number> {
   if (modelo === "points") return groupByDay(services);
 
   const faturamento = faturamentoPorDia(services);
-  if (modelo === "revenue-points") return faturamento;
+
+  if (modelo === "revenue-points") {
+    const conversao =
+      typeof revenuePointConversion === "number" && revenuePointConversion > 0
+        ? revenuePointConversion
+        : 0;
+    if (conversao === 0) return {};
+    return pontosPorDiaDoAcumulado(faturamento, conversao);
+  }
 
   // revenue-percentage: sem meta configurada nao ha percentual honesto a exibir.
   const meta = typeof minRevenue === "number" && minRevenue > 0 ? minRevenue : 0;

@@ -53,29 +53,133 @@ describe("valorPorDia", () => {
     expect(valorPorDia(services, "revenue-percentage", 0)).toEqual({});
   });
 
-  it("(e) modelo revenue-points soma o faturamento do dia (conversao fica no componente)", () => {
+  it("(e) modelo revenue-points converte pelo delta do acumulado, nao dia a dia", () => {
     const services = [
       { date: "2026-08-03", points: 0, value: 180 },
-      { date: "2026-08-03", points: 0, value: 120 },
+      { date: "2026-08-03", points: 0, value: 120 }, // dia = 300
       { date: "2026-08-04", points: 0, value: 90 },
-      { date: "2026-08-04", points: 0, value: 60 },
+      { date: "2026-08-04", points: 0, value: 60 }, // dia = 150
     ];
 
-    expect(valorPorDia(services, "revenue-points")).toEqual({
-      "2026-08-03": 300,
-      "2026-08-04": 150,
+    // Isolado o 2o dia daria floor(150/100) = 1 e o troco de 50 do 1o dia
+    // sumiria; pelo acumulado (450) ele vale 1... e o total fecha em 4 = floor(450/100).
+    expect(valorPorDia(services, "revenue-points", undefined, 100)).toEqual({
+      "2026-08-03": 3,
+      "2026-08-04": 1,
     });
   });
 
-  it("(f) servicos sem dia ou sem valor numerico ficam de fora", () => {
+  it("(f) revenue-points sem conversao configurada nao inventa pontos", () => {
+    const services = [{ date: "2026-08-03", points: 0, value: 500 }];
+
+    expect(valorPorDia(services, "revenue-points")).toEqual({});
+    expect(valorPorDia(services, "revenue-points", undefined, 0)).toEqual({});
+  });
+
+  it("(g) servicos sem dia ou sem valor numerico ficam de fora", () => {
     const services = [
       { date: "", points: 0, value: 500 },
       { date: "2026-08-03", points: 0 },
       { date: "2026-08-03", points: 0, value: 200 },
     ];
 
-    expect(valorPorDia(services, "revenue-points")).toEqual({ "2026-08-03": 200 });
+    expect(valorPorDia(services, "revenue-points", undefined, 100)).toEqual({
+      "2026-08-03": 2,
+    });
     expect(valorPorDia([], "points")).toEqual({});
+  });
+});
+
+/**
+ * Faturamento diario REAL da Debora em Estetica/maio-2026 (conversao 100), o mes
+ * que o review mediu: o cartao mostra 59 pts e a conversao dia a dia somava 52,
+ * com 4 dias trabalhados exibidos como "0".
+ */
+const DEBORA_MAIO_2026: Record<string, number> = {
+  "2026-05-01": 340,
+  "2026-05-02": 390,
+  "2026-05-04": 100,
+  "2026-05-07": 190,
+  "2026-05-08": 635,
+  "2026-05-09": 560,
+  "2026-05-12": 50,
+  "2026-05-13": 360,
+  "2026-05-14": 120,
+  "2026-05-15": 525,
+  "2026-05-16": 525,
+  "2026-05-18": 25,
+  "2026-05-19": 110,
+  "2026-05-22": 410,
+  "2026-05-23": 620,
+  "2026-05-26": 99.99,
+  "2026-05-27": 200,
+  "2026-05-28": 215,
+  "2026-05-29": 50,
+  "2026-05-30": 460,
+};
+
+const SERVICOS_DEBORA_MAIO = Object.entries(DEBORA_MAIO_2026).flatMap(([date, valor]) =>
+  // Dois servicos no mesmo dia em um deles, para exercitar a soma intradia.
+  date === "2026-05-27"
+    ? [
+        { date, points: 1, value: 120 },
+        { date, points: 1, value: 80 },
+      ]
+    : [{ date, points: 1, value: valor }]
+);
+
+const CONVERSAO = 100;
+
+describe("valorPorDia — revenue-points com dados reais (Estetica, maio/2026)", () => {
+  const valores = valorPorDia(SERVICOS_DEBORA_MAIO, "revenue-points", undefined, CONVERSAO);
+  const receitaTotal = Object.values(DEBORA_MAIO_2026).reduce((a, b) => a + b, 0);
+
+  it("(a) o mes inteiro soma exatamente os pontos de faturamento do cartao", () => {
+    const somaDosBlocos = Object.values(valores).reduce((a, b) => a + b, 0);
+
+    // O cartao/ranking usa floor(faturamento do mes / conversao).
+    expect(somaDosBlocos).toBe(Math.floor(receitaTotal / CONVERSAO));
+    expect(somaDosBlocos).toBe(59); // era 52 com o floor dia a dia
+  });
+
+  it("(b) dias trabalhados abaixo da conversao deixam de valer 0", () => {
+    // 26/05 (R$ 99,99) e 29/05 (R$ 50,00): floor(dia/100) = 0 nos dois.
+    expect(valores["2026-05-26"]).toBe(1);
+    expect(valores["2026-05-29"]).toBe(1);
+    expect(valores["2026-05-18"]).toBe(1); // R$ 25,00
+  });
+
+  it("(c) a soma de uma semana e o delta dos acumulados nas bordas", () => {
+    const acumuladoAte = (limite: string) =>
+      Object.entries(DEBORA_MAIO_2026)
+        .filter(([dia]) => dia <= limite)
+        .reduce((total, [, valor]) => total + valor, 0);
+
+    // Semana de seg 25/05 a sab 30/05.
+    const semana = montarSemana(new Date(2026, 4, 27), valores, {
+      startDate: "2026-05-01",
+      endDate: "2026-05-31",
+    });
+    const somaDaSemana = semana.reduce((total, dia) => total + (dia.valor ?? 0), 0);
+
+    const delta =
+      Math.floor(acumuladoAte("2026-05-30") / CONVERSAO) -
+      Math.floor(acumuladoAte("2026-05-23") / CONVERSAO);
+
+    expect(somaDaSemana).toBe(delta);
+    expect(somaDaSemana).toBe(10);
+  });
+
+  it("(d) nenhum dia fica negativo e a serie acompanha o acumulado", () => {
+    expect(Object.values(valores).every((valor) => valor >= 0)).toBe(true);
+
+    let acumulado = 0;
+    let somaParcial = 0;
+    for (const [dia, receita] of Object.entries(DEBORA_MAIO_2026)) {
+      acumulado += receita;
+      somaParcial += valores[dia];
+      expect(somaParcial).toBe(Math.floor(Math.round(acumulado * 100) / 100 / CONVERSAO));
+    }
   });
 });
 
