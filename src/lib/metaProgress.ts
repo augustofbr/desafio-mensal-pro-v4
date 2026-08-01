@@ -144,6 +144,11 @@ export function computeProjecao(args: {
   diasUteisRestantes: number;
   diaDoMesHoje: number | null;
   diasUteisPorDiaDoMes: number[];
+  /**
+   * Nome da meta projetada, para o texto dizer DE QUAL meta fala quando a
+   * categoria tem mais de uma. Ausente = frase generica (comportamento antigo).
+   */
+  rotuloMeta?: string;
 }): Projecao {
   const {
     atual,
@@ -152,7 +157,11 @@ export function computeProjecao(args: {
     diasUteisRestantes,
     diaDoMesHoje,
     diasUteisPorDiaDoMes,
+    rotuloMeta,
   } = args;
+
+  const nome = rotuloMeta?.trim() ? `, ${rotuloMeta.trim()}` : "";
+  const nomeEm = rotuloMeta?.trim() ? ` em ${rotuloMeta.trim()}` : "";
 
   const semProjecao: Projecao = { mostrar: false, ritmoTexto: null };
 
@@ -165,7 +174,7 @@ export function computeProjecao(args: {
   const ritmo = atual / diasUteisDecorridos;
   const abaixo: Projecao = {
     mostrar: true,
-    ritmoTexto: `Ritmo abaixo da meta — faltam ${Math.ceil(faltam)} em ${diasUteisRestantes} dias úteis`,
+    ritmoTexto: `Ritmo abaixo da meta${nomeEm} — faltam ${Math.ceil(faltam)} em ${diasUteisRestantes} dias úteis`,
   };
 
   if (ritmo <= 0) return abaixo;
@@ -179,7 +188,7 @@ export function computeProjecao(args: {
   // melhor avisar que o ritmo nao fecha do que inventar um dia.
   if (indiceHoje < 0 || diaPrevisto === undefined) return abaixo;
 
-  return { mostrar: true, ritmoTexto: `No seu ritmo: meta ~dia ${diaPrevisto}` };
+  return { mostrar: true, ritmoTexto: `No seu ritmo${nome}: meta ~dia ${diaPrevisto}` };
 }
 
 /** Parse manual — `new Date('YYYY-MM-DD')` seria interpretado como UTC. */

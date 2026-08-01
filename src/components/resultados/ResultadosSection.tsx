@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { UserRound } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePerfilLocal } from "@/hooks/usePerfilLocal";
@@ -70,7 +71,8 @@ export default function ResultadosSection({
   rules,
   activeProfessionals,
 }: ResultadosSectionProps) {
-  const { perfilId, perfil, escolher, limpar } = usePerfilLocal(activeProfessionals);
+  const { perfilId, perfil, escolher, limpar, autoLimpou, reconhecerAutoLimpeza } =
+    usePerfilLocal(activeProfessionals);
   const [seletorAberto, setSeletorAberto] = useState(false);
   // null = seguir a categoria do perfil; string = aba escolhida na mao.
   const [abaManual, setAbaManual] = useState<string | null>(null);
@@ -92,9 +94,13 @@ export default function ResultadosSection({
           categoria,
           titulo: getCategoryDisplayName(categoria),
           entries: dadosPorCategoria[categoria] ?? [],
-          unidade: (getCategoryRules(rules, categoria)?.scoringModel === "revenue-percentage"
-            ? "%"
-            : "pts") as "pts" | "%",
+          // A meta so vira linha na Corrida quando esta na MESMA unidade da
+          // barra. Hoje isso vale so para revenue-percentage (barra = % da meta,
+          // logo a meta e 100%); metas de qualificacao (clientes, servicos
+          // especiais) nao sao pontos e ficam a cargo do MeuCartao.
+          ...(getCategoryRules(rules, categoria)?.scoringModel === "revenue-percentage"
+            ? { unidade: "%" as const, metaValor: 100 }
+            : { unidade: "pts" as const, metaValor: undefined }),
         })
       ),
     [rules, dadosPorCategoria]
@@ -157,6 +163,20 @@ export default function ResultadosSection({
     limpar();
     setAbaManual(null);
   }, [limpar]);
+
+  // Perfil salvo que sumiu do cadastro: em vez de a pessoa voltar ao convite sem
+  // entender por que, ela e avisada e o seletor abre uma vez (spec §4.1).
+  useEffect(() => {
+    if (!autoLimpou) return;
+    // Topo: o seletor abre como folha inferior e cobriria um toast na posicao
+    // padrao (canto de baixo) — o aviso ficaria invisivel justo quando importa.
+    toast("Seu perfil foi atualizado — escolha novamente", {
+      position: "top-center",
+      duration: 6000,
+    });
+    setSeletorAberto(true);
+    reconhecerAutoLimpeza();
+  }, [autoLimpou, reconhecerAutoLimpeza]);
 
   return (
     <div className="space-y-5">
@@ -231,6 +251,7 @@ export default function ResultadosSection({
                     entries={aba.entries}
                     perfilId={perfilId}
                     unidade={aba.unidade}
+                    metaValor={aba.metaValor}
                   />
                 </TabsContent>
               ))}

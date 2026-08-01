@@ -10,6 +10,13 @@ interface CorridaChartProps {
   perfilId: string | null;
   /** "%" apenas no modelo revenue-percentage; nos demais, pontos. */
   unidade: "pts" | "%";
+  /**
+   * Meta NA MESMA UNIDADE da barra, para virar linha de referencia e entrar na
+   * escala. Omitir quando a categoria nao tem meta comparavel com a barra (ver
+   * "Emendas pos-implementacao" na spec): metas de qualificacao (clientes,
+   * servicos especiais) nao sao pontos e nao cabem aqui.
+   */
+  metaValor?: number;
 }
 
 const FORMATO_INTEIRO = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
@@ -54,17 +61,24 @@ interface Linha {
  * Nao ordena nem recalcula nada: os hooks de categoria ja entregam o ranking
  * pronto, entao os numeros daqui batem com os do resto da tela.
  */
-export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) {
+export function CorridaChart({ entries, perfilId, unidade, metaValor }: CorridaChartProps) {
   const percentual = unidade === "%";
+  const meta = metaValor !== undefined && metaValor > 0 ? metaValor : null;
+  const temPerfil = perfilId !== null;
 
-  const { linhas, corridaComecou } = useMemo<{
+  const { linhas, corridaComecou, escala } = useMemo<{
     linhas: Linha[];
     corridaComecou: boolean;
+    escala: number;
   }>(() => {
     // `points` e o valor pelo qual TODOS os modelos ordenam; no modelo
     // revenue-percentage ele ja e o proprio percentual da meta.
     const valores = entries.map((entry) => numeroDoEntry(entry, "points"));
     const maior = valores.reduce((max, valor) => Math.max(max, valor), 0);
+    // Com meta, o trilho vai ate max(lider, meta): sem isso a barra do lider
+    // encheria o trilho e passaria a mensagem de "meta batida" sem ninguem ter
+    // batido nada.
+    const topo = meta !== null ? Math.max(maior, meta) : maior;
 
     let posicaoAnterior = 0;
     let valorAnterior: number | null = null;
@@ -88,7 +102,7 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
         valorTexto: percentual
           ? `${FORMATO_DECIMAL.format(valor)}%`
           : FORMATO_INTEIRO.format(valor),
-        largura: maior > 0 ? Math.max(0, (valor / maior) * 100) : 0,
+        largura: topo > 0 ? Math.max(0, (valor / topo) * 100) : 0,
         euMesma: id !== null && id === perfilId,
       };
     });
@@ -96,8 +110,8 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
     // Todo mundo zerado nao e um empate no 1o lugar: e uma corrida que ainda
     // nao comecou. Sem isso o mes recem-aberto entrega medalha de ouro a
     // equipe inteira.
-    return { linhas: montadas, corridaComecou: maior > 0 };
-  }, [entries, perfilId, percentual]);
+    return { linhas: montadas, corridaComecou: maior > 0, escala: topo };
+  }, [entries, perfilId, percentual, meta]);
 
   if (linhas.length === 0 || !corridaComecou) {
     return (
@@ -107,8 +121,38 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
     );
   }
 
+  // Posicao da linha de meta dentro do trilho, em % — a mesma em todas as
+  // linhas, entao os tracinhos se alinham numa vertical continua.
+  const posMeta = meta !== null && escala > 0 ? Math.min(100, (meta / escala) * 100) : null;
+  const metaTexto = percentual
+    ? `${FORMATO_DECIMAL.format(meta ?? 0)}%`
+    : FORMATO_INTEIRO.format(meta ?? 0);
+
   return (
-    <ol className="space-y-1">
+    <div>
+      {posMeta !== null && (
+        // Rotulo da meta uma vez so, no topo, alinhado ao trilho pelos mesmos
+        // espacadores das linhas (medalha + avatar a esquerda, valor a direita).
+        <div className="flex items-end gap-3 px-1 pb-1">
+          <span className="w-8 shrink-0" aria-hidden="true" />
+          <span className="w-9 shrink-0" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <div className="relative h-4 flex-1">
+                <span
+                  className="absolute -translate-x-1/2 whitespace-nowrap text-xs text-muted-foreground"
+                  style={{ left: `${posMeta.toFixed(1)}%` }}
+                >
+                  meta: {metaTexto}
+                </span>
+              </div>
+              <span className="w-16 shrink-0" aria-hidden="true" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ol className="space-y-1">
       {linhas.map((linha) => {
         const medalha = MEDALHAS[linha.posicao];
         return (
@@ -144,16 +188,27 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
               <div className="mt-1.5 flex items-center gap-2">
                 {/* Trilho sem preenchimento: a barra fica sobre a propria
                     superficie do cartao, que e a cor validada na paleta. */}
-                <div className="h-3 flex-1">
+                <div className="relative h-3 flex-1">
                   <div
                     className={cn(
                       "h-full rounded-full transition-all duration-500",
                       linha.euMesma
                         ? "bg-primary ring-2 ring-primary ring-offset-2 ring-offset-background"
-                        : "bg-primary/55"
+                        : temPerfil
+                          ? "bg-primary/55"
+                          : // Sem perfil ninguem e destaque: tom neutro, para a
+                            // matiz da marca significar so "voce".
+                            "bg-muted-foreground/70"
                     )}
                     style={{ width: `${linha.largura.toFixed(1)}%` }}
                   />
+                  {posMeta !== null && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-y-[-3px] w-0 border-l-2 border-dashed border-muted-foreground/70"
+                      style={{ left: `${posMeta.toFixed(1)}%` }}
+                    />
+                  )}
                 </div>
                 {/* Rotulo direto: cada barra carrega o proprio numero, sem eixo
                     nem legenda para o olho ter que cruzar. */}
@@ -171,7 +226,8 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
           </li>
         );
       })}
-    </ol>
+      </ol>
+    </div>
   );
 }
 

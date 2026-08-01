@@ -219,19 +219,24 @@ export function MeuCartao({
     [entry, regrasCategoria]
   );
 
-  const metaPrincipal = metas[0] ?? null;
+  // O ritmo fala da proxima meta EM ABERTO, nao da primeira da lista: quem ja
+  // bateu clientes e esta zerado no servico especial precisa ouvir sobre o que
+  // ainda falta, e nao ficar sem linha nenhuma.
+  const metaEmAberto = useMemo(() => metas.find((meta) => !meta.batida) ?? null, [metas]);
 
   const projecao = useMemo(
     () =>
       computeProjecao({
-        atual: metaPrincipal?.atual ?? 0,
-        alvo: metaPrincipal?.alvo ?? 0,
+        atual: metaEmAberto?.atual ?? 0,
+        alvo: metaEmAberto?.alvo ?? 0,
         diasUteisDecorridos: calendario.diasUteisDecorridos,
         diasUteisRestantes: calendario.diasUteisRestantes,
         diaDoMesHoje: calendario.diaDoMesHoje,
         diasUteisPorDiaDoMes: calendario.diasUteisPorDiaDoMes,
+        // Nomear a meta so faz sentido quando ha mais de uma na tela.
+        rotuloMeta: metas.length > 1 ? metaEmAberto?.rotulo : undefined,
       }),
-    [calendario, metaPrincipal]
+    [calendario, metaEmAberto, metas.length]
   );
 
   const nome = nomeExibicao(perfil);

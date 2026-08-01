@@ -206,6 +206,52 @@ describe("computeProjecao", () => {
     );
   });
 
+  it("(e2) nomeia a meta projetada quando recebe rotuloMeta", () => {
+    const projecao = computeProjecao({
+      atual: 42,
+      alvo: 60,
+      diasUteisDecorridos: 10,
+      diasUteisRestantes: 12,
+      diaDoMesHoje: 12,
+      diasUteisPorDiaDoMes: DIAS_UTEIS_AGOSTO_2026,
+      rotuloMeta: "Cronograma Capilar",
+    });
+
+    expect(projecao.ritmoTexto).toBe(
+      "No seu ritmo, Cronograma Capilar: meta ~dia 18"
+    );
+  });
+
+  it("(f2) nomeia a meta tambem quando o ritmo nao alcanca", () => {
+    const projecao = computeProjecao({
+      atual: 10,
+      alvo: 60,
+      diasUteisDecorridos: 10,
+      diasUteisRestantes: 5,
+      diaDoMesHoje: 12,
+      diasUteisPorDiaDoMes: DIAS_UTEIS_AGOSTO_2026,
+      rotuloMeta: "Clientes únicos",
+    });
+
+    expect(projecao.ritmoTexto).toBe(
+      "Ritmo abaixo da meta em Clientes únicos — faltam 50 em 5 dias úteis"
+    );
+  });
+
+  it("(e3) rotuloMeta vazio nao muda o texto generico", () => {
+    const projecao = computeProjecao({
+      atual: 42,
+      alvo: 60,
+      diasUteisDecorridos: 10,
+      diasUteisRestantes: 12,
+      diaDoMesHoje: 12,
+      diasUteisPorDiaDoMes: DIAS_UTEIS_AGOSTO_2026,
+      rotuloMeta: "   ",
+    });
+
+    expect(projecao.ritmoTexto).toBe("No seu ritmo: meta ~dia 18");
+  });
+
   it("(g) nao mostra projecao quando o periodo nao contem hoje", () => {
     const projecao = computeProjecao({
       atual: 42,

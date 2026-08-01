@@ -97,3 +97,18 @@ Todos os componentes respeitam o `DateFilterContext` como o restante da página:
 - **Projeção enganosa** em início de mês (1º dia útil): exibir ritmo só a partir do 3º dia útil; antes, mostrar apenas progresso.
 - **Estética pré-V4 em %**: cartão e corrida usam % nessa categoria/período para não inventar pontos que o ranking não usa.
 - **Web Share API** indisponível (iOS antigo/desktop): fallback download sempre presente.
+
+## 11. Emendas pós-implementação
+
+**§4.3 — linha de meta na Corrida (decisão do orquestrador, 2026-08-01).** A spec pedia
+`barra máxima = max(maior pontuação, meta)` e uma linha vertical pontilhada rotulada em toda
+categoria. Na implementação ficou claro que o requisito só é coerente quando existe uma meta **na
+mesma unidade da barra**: nas categorias de modelo `points` a barra mede pontos, mas as metas
+configuradas (`minUniqueClients`, `minSpecialServices`) são metas de *qualificação* em clientes e
+serviços — não existe "meta em pontos" para marcar, e desenhar a linha em outra unidade seria
+comparar coisas diferentes no mesmo eixo. Decisão: a linha pontilhada rotulada ("meta: 100")
+aparece **apenas quando há meta na unidade da barra**, hoje o caso exclusivo de
+`revenue-percentage` (barra = % da meta ⇒ linha em 100, escala = `max(maior, 100)`). Implementado
+como prop opcional `metaValor?: number` no `CorridaChart`; sem ela, o comportamento é o anterior
+(escala pelo líder, sem linha). O acompanhamento das metas de qualificação continua sendo papel do
+`MeuCartao`, que as mostra em barra de progresso com o alvo explícito e a projeção de ritmo.

@@ -23,6 +23,12 @@ export interface PerfilLocal {
   perfil: ProfissionalAtivo | null;
   escolher: (id: string) => void;
   limpar: () => void;
+  /**
+   * true logo apos a auto-limpeza ter apagado um perfil invalido — a tela deve
+   * avisar a pessoa e reabrir o seletor. Some ao chamar `reconhecerAutoLimpeza`.
+   */
+  autoLimpou: boolean;
+  reconhecerAutoLimpeza: () => void;
 }
 
 /**
@@ -35,6 +41,7 @@ export function usePerfilLocal(ativos: ProfissionalAtivo[]): PerfilLocal {
   const [perfilId, setPerfilId] = useState<string | null>(() =>
     storage ? lerPerfil(storage) : null
   );
+  const [autoLimpou, setAutoLimpou] = useState(false);
 
   const persistir = useCallback(
     (id: string | null) => {
@@ -58,6 +65,9 @@ export function usePerfilLocal(ativos: ProfissionalAtivo[]): PerfilLocal {
     if (valido !== perfilId) {
       persistir(valido);
       setPerfilId(valido);
+      // Perder a identidade sem explicacao confunde; a tela usa esse sinal para
+      // avisar e reabrir o seletor.
+      setAutoLimpou(true);
     }
   }, [ativos, perfilId, persistir]);
 
@@ -66,6 +76,7 @@ export function usePerfilLocal(ativos: ProfissionalAtivo[]): PerfilLocal {
       const normalizado = normalizeProfessionalId(id);
       persistir(normalizado);
       setPerfilId(normalizado);
+      setAutoLimpou(false);
     },
     [persistir]
   );
@@ -73,7 +84,10 @@ export function usePerfilLocal(ativos: ProfissionalAtivo[]): PerfilLocal {
   const limpar = useCallback(() => {
     persistir(null);
     setPerfilId(null);
+    setAutoLimpou(false);
   }, [persistir]);
+
+  const reconhecerAutoLimpeza = useCallback(() => setAutoLimpou(false), []);
 
   const perfil = useMemo(() => {
     if (!perfilId) return null;
@@ -82,5 +96,5 @@ export function usePerfilLocal(ativos: ProfissionalAtivo[]): PerfilLocal {
     );
   }, [ativos, perfilId]);
 
-  return { perfilId, perfil, escolher, limpar };
+  return { perfilId, perfil, escolher, limpar, autoLimpou, reconhecerAutoLimpeza };
 }
