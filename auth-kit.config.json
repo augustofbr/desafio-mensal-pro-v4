@@ -12,7 +12,7 @@
       "label": "Administração",
       "path": "/admin",
       "icon": "Settings",
-      "resumo": "Regras, fabricantes e feriados"
+      "resumo": "Aprovacoes, regras, fabricantes e feriados"
     },
     {
       "key": "usuarios",

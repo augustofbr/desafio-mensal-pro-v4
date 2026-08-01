@@ -257,6 +257,8 @@ nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
 - `PremiacaoPanel`: Prize qualification panel showing leaders and prize status per category
 - `ProfessionalModal`: Detailed breakdown when clicking on a professional
 - `DataRankings`: Main ranking display with category tabs
+- `AvaliacoesManager` (`src/components/admin/`): aba "Aprovacoes" do `/admin` — fila de estrelas
+  pendentes + historico. Regras completas na secao de auth-kit, mais abaixo
 - `ResultadosSection` (`src/components/resultados/`): mobile-first "Minha Meta + Corrida" section
   that replaced the old line charts. Identidade local (sem login) por `localStorage`
   (`destaque.perfil.v1`, ver `src/lib/perfilLocal.ts` + `usePerfilLocal`), sempre reversivel
@@ -311,7 +313,7 @@ nenhum. O `AuthProvider` do kit e montado **so na subarvore `/admin`** (`src/App
 
 | Rota | Guard | Renderiza |
 |---|---|---|
-| `/admin` | `RequirePage chave="admin"` | `AdminPanel` (Regras / Fabricantes / Feriados) |
+| `/admin` | `RequirePage chave="admin"` | `AdminPanel` (Aprovacoes / Regras / Fabricantes / Feriados) |
 | `/admin/usuarios` | `RequirePage chave="usuarios"` (dentro de `@/pages/Usuarios`) | tela de usuarios/perfis do kit |
 
 - **Login e magic link** (`@/pages/Login`), com `shouldCreateUser: false` — login **nunca**
@@ -321,6 +323,32 @@ nenhum. O `AuthProvider` do kit e montado **so na subarvore `/admin`** (`src/App
   de paginas em `destaque_perfis`.
 - Controles de escrita do painel ficam dentro de `RequireWrite chave="admin"` — isso e **UX**;
   o gate real e a RLS (abaixo).
+
+### Aba "Aprovacoes" (fila de estrelas do Google)
+
+`src/components/admin/AvaliacoesManager.tsx` + `src/hooks/useAdminAvaliacoes.ts`. Portada em
+2026-08-01 do app `ranking_por_categoria-estrela_google` (era a rota `/admin/painel-aprovacao`
+la); antes disso o dono aprovava por SQL manual. **E a aba padrao** do `AdminPanel` — as
+outras tres sao configuracao, esta e a tarefa diaria. A `TabsList` mostra o numero de
+pendentes; o contador vem de `useAvaliacoesPendentes()`, que compartilha a queryKey
+`["admin_avaliacoes","pendentes"]` com o manager (uma requisicao para os dois).
+
+Regras que **nao** podem ser afrouxadas ao mexer aqui:
+
+- **Aprovar escreve os tres campos juntos**: `status='aprovada'`, `aprovado_por = auth.uid()`
+  (o `acesso.userId` do kit — nunca um UID fixo no bundle, como era na origem) e
+  `data_aprovacao = now()`. O score so conta `status='aprovada' AND data_aprovacao IS NOT NULL`
+  (`useStarsData`); gravar so o status daria uma estrela que nao pontua.
+- **Recusar nunca apaga**: vira `status='rejeitada'`. A tabela **nao tem policy de DELETE** —
+  o painel de origem tambem nao deletava, e nao ha o que "adaptar" aqui: nao adicione delete.
+- **Desfazer** ("Devolver para a fila", so no historico, com confirmacao) zera
+  `aprovado_por`/`data_aprovacao` junto com o status — e o mesmo invariante que a policy de
+  INSERT publico exige de uma pendente.
+- Toda mutacao confere as linhas escritas (`.select("id")`): um UPDATE barrado pela RLS volta
+  **sem erro e com zero linhas**, e sem essa conferencia a tela diria "salvo" sem ter salvado.
+- Datas sempre por `formatDataHoraManaus` (`src/lib/dateUtils.ts`), fuso `America/Manaus`.
+- Aprovar **muda o ranking ao vivo** (3 pts). Ao testar, use transacao com `ROLLBACK` — nunca
+  decida uma pendente real para "ver funcionando".
 
 ### Tabelas do kit e funcoes de gate
 

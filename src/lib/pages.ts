@@ -28,7 +28,7 @@ export const PAGES: Record<PageKey, PageDef> = {
     href: "/admin",
     label: "Administração",
     icon: Settings,
-    resumo: "Regras, fabricantes e feriados",
+    resumo: "Aprovacoes, regras, fabricantes e feriados",
     isConfig: false,
   },
   "usuarios": {

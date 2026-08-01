@@ -6,6 +6,25 @@ export interface DateRange {
   endDate: string;
 }
 
+const manausDateTimeFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Manaus",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/**
+ * Formata um timestamptz (ISO) como DD/MM/AAAA HH:mm no fuso do salao
+ * (America/Manaus). Toda data de avaliacao mostrada ao usuario passa por aqui:
+ * `data_hora_cadastro` chega em UTC do banco, e ler "23:00 de ontem" numa fila
+ * de aprovacao do dia induz erro de decisao.
+ */
+export function formatDataHoraManaus(isoString: string): string {
+  return manausDateTimeFormatter.format(new Date(isoString));
+}
+
 export function filterDataByDateRange(data: any[], dateRange: DateRange): any[] {
   if (!data || data.length === 0) return [];
   

@@ -9,19 +9,8 @@ import ProfessionalSelect from "@/components/avaliacoes/ProfessionalSelect";
 import { useActiveProfessionals } from "@/hooks/useActiveProfessionals";
 import { useMinhasAvaliacoes, type Avaliacao } from "@/hooks/useMinhasAvaliacoes";
 import { useEffect } from "react";
-
-const manausDateFormatter = new Intl.DateTimeFormat("pt-BR", {
-  timeZone: "America/Manaus",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-function formatDataManaus(isoString: string): string {
-  return manausDateFormatter.format(new Date(isoString));
-}
+// Mesmo formatador do painel de aprovação — uma definição só de "hora de Manaus".
+import { formatDataHoraManaus } from "@/lib/dateUtils";
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -64,7 +53,7 @@ function AvaliacaoCard({ avaliacao }: { avaliacao: Avaliacao }) {
             {avaliacao.nome_cliente}
           </p>
           <p className="font-body text-xs text-gray-400">
-            {formatDataManaus(avaliacao.data_hora_cadastro)}
+            {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
           </p>
         </div>
       </div>

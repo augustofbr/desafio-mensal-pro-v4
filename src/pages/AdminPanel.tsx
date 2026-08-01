@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, LogOut, Settings, Factory, CalendarOff, Users } from "lucide-react";
+import { ArrowLeft, LogOut, Settings, Factory, CalendarOff, Users, Star } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { RulesManager } from "@/components/admin/RulesManager";
 import { ManufacturerManager } from "@/components/admin/ManufacturerManager";
 import { HolidaysManager } from "@/components/admin/HolidaysManager";
+import { AvaliacoesManager } from "@/components/admin/AvaliacoesManager";
+import { useAvaliacoesPendentes } from "@/hooks/useAdminAvaliacoes";
 // auth-kit: identidade e nível de acesso vêm do provider do kit (matriz de
 // páginas em destaque_perfis), não mais de uma lista de emails no bundle.
 import { useAcesso } from "@/auth/acesso";
@@ -14,6 +16,10 @@ import { PAGES } from "@/lib/pages";
 export default function AdminPanel() {
   const { acesso } = useAcesso();
   const navigate = useNavigate();
+  // Contador da fila na própria aba: quem abre o painel vê o trabalho pendente
+  // sem precisar entrar. Compartilha a queryKey do AvaliacoesManager — uma
+  // requisição só para os dois.
+  const { pendentes } = useAvaliacoesPendentes();
 
   // O link para a tela de usuários só aparece para quem alcança aquela página.
   // Isso é UX: quem forçar a URL bate no RequirePage de dentro de @/pages/Usuarios,
@@ -72,8 +78,20 @@ export default function AdminPanel() {
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="regras" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-lg">
+        {/* Aprovações abre por padrão: é a única aba com trabalho diário
+            (a fila de estrelas). As outras três são configuração, mexidas de
+            vez em quando. No celular a lista quebra em 2×2 — daí o h-auto. */}
+        <Tabs defaultValue="aprovacoes" className="space-y-6">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:h-10 sm:max-w-2xl sm:grid-cols-4">
+            <TabsTrigger value="aprovacoes" className="gap-2 font-body">
+              <Star className="h-4 w-4" />
+              Aprovações
+              {pendentes.length > 0 && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-mono-num text-xs font-semibold text-amber-700">
+                  {pendentes.length}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="regras" className="gap-2 font-body">
               <Settings className="h-4 w-4" />
               Regras
@@ -87,6 +105,10 @@ export default function AdminPanel() {
               Feriados
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="aprovacoes">
+            <AvaliacoesManager />
+          </TabsContent>
 
           <TabsContent value="regras">
             <RulesManager />
