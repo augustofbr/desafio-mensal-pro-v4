@@ -285,14 +285,72 @@ O app **so le** essa tabela.
   Nenhum caller restante: nao ha pg_cron, nao ha workflow n8n e o app parou de invoca-la.
   Mantida deployada apenas como historico — **nao chame**. Seu `enableRealtime()` sempre foi
   um no-op (so grava linhas em `automation_logs`; nunca alterou a publication)
+- **destaque-auth-admin**: **unica detentora do `service_role` deste app.** Toda mutacao de
+  `destaque_users_app`/`destaque_perfis` passa por ela (o SQL do kit revoga escrita de
+  `authenticated`). `verify_jwt: true`. O nome do diretorio de deploy **tem** que ser
+  `supabase/functions/destaque-auth-admin/` — diretorio diferente = 404 em producao.
+  Secret proprio: `SITE_URL` (URL COMPLETA de destino do convite, ver secao de auth)
 - **create-user**: criacao de usuarios pelo painel admin
 - Demais funcoes (`f360-*`, `calcular-faturamento-profissional`, `consultar-faturamento`,
   `gerar-comprovante-das`) pertencem ao projeto financeiro, nao a este app
 
+## Autenticacao e Permissoes (auth-kit v0.1.0)
+
+Desde 2026-08-01 o app usa o **studiox-auth-kit** (modelo copy-in, estilo shadcn: o codigo
+instalado **pertence a este repo**; nao ha dependencia de runtime com o kit). Config em
+`auth-kit.config.json` na raiz — e ele que descreve prefixo, sabor e o **registry de paginas**.
+
+### A pagina publica NAO tem auth — isso e requisito de produto, nao acidente
+
+`/`, `/aniversariantes` e `/minhas-avaliacoes` sao **100% publicas** e nao passam por auth
+nenhum. O `AuthProvider` do kit e montado **so na subarvore `/admin`** (`src/App.tsx`) —
+**nao mova esse provider para fora do `<Routes>`**, e nao envolva as rotas publicas com
+`RequirePage`. O cadastro publico de avaliacao (modal em `/`) insere como `anon` por design.
+
+### Rotas gateadas
+
+| Rota | Guard | Renderiza |
+|---|---|---|
+| `/admin` | `RequirePage chave="admin"` | `AdminPanel` (Regras / Fabricantes / Feriados) |
+| `/admin/usuarios` | `RequirePage chave="usuarios"` (dentro de `@/pages/Usuarios`) | tela de usuarios/perfis do kit |
+
+- **Login e magic link** (`@/pages/Login`), com `shouldCreateUser: false` — login **nunca**
+  cadastra; cadastro e ato de admin, pela tela de usuarios.
+- O `AuthContext` antigo (lista `ADMIN_EMAILS` hardcoded + `signInWithPassword`) e o
+  `AdminRouteGuard` foram **removidos**. Nao os recrie: quem decide acesso agora e a matriz
+  de paginas em `destaque_perfis`.
+- Controles de escrita do painel ficam dentro de `RequireWrite chave="admin"` — isso e **UX**;
+  o gate real e a RLS (abaixo).
+
+### Tabelas do kit e funcoes de gate
+
+- `destaque_perfis` (matriz de paginas por perfil), `destaque_users_app` (quem tem acesso),
+  `destaque_canario_log` (auditoria diaria via `pg_cron`, job `destaque_canario` 07:00 UTC).
+- `destaque_can_read_page(variadic text[])` / `destaque_can_write_page(variadic text[])` —
+  `SECURITY DEFINER`, fail-closed, semantica **OR** entre as chaves passadas.
+- Perfis semeados: `Admin` (tudo `write`) e `Somente Leitura` (`admin: read`, `usuarios: none`).
+- **`usuarios: write` = administrador total** (quem tem isso cria um admin com o proprio email).
+- **Troca de admin e promover-depois-rebaixar**, sempre — o guard anti-lockout bloqueia a
+  ordem inversa ja na primeira chamada.
+
+### Policies das tabelas de negocio (padrao `docs/convencao-policies.md` do kit)
+
+| Tabela | Leitura | Escrita |
+|---|---|---|
+| `regras_desafio`, `feriados`, `tratamento_fabricante`, `profissional_fabricante` | publica (`anon`) — o dashboard le sem sessao | `<tabela>_write_admin`: `for all to authenticated using ((select public.destaque_can_write_page('admin')))` |
+| `avaliacoes_cadastradas` | publica | INSERT publico com `status='pendente'` (por design); UPDATE so com `destaque_can_write_page('admin')` |
+| `trinks_services`, `profissionais_ativos` | publica | fechada para `anon` (escrita revogada) |
+| `automation_logs` | nenhuma (interna) | so `service_role`/`postgres` (n8n) |
+
+Ao criar tabela nova: `enable` + `force row level security`, `revoke all ... from anon`, e
+policies com o predicado embrulhado em `(select ...)` (InitPlan). Uma `create policy` numa
+tabela sem RLS ligado e **inerte** e nao avisa nada.
+
 ### Security
 - RLS (Row Level Security) enabled on all tables with public policies
 - Uses anon key for client-side operations
-- Service role key used in edge functions
+- Service role key used in edge functions — no SPA ele existe **somente** dentro da
+  `destaque-auth-admin`; nunca no bundle do cliente
 
 ## Date Filtering System
 
