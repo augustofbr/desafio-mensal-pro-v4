@@ -101,6 +101,27 @@ export function useAdminAvaliacoes() {
   };
 
   /**
+   * Remocao otimista: tira as linhas decididas da lista JA, sem esperar o
+   * round-trip. Sem isso, no celular do salao a linha fica no lugar por um
+   * tempo apos o toque — o admin acha que nao pegou, toca de novo ou comeca a
+   * rolar, e a lista muda debaixo do dedo. Devolve o estado anterior para o
+   * `onError` reverter (a RLS pode barrar: UPDATE bloqueado volta com zero
+   * linhas, e `conferirLinhasEscritas` transforma isso em erro).
+   */
+  async function removerOtimista(chave: readonly unknown[], ids: string[]) {
+    await queryClient.cancelQueries({ queryKey: chave });
+    const anterior = queryClient.getQueryData<AvaliacaoAdmin[]>(chave);
+    queryClient.setQueryData<AvaliacaoAdmin[]>(chave, (atual) =>
+      (atual ?? []).filter((a) => !ids.includes(a.id)),
+    );
+    return anterior;
+  }
+
+  function restaurar(chave: readonly unknown[], anterior?: AvaliacaoAdmin[]) {
+    if (anterior) queryClient.setQueryData(chave, anterior);
+  }
+
+  /**
    * Aprovar/rejeitar. A regra de negocio do score exige os TRES campos juntos:
    * so conta ponto quem tem `status = 'aprovada'` E `data_aprovacao NOT NULL`,
    * e `aprovado_por` responde "quem decidiu". Rejeitar nunca apaga a linha —
@@ -131,7 +152,15 @@ export function useAdminAvaliacoes() {
       if (error) throw error;
       conferirLinhasEscritas(data as { id: string }[] | null, ids);
     },
-    onSuccess: invalidar,
+    onMutate: async ({ ids }) => ({
+      anterior: await removerOtimista(CHAVE_PENDENTES, ids),
+    }),
+    onError: (_erro, _variaveis, contexto) => {
+      restaurar(CHAVE_PENDENTES, contexto?.anterior);
+    },
+    // `onSettled` e nao `onSuccess`: no erro tambem queremos o refetch, para a
+    // fila voltar a refletir o servidor e nao o rollback local.
+    onSettled: invalidar,
   });
 
   /**
@@ -151,7 +180,13 @@ export function useAdminAvaliacoes() {
       if (error) throw error;
       conferirLinhasEscritas(data as { id: string }[] | null, ids);
     },
-    onSuccess: invalidar,
+    onMutate: async (ids) => ({
+      anterior: await removerOtimista(CHAVE_HISTORICO, ids),
+    }),
+    onError: (_erro, _variaveis, contexto) => {
+      restaurar(CHAVE_HISTORICO, contexto?.anterior);
+    },
+    onSettled: invalidar,
   });
 
   return {

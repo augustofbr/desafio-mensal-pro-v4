@@ -16,7 +16,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Check, X, Loader2, Star, Clock, Undo2, Inbox } from "lucide-react";
+import {
+  Check,
+  X,
+  Loader2,
+  Star,
+  Clock,
+  Undo2,
+  Inbox,
+  SlidersHorizontal,
+} from "lucide-react";
 import {
   useAdminAvaliacoes,
   HISTORICO_LIMITE,
@@ -175,6 +184,9 @@ export function AvaliacoesManager() {
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [buscaHistorico, setBuscaHistorico] = useState("");
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
+  // Só governa o celular: no desktop o `sm:grid` mostra os filtros sempre,
+  // independentemente deste estado.
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
   const profissionaisNaFila = useMemo(
     () =>
@@ -309,37 +321,48 @@ export function AvaliacoesManager() {
     }
   };
 
+  const temFiltroAtivo =
+    filtroProfissional !== "" || buscaCliente !== "" || ordenacao !== "mais_antiga";
+
   const limparFiltros = () => {
     setFiltroProfissional("");
     setBuscaCliente("");
     setOrdenacao("mais_antiga");
   };
 
+  // Esqueleto com a altura aproximada da fila real, em vez de um spinner de
+  // 100px. Uma primeira pintura curta encolhe o documento inteiro, e aí o
+  // navegador nao tem como restaurar o scroll no refresh (media: 849 → 0) e a
+  // pagina "cresce" debaixo de quem ja comecou a ler.
   if (isLoading) {
     return (
-      <div className="flex justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-heading">
+              <Clock className="h-4 w-4 text-amber-500" />
+              Aguardando decisão
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            <div className="h-11 rounded-md animate-shimmer" />
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-[86px] rounded-2xl animate-shimmer" />
+            ))}
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
+    // A FILA VEM PRIMEIRO, de propósito. Título da seção, estatísticas e
+    // explicação desceram para depois dela: são leitura ocasional, enquanto a
+    // fila é o trabalho. Antes, o 1º pendente começava a 534px (desktop) e
+    // 782px (celular) — fora da tela em qualquer reset. Não reintroduza blocos
+    // acima deste Card sem medir de novo onde o 1º item passa a cair.
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-heading font-semibold text-gray-900">Aprovações</h2>
-        <p className="font-body text-sm text-gray-500">
-          Estrelas do Google cadastradas pelas clientes. Cada estrela aprovada vale 3
-          pontos no mês em que a avaliação foi cadastrada.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <Estatistica rotulo="Na fila" valor={pendentes.length} />
-        <Estatistica rotulo="Profissionais" valor={profissionaisNaFila.length} />
-        <Estatistica rotulo="Selecionadas" valor={selecionadasVisiveis.length} />
-      </div>
-
-      {/* Fila de pendentes */}
+      {/* 1. Fila de pendentes */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base font-heading">
@@ -352,21 +375,44 @@ export function AvaliacoesManager() {
             <Vazio texto="Nenhuma avaliação aguardando decisão." />
           ) : (
             <>
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-[180px] flex-1">
-                  <label
-                    htmlFor="filtro-profissional"
-                    className="font-body text-xs text-gray-500"
-                  >
-                    Profissional
-                  </label>
+              {/* Filtros: uma linha no desktop; no celular ficam atrás de um
+                  toque, porque 3 controles empilhados (~230px) empurravam a
+                  fila para fora da tela. `sm:grid` vence o `hidden` por ordem
+                  de media query — sem JS de breakpoint, sem piscar na 1ª
+                  pintura (que é o que um `useIsMobile` traria de volta). */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setFiltrosAbertos((v) => !v)}
+                  aria-expanded={filtrosAbertos}
+                  aria-controls="filtros-da-fila"
+                  className="flex min-h-[44px] w-full items-center justify-between rounded-xl border bg-muted/30 px-3 font-body text-sm text-gray-600 sm:hidden"
+                >
+                  <span className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                    Filtrar e ordenar
+                  </span>
+                  {temFiltroAtivo && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 font-body text-xs text-primary">
+                      ativo
+                    </span>
+                  )}
+                </button>
+
+                <div
+                  id="filtros-da-fila"
+                  className={cn(
+                    "grid-cols-1 gap-2 pt-2 sm:grid sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-center sm:gap-2 sm:pt-0",
+                    filtrosAbertos ? "grid" : "hidden",
+                  )}
+                >
                   <select
-                    id="filtro-profissional"
+                    aria-label="Filtrar por profissional"
                     value={filtroProfissional}
                     onChange={(e) => setFiltroProfissional(e.target.value)}
                     className="h-11 w-full rounded-md border border-input bg-background px-3 py-2 font-body text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                   >
-                    <option value="">Todas</option>
+                    <option value="">Todos os profissionais</option>
                     {profissionaisNaFila.map((nome) => (
                       <option key={nome} value={nome}>
                         {nome} (
@@ -374,25 +420,17 @@ export function AvaliacoesManager() {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="min-w-[180px] flex-1">
-                  <label htmlFor="busca-cliente" className="font-body text-xs text-gray-500">
-                    Buscar cliente
-                  </label>
+
                   <Input
-                    id="busca-cliente"
+                    aria-label="Buscar cliente"
                     value={buscaCliente}
                     onChange={(e) => setBuscaCliente(e.target.value)}
-                    placeholder="Nome da cliente..."
+                    placeholder="Buscar cliente..."
                     className="h-11 font-body text-sm"
                   />
-                </div>
-                <div className="min-w-[180px] flex-1">
-                  <label htmlFor="ordenacao" className="font-body text-xs text-gray-500">
-                    Ordenar por
-                  </label>
+
                   <select
-                    id="ordenacao"
+                    aria-label="Ordenar por"
                     value={ordenacao}
                     onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
                     className="h-11 w-full rounded-md border border-input bg-background px-3 py-2 font-body text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -403,21 +441,22 @@ export function AvaliacoesManager() {
                       </option>
                     ))}
                   </select>
+
+                  {temFiltroAtivo && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={limparFiltros}
+                      className="h-11 font-body"
+                    >
+                      Limpar
+                    </Button>
+                  )}
                 </div>
-                {(filtroProfissional || buscaCliente) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={limparFiltros}
-                    className="h-11 font-body"
-                  >
-                    Limpar filtros
-                  </Button>
-                )}
               </div>
 
               <RequireWrite chave="admin">
-                <div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-muted/50 p-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border bg-muted/50 px-3 py-1">
                   <label className="flex min-h-[44px] cursor-pointer items-center gap-2">
                     <Checkbox
                       checked={todasSelecionadas}
@@ -578,7 +617,19 @@ export function AvaliacoesManager() {
         </CardContent>
       </Card>
 
-      {/* Historico */}
+      {/* 2. Estatísticas e contexto — abaixo da fila, por serem leitura ocasional */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <Estatistica rotulo="Na fila" valor={pendentes.length} />
+        <Estatistica rotulo="Profissionais" valor={profissionaisNaFila.length} />
+        <Estatistica rotulo="Selecionadas" valor={selecionadasVisiveis.length} />
+      </div>
+
+      <p className="font-body text-xs text-gray-500">
+        Estrelas do Google cadastradas pelas clientes. Cada estrela aprovada vale 3
+        pontos no mês em que a avaliação foi cadastrada.
+      </p>
+
+      {/* 3. Histórico */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base font-heading">
