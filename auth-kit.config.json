@@ -1,0 +1,25 @@
+{
+  "kitVersion": "0.1.0",
+  "app": "destaque-mensal-pro",
+  "flavor": "spa",
+  "prefix": "destaque_",
+  "supabaseProjectId": "kxgrprxyqeuffhczaznl",
+  "sharedProject": true,
+  "firstAdminEmail": "augusto.fbr@gmail.com",
+  "pages": [
+    {
+      "key": "admin",
+      "label": "Administração",
+      "path": "/admin",
+      "icon": "Settings",
+      "resumo": "Regras, fabricantes e feriados"
+    },
+    {
+      "key": "usuarios",
+      "label": "Usuários",
+      "path": "/admin/usuarios",
+      "icon": "Users",
+      "isConfig": true
+    }
+  ]
+}
