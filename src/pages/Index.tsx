@@ -7,7 +7,6 @@ import PremiacaoPanel from "@/components/PremiacaoPanel";
 import RegrasDoDesafio from "@/components/RegrasDoDesafio";
 import DateFilter from "@/components/DateFilter";
 import MonthProgress from "@/components/dashboard/MonthProgress";
-import { EdgeFunctionProcessor } from "@/components/dashboard/EdgeFunctionProcessor";
 import { DateFilterProvider, useDateFilter } from "@/contexts/DateFilterContext";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { useMonthProgress } from "@/hooks/useMonthProgress";
@@ -29,7 +28,6 @@ function DashboardContent() {
     lastServiceDate,
     loading,
     rules,
-    refreshData,
     selectProfessional,
     professionalDetails,
     activeProfessionals
@@ -73,10 +71,6 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen bg-gradient-warm">
-      <EdgeFunctionProcessor
-        refreshData={refreshData}
-      />
-
       {/* Header */}
       <div className="px-4 pt-6 pb-4">
         <div className="max-w-7xl mx-auto">

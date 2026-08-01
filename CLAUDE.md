@@ -64,13 +64,16 @@ npm run preview
   - Custom hooks in `/hooks` fetch data from Supabase using React Query
   - Components use React Query for data fetching and caching
   - Context API manages global date filtering state (DateFilterContext)
-  - Real-time updates handled via Supabase subscriptions
+  - Dados sao carregados no mount (`useDashboardData` chama `fetchServicesData()` /
+    `fetchActiveProfessionals()` num `useEffect`). **Nao ha subscription de realtime**:
+    `trinks_services` nem esta na publication `supabase_realtime`. Para ver dados novos,
+    recarregue a pagina (a ingestao roda server-side no n8n — ver abaixo)
 
 ### Key Directories
 
 - `/src/components/` - React components organized by feature
   - `/resultados/` - "Minha Meta + Corrida": acompanhamento pessoal mobile-first
-  - `/dashboard/` - Dashboard-specific components including data processors
+  - `/dashboard/` - Dashboard-specific components
   - `/ui/` - shadcn/ui components (auto-generated, don't modify directly)
 - `/src/hooks/` - Custom React hooks for data fetching
 - `/src/contexts/` - React contexts (DateFilterContext for global date filtering)
@@ -82,10 +85,13 @@ npm run preview
 
 ### Data Processing Components
 
-The application uses background processor components for data handling:
-- **CronogramaDataProcessor**: Processes schedule/timeline data
-- **EdgeFunctionProcessor**: Handles edge function interactions
-- **RealtimeSubscription**: Manages real-time data updates from Supabase
+**Nao existem mais.** `CronogramaDataProcessor` e `RealtimeSubscription` nunca existiram
+como arquivos (eram ficcao desta doc). `EdgeFunctionProcessor` existia e foi **removido em
+ago/2026**: ele invocava a edge function `daily-trinks-automation` no mount do dashboard,
+recebia 546 (WORKER_LIMIT) e exibia um toast vermelho de erro para todo usuario a cada load.
+O caminho ficou obsoleto quando a ingestao de `trinks_services` migrou para os workflows n8n
+server-side (`docs/trinks-automacao/RELATORIO-IMPLANTACAO.md`). **Nao reintroduza chamadas a
+edge function no load da pagina.**
 
 ### Key Custom Hooks
 
@@ -265,12 +271,23 @@ nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
   - O card compartilhavel so mostra numeros de quem o gerou (spec §4.5) e sai SEMPRE no tema
     claro — `shareCard.ts` le as variaveis CSS da marca com a classe `.dark` suspensa.
 
+### Ingestao de `trinks_services` (n8n, server-side)
+
+Desde 29/07/2026 a tabela e alimentada exclusivamente por workflows n8n que sincronizam da
+API Trinks via RPCs no Postgres (`trinks_sync_executar` / `trinks_apply_snapshot`). Detalhes,
+gates e cota em `docs/trinks-automacao/RELATORIO-IMPLANTACAO.md` e `HANDOFF.md`.
+O app **so le** essa tabela.
+
 ### Edge Functions
-- **daily-trinks-automation**: Processes and formats service data
-  - Handles date format conversion (DD/MM/YYYY → YYYY-MM-DD)
-  - Enables real-time subscriptions
-  - Includes CORS headers for browser requests
-  - Uses Deno runtime with Supabase client
+- **daily-trinks-automation**: **obsoleta e sem chamador.** Era o processador da era do
+  upload de CSV: lia `trinks_services` inteira, normalizava datas e reescrevia tudo. Hoje
+  isso conflita com a reconciliacao do n8n e estoura o limite do worker (546 apos ~40s).
+  Nenhum caller restante: nao ha pg_cron, nao ha workflow n8n e o app parou de invoca-la.
+  Mantida deployada apenas como historico — **nao chame**. Seu `enableRealtime()` sempre foi
+  um no-op (so grava linhas em `automation_logs`; nunca alterou a publication)
+- **create-user**: criacao de usuarios pelo painel admin
+- Demais funcoes (`f360-*`, `calcular-faturamento-profissional`, `consultar-faturamento`,
+  `gerar-comprovante-das`) pertencem ao projeto financeiro, nao a este app
 
 ### Security
 - RLS (Row Level Security) enabled on all tables with public policies
@@ -308,7 +325,9 @@ The application uses a global date filtering context that supports:
 5. Category hooks (`useHairTreatmentData`, `useManicurePedicureData`, etc.) filter and score
 6. `useDashboardData` orchestrates all data fetching and combines results
 7. Components receive processed data via props
-8. Real-time updates trigger automatic re-fetches
+8. O fetch acontece uma vez no mount; nao ha re-fetch automatico nem realtime.
+   `useDashboardData` expoe `refreshData` (alias de `useServicesData.fetchServicesData`)
+   para um eventual botao de atualizar — hoje nenhum componente o consome
 
 **CRITICAL PATTERNS**:
 - Professional categories come from `profissionais_ativos`, NOT from service categories
@@ -431,7 +450,8 @@ When working with Supabase operations in this project, **ALWAYS use the Supabase
 - **Always use project_id**: Extract from `VITE_SUPABASE_URL` in `.env` for all MCP operations
 - **DDL vs DML**: Use `apply_migration` for schema changes, `execute_sql` for data operations
 - **Error Handling**: MCP tools provide better error messages and debugging info
-- **Real-time Updates**: Check logs via MCP when debugging real-time subscription issues
+- **Ingestao**: para debugar dados faltando em `trinks_services`, olhe `trinks_sync_log` e
+  `automation_logs` (escritos pelos workflows n8n), nao os logs de edge function
 
 
 ## Key Configuration Files
@@ -460,7 +480,8 @@ When working with Supabase operations in this project, **ALWAYS use the Supabase
    - Display only: Estética and Maquiagem (0 points)
    - Filter: `status = 'aprovada'` AND `data_aprovacao IS NOT NULL`
 6. **Timezone**: Stars use `America/Manaus` timezone for date filtering
-7. **No Tests**: Project has no automated test framework configured
+7. **Testes**: Vitest cobre o motor de scoring e utilitarios de `src/lib` (`npm test`).
+   Componentes React e hooks continuam sem cobertura
 
 ### When to Use Which Agent
 
