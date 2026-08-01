@@ -128,3 +128,17 @@ não vira download nem erro.
 **§4.1 — a "busca simples" do seletor de perfil foi dispensada (YAGNI).** O roster tem ~22 nomes,
 agrupados por categoria numa folha rolável: um campo de busca custaria teclado abrindo em cima da
 lista no celular para poupar meio gesto de rolagem. Se o cadastro crescer, o requisito volta.
+
+**Reorganização da página (diretiva do owner, 2026-08-01).** A ordem passa a ser `DashboardHeader`
+→ `ResultadosSection` → `DataRankings` → `RegrasDoDesafio` → `PremiacaoPanel`: o acompanhamento
+pessoal abre a tela e a premiação, que é consulta, fecha. As classes `stagger-N` acompanham a nova
+ordem (5..8).
+
+**§4.3 — a Corrida ("Quem está na frente") foi removida por redundância (decisão do owner).** Com o
+"Ranking por Categorias" logo abaixo do cartão pessoal, as duas listas mostravam a mesma equipe na
+mesma ordem. `CorridaChart.tsx` foi deletado (política do repo: sem componente morto);
+`src/lib/posicoes.ts` fica, porque o `ProfessionalRanking` usa `calcularPosicoes`/`medalhaPara`.
+
+**`RegrasDoDesafio` fica entre o ranking e a premiação.** O owner não especificou o slot; a decisão
+do orquestrador é mantê-la logo depois do ranking — quem acabou de ler os números é quem pergunta
+como eles são contados —, deixando a premiação como o fecho da página.

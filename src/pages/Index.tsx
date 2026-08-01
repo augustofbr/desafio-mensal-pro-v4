@@ -207,38 +207,10 @@ function DashboardContent() {
             loading={loading}
           />
 
+          {/* Ordem da pagina (diretiva do owner, ago/2026): o acompanhamento
+              pessoal abre a tela, o ranking vem logo depois, e as regras e a
+              premiacao — consulta, nao acompanhamento — fecham a pagina. */}
           <div className="animate-fade-slide-up stagger-5">
-            <PremiacaoPanel
-              hairData={hairData}
-              manicureData={manicureData}
-              esteticaData={esteticaData}
-              maquiagemData={maquiagemData}
-              loading={loading}
-              rules={rules}
-            />
-          </div>
-
-          <div className="animate-fade-slide-up stagger-6">
-            <RegrasDoDesafio rules={rules} />
-          </div>
-
-          <div className="animate-fade-slide-up stagger-7">
-            <DataRankings
-              hairData={hairData}
-              manicureData={manicureData}
-              esteticaData={esteticaData}
-              maquiagemData={maquiagemData}
-              loading={loading}
-              rules={rules}
-              onSelectProfessional={handleSelectProfessional}
-              professionalDetails={professionalDetails}
-              selectedCategory={selectedCategory || ""}
-              showDetails={showDetails}
-              onCloseDetails={handleCloseDetails}
-            />
-          </div>
-
-          <div className="animate-fade-slide-up stagger-8 mt-5">
             {loading ? (
               <Card className="p-6 border-0 shadow-sm">
                 <div className="flex justify-center items-center h-64">
@@ -258,6 +230,37 @@ function DashboardContent() {
                 activeProfessionals={activeProfessionals}
               />
             )}
+          </div>
+
+          <div className="animate-fade-slide-up stagger-6 mt-5">
+            <DataRankings
+              hairData={hairData}
+              manicureData={manicureData}
+              esteticaData={esteticaData}
+              maquiagemData={maquiagemData}
+              loading={loading}
+              rules={rules}
+              onSelectProfessional={handleSelectProfessional}
+              professionalDetails={professionalDetails}
+              selectedCategory={selectedCategory || ""}
+              showDetails={showDetails}
+              onCloseDetails={handleCloseDetails}
+            />
+          </div>
+
+          <div className="animate-fade-slide-up stagger-7 mt-5">
+            <RegrasDoDesafio rules={rules} />
+          </div>
+
+          <div className="animate-fade-slide-up stagger-8">
+            <PremiacaoPanel
+              hairData={hairData}
+              manicureData={manicureData}
+              esteticaData={esteticaData}
+              maquiagemData={maquiagemData}
+              loading={loading}
+              rules={rules}
+            />
           </div>
         </div>
       </div>

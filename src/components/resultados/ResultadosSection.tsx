@@ -1,21 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePerfilLocal } from "@/hooks/usePerfilLocal";
-import {
-  PROF_CATEGORIES,
-  getCategoryDisplayName,
-  isCategoryActive,
-} from "@/lib/categoryDisplayNames";
+import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
 import { calcularPosicoes } from "@/lib/posicoes";
-import { getCategoryRules, type RulesVersion } from "@/lib/rulesConfig";
+import { type RulesVersion } from "@/lib/rulesConfig";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import type { ServicoDoDia } from "@/lib/semana";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 import CardCompartilhavel from "./CardCompartilhavel";
-import CorridaChart from "./CorridaChart";
 import MeuCartao from "./MeuCartao";
 import MinhaSemana from "./MinhaSemana";
 import ProfileSelector from "./ProfileSelector";
@@ -29,14 +23,6 @@ interface ResultadosSectionProps {
   activeProfessionals: ProfissionalAtivo[];
 }
 
-/** Mesma ordem de categorias do ranking da pagina. */
-const ORDEM_CATEGORIAS: string[] = [
-  PROF_CATEGORIES.CABELO,
-  PROF_CATEGORIES.UNHAS,
-  PROF_CATEGORIES.MAQUIAGEM,
-  PROF_CATEGORIES.ESTETICA,
-];
-
 /** Le um campo numerico do entry; ausente/invalido vira 0. */
 function numeroDoEntry(entry: Record<string, unknown>, campo: string): number {
   const valor = entry[campo];
@@ -44,7 +30,7 @@ function numeroDoEntry(entry: Record<string, unknown>, campo: string): number {
 }
 
 /**
- * Secao "Minha Meta + Corrida": o acompanhamento pessoal do desafio.
+ * Secao "Minha Meta": o acompanhamento pessoal do desafio.
  *
  * Nao busca nem recalcula nada — consome os mesmos datasets ja rankeados que
  * alimentam o ranking da pagina, entao os numeros daqui batem com os de la.
@@ -61,8 +47,6 @@ export default function ResultadosSection({
   const { perfilId, perfil, escolher, limpar, autoLimpou, reconhecerAutoLimpeza } =
     usePerfilLocal(activeProfessionals);
   const [seletorAberto, setSeletorAberto] = useState(false);
-  // null = seguir a categoria do perfil; string = aba escolhida na mao.
-  const [abaManual, setAbaManual] = useState<string | null>(null);
 
   const dadosPorCategoria = useMemo<Record<string, Record<string, unknown>[]>>(
     () => ({
@@ -74,35 +58,7 @@ export default function ResultadosSection({
     [hairData, manicureData, esteticaData, maquiagemData]
   );
 
-  const abas = useMemo(
-    () =>
-      ORDEM_CATEGORIAS.filter((categoria) => isCategoryActive(rules, categoria)).map(
-        (categoria) => ({
-          categoria,
-          titulo: getCategoryDisplayName(categoria),
-          entries: dadosPorCategoria[categoria] ?? [],
-          // A meta so vira linha na Corrida quando esta na MESMA unidade da
-          // barra. Hoje isso vale so para revenue-percentage (barra = % da meta,
-          // logo a meta e 100%); metas de qualificacao (clientes, servicos
-          // especiais) nao sao pontos e ficam a cargo do MeuCartao.
-          ...(getCategoryRules(rules, categoria)?.scoringModel === "revenue-percentage"
-            ? { unidade: "%" as const, metaValor: 100 }
-            : { unidade: "pts" as const, metaValor: undefined }),
-        })
-      ),
-    [rules, dadosPorCategoria]
-  );
-
   const categoriaDoPerfil = perfil?.categoria?.trim() ?? null;
-
-  // A aba abre na categoria de quem esta olhando; sem perfil (ou com categoria
-  // fora do desafio) cai na primeira ativa.
-  const abaPadrao =
-    (categoriaDoPerfil && abas.some((aba) => aba.categoria === categoriaDoPerfil)
-      ? categoriaDoPerfil
-      : abas[0]?.categoria) ?? "";
-  const abaAtiva =
-    abaManual && abas.some((aba) => aba.categoria === abaManual) ? abaManual : abaPadrao;
 
   // Entry / posicao / lider do perfil na PROPRIA categoria (mesmo dataset do
   // ranking, sem reordenar).
@@ -138,7 +94,7 @@ export default function ResultadosSection({
       return { entry: null, posicao: null, liderPontos, servicos };
     }
 
-    // Mesma regra de empate do ranking e da Corrida (1, 1, 3...).
+    // Mesma regra de empate do ranking da pagina (1, 1, 3...).
     const posicoes = calcularPosicoes(
       entries.map((item) => numeroDoEntry(item, "points"))
     );
@@ -150,21 +106,6 @@ export default function ResultadosSection({
       servicos,
     };
   }, [perfilId, categoriaDoPerfil, dadosPorCategoria]);
-
-  // ProfileSelector ja fecha sozinho ao escolher/limpar; aqui so zeramos a aba
-  // manual para a Corrida voltar a seguir a categoria do novo perfil.
-  const aoEscolher = useCallback(
-    (id: string) => {
-      escolher(id);
-      setAbaManual(null);
-    },
-    [escolher]
-  );
-
-  const aoLimpar = useCallback(() => {
-    limpar();
-    setAbaManual(null);
-  }, [limpar]);
 
   // Perfil salvo que sumiu do cadastro: em vez de a pessoa voltar ao convite sem
   // entender por que, ela e avisada e o seletor abre uma vez (spec §4.1).
@@ -215,55 +156,8 @@ export default function ResultadosSection({
         </Card>
       )}
 
-      <Card>
-        <CardContent className="space-y-4 p-4 sm:p-6">
-          <div>
-            <h2 className="text-lg font-semibold">Quem está na frente</h2>
-            <p className="text-base text-muted-foreground">
-              Toda a equipe da categoria, do primeiro ao último.
-            </p>
-          </div>
-
-          {abas.length === 0 ? (
-            <p className="py-6 text-center text-base text-muted-foreground">
-              Nenhuma categoria participa do desafio neste período.
-            </p>
-          ) : (
-            <Tabs value={abaAtiva} onValueChange={setAbaManual} className="w-full">
-              {/* h-auto + min-h nos gatilhos: o padrao do shadcn tem 36px de
-                  altura, abaixo do alvo de toque de 44px do celular. */}
-              <TabsList
-                className="grid h-auto w-full"
-                style={{ gridTemplateColumns: `repeat(${abas.length}, minmax(0, 1fr))` }}
-              >
-                {abas.map((aba) => (
-                  <TabsTrigger
-                    key={aba.categoria}
-                    value={aba.categoria}
-                    className="min-h-[44px] text-base"
-                  >
-                    {aba.titulo}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-
-              {abas.map((aba) => (
-                <TabsContent key={aba.categoria} value={aba.categoria} className="mt-4">
-                  <CorridaChart
-                    entries={aba.entries}
-                    perfilId={perfilId}
-                    unidade={aba.unidade}
-                    metaValor={aba.metaValor}
-                  />
-                </TabsContent>
-              ))}
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Detalhe pessoal fica DEPOIS da corrida: primeiro a pessoa se situa na
-          equipe, depois olha os proprios dias. Sem perfil nao ha semana. */}
+      {/* Detalhe pessoal logo apos o cartao: a pessoa ve o total do periodo e
+          entao de onde ele veio, dia a dia. Sem perfil nao ha semana. */}
       {perfil && (
         <MinhaSemana
           services={meuRanking.servicos}
@@ -272,9 +166,9 @@ export default function ResultadosSection({
         />
       )}
 
-      {/* Fecha a secao: a pessoa se situou, viu os proprios dias e agora leva o
-          resultado embora. Sem perfil nao ha o que compartilhar; sem entry (nem
-          um atendimento no periodo) o proprio card se esconde. */}
+      {/* Fecha a secao: a pessoa viu os proprios numeros e os proprios dias, e
+          agora leva o resultado embora. Sem perfil nao ha o que compartilhar;
+          sem entry (nem um atendimento no periodo) o proprio card se esconde. */}
       {perfil && (
         <CardCompartilhavel
           perfil={perfil}
@@ -290,8 +184,8 @@ export default function ResultadosSection({
         ativos={activeProfessionals}
         rules={rules}
         perfilId={perfilId}
-        onEscolher={aoEscolher}
-        onLimpar={aoLimpar}
+        onEscolher={escolher}
+        onLimpar={limpar}
       />
     </div>
   );
