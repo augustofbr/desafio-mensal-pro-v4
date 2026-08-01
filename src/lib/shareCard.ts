@@ -9,6 +9,21 @@
  * pontuacao ou posicao de terceiros — nem a da lider — entra na imagem.
  */
 
+/** Espelho de `MetaItem` (`src/lib/metaProgress.ts`) — os campos que a imagem usa. */
+export interface MetaDoCard {
+  rotulo: string;
+  atual: number;
+  alvo: number;
+  /** 0..100, ja com clamp. */
+  pct: number;
+  batida: boolean;
+  /**
+   * Meta de faturamento: aparece como percentual, nunca em reais — mesma
+   * convencao do MeuCartao e do PremiacaoPanel.
+   */
+  percentual?: boolean;
+}
+
 export interface DadosCard {
   apelido: string;
   categoria: string;
@@ -16,13 +31,8 @@ export interface DadosCard {
   posicao: number;
   /** Ja formatado com unidade pelo componente ("128 pts", "88,4%"). */
   pontosTexto: string;
-  /**
-   * Nome da meta em foco ("SPA dos Pés", "Clientes únicos", "Meta do mês").
-   * Sem ele o percentual ficaria orfao: 70% de que?
-   */
-  rotuloMeta: string;
-  /** 0..100 da meta em foco (a mesma que o cartao usa no ritmo). */
-  metaPct: number;
+  /** TODAS as metas da categoria, na ordem em que a tela as mostra. */
+  metas: MetaDoCard[];
   mesLabel: string;
 }
 
@@ -296,62 +306,163 @@ function desenharHeroi(
   ctx.fillText(unidade, MARGEM + larguraNumero + espaco, y);
 }
 
+/** Numeros no padrao do app: separador de milhar pt-BR a partir de 1.000. */
+const FORMATO_INTEIRO = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const FORMATO_DECIMAL = new Intl.NumberFormat("pt-BR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+const ALTURA_BARRA = 28;
+/** Da linha de texto (baseline) ate o topo da barra. */
+const TEXTO_ATE_BARRA = 22;
+/** Altura visual do texto acima da baseline, para centrar o bloco. */
+const ALTURA_DO_TEXTO = 34;
+/** Faixa vertical reservada as metas: entre o heroi e o filete do rodape. */
+const METAS_TOPO = 700;
+const METAS_BASE = 920;
+
+/** Pedaco de texto com fonte e opacidade proprias, desenhado em sequencia. */
+interface Segmento {
+  texto: string;
+  fonte: string;
+  alpha: number;
+}
+
 /**
- * Meta com nome e percentual na mesma linha ("SPA dos Pés · 70%"), logo acima da
- * barra. Nome e percentual juntos porque separados o numero fica orfao — "70%"
- * sozinho nao diz de que meta se trata. O percentual e maior que o rotulo: o
- * numero e a noticia, o nome so situa (mesma licao do "pts" gigante do heroi).
+ * Valor da meta em segmentos: numeros em monoespacada (alinham entre as linhas),
+ * o "de" em texto normal. Tudo em mono deixaria vaos largos demais em volta da
+ * palavra.
  */
-function desenharBarraDaMeta(
+function segmentosDoValor(meta: MetaDoCard, tamanho: number, tamanhoRotulo: number): Segmento[] {
+  if (meta.percentual) {
+    return [
+      { texto: `${FORMATO_DECIMAL.format(meta.pct)}%`, fonte: fonteNumero(tamanho, 500), alpha: 1 },
+    ];
+  }
+  return [
+    { texto: FORMATO_INTEIRO.format(meta.atual), fonte: fonteNumero(tamanho, 500), alpha: 1 },
+    { texto: " de ", fonte: fonteTexto(tamanhoRotulo, 500), alpha: 0.85 },
+    { texto: FORMATO_INTEIRO.format(meta.alvo), fonte: fonteNumero(tamanho, 500), alpha: 1 },
+  ];
+}
+
+function larguraDosSegmentos(ctx: CanvasRenderingContext2D, segmentos: Segmento[]): number {
+  return segmentos.reduce((total, segmento) => {
+    ctx.font = segmento.fonte;
+    return total + ctx.measureText(segmento.texto).width;
+  }, 0);
+}
+
+function desenharSegmentos(
   ctx: CanvasRenderingContext2D,
   paleta: Paleta,
-  rotuloMeta: string,
-  metaPct: number,
+  segmentos: Segmento[],
+  x: number,
   y: number
-): void {
-  const pct = Math.min(100, Math.max(0, metaPct));
-  const altura = 34;
-  const tamanhoRotulo = 34;
-  const tamanhoPct = 56;
-  const separador = " · ";
+): number {
+  let cursor = x;
+  for (const segmento of segmentos) {
+    ctx.font = segmento.fonte;
+    ctx.fillStyle = hsla(paleta.texto, segmento.alpha);
+    ctx.fillText(segmento.texto, cursor, y);
+    cursor += ctx.measureText(segmento.texto).width;
+  }
+  return cursor;
+}
 
-  const textoPct = `${Math.round(pct)}%`;
-  ctx.font = fonteNumero(tamanhoPct, 500);
-  const larguraPct = ctx.measureText(textoPct).width;
+/**
+ * Uma meta: "Rotulo: atual de alvo" (+ ✅ quando batida) e a barra logo abaixo.
+ * Rotulo em corpo menor e opacidade menor; numeros em monoespacada maior — o
+ * numero e a noticia, o nome so situa (mesma licao do "pts" gigante do heroi).
+ * Devolve o y do fim da barra.
+ */
+function desenharMeta(
+  ctx: CanvasRenderingContext2D,
+  paleta: Paleta,
+  meta: MetaDoCard,
+  yBaseline: number
+): number {
+  const tamanhoRotulo = 34;
+  const tamanhoValor = 44;
+  const espaco = 14;
+
+  const valor = segmentosDoValor(meta, tamanhoValor, tamanhoRotulo);
+  const larguraValor = larguraDosSegmentos(ctx, valor);
+  const marca = meta.batida ? "✅" : "";
 
   ctx.font = fonteTexto(tamanhoRotulo, 500);
-  const larguraSeparador = ctx.measureText(separador).width;
-  const nome = truncar(
+  const larguraMarca = marca ? ctx.measureText(marca).width + espaco : 0;
+  // O rotulo cede espaco primeiro: os numeros e o ✅ nunca sao cortados.
+  const rotulo = truncar(
     ctx,
-    rotuloMeta.trim() || "Meta do mês",
-    LARGURA_CONTEUDO - larguraPct - larguraSeparador
+    `${meta.rotulo.trim() || "Meta do mês"}:`,
+    LARGURA_CONTEUDO - larguraValor - espaco - larguraMarca
   );
 
   ctx.fillStyle = hsla(paleta.texto, 0.85);
-  ctx.fillText(nome, MARGEM, y);
-  const depoisDoNome = MARGEM + ctx.measureText(nome).width;
-  ctx.fillText(separador, depoisDoNome, y);
+  ctx.fillText(rotulo, MARGEM, yBaseline);
+  const depoisDoRotulo = MARGEM + ctx.measureText(rotulo).width + espaco;
 
-  ctx.font = fonteNumero(tamanhoPct, 500);
-  ctx.fillStyle = hsla(paleta.texto);
-  ctx.fillText(textoPct, depoisDoNome + larguraSeparador, y);
+  const fimDoValor = desenharSegmentos(ctx, paleta, valor, depoisDoRotulo, yBaseline);
 
-  const topo = y + 28;
+  if (marca) {
+    ctx.font = fonteTexto(tamanhoRotulo, 500);
+    ctx.fillStyle = hsla(paleta.texto);
+    ctx.fillText(marca, fimDoValor + espaco, yBaseline);
+  }
+
+  const pct = Math.min(100, Math.max(0, meta.pct));
+  const topo = yBaseline + TEXTO_ATE_BARRA;
   preencherArredondado(
     ctx,
     MARGEM,
     topo,
     LARGURA_CONTEUDO,
-    altura,
-    altura / 2,
+    ALTURA_BARRA,
+    ALTURA_BARRA / 2,
     hsla(paleta.texto, 0.28)
   );
 
   if (pct > 0) {
-    // Piso de meia altura: 1% ainda precisa virar um tracinho visivel, senao a
-    // barra parece vazia e o numero ao lado parece errado.
-    const largura = Math.max(altura, (LARGURA_CONTEUDO * pct) / 100);
-    preencherArredondado(ctx, MARGEM, topo, largura, altura, altura / 2, hsla(paleta.texto));
+    // Piso de uma altura de barra: 1% ainda precisa virar um tracinho visivel,
+    // senao a barra parece vazia e o numero da linha parece errado.
+    const largura = Math.max(ALTURA_BARRA, (LARGURA_CONTEUDO * pct) / 100);
+    preencherArredondado(
+      ctx,
+      MARGEM,
+      topo,
+      largura,
+      ALTURA_BARRA,
+      ALTURA_BARRA / 2,
+      hsla(paleta.texto)
+    );
+  }
+
+  return topo + ALTURA_BARRA;
+}
+
+/**
+ * Todas as metas da categoria, empilhadas e centradas na faixa entre o heroi e o
+ * rodape. Hoje sao 1 ou 2 (nenhuma categoria tem mais); com 3+ o respiro entre
+ * elas encolhe para o bloco nao invadir o rodape.
+ */
+function desenharMetas(
+  ctx: CanvasRenderingContext2D,
+  paleta: Paleta,
+  metas: MetaDoCard[]
+): void {
+  if (metas.length === 0) return;
+
+  const respiro = metas.length > 2 ? 26 : 56;
+  const alturaBloco =
+    metas.length * (TEXTO_ATE_BARRA + ALTURA_BARRA) + (metas.length - 1) * respiro;
+  const faixa = METAS_BASE - METAS_TOPO;
+  const sobra = faixa - (alturaBloco + ALTURA_DO_TEXTO);
+
+  let baseline = METAS_TOPO + Math.max(0, sobra / 2) + ALTURA_DO_TEXTO;
+  for (const meta of metas) {
+    baseline = desenharMeta(ctx, paleta, meta, baseline) + respiro;
   }
 }
 
@@ -389,7 +500,7 @@ export function desenharCard(canvas: HTMLCanvasElement, dados: DadosCard): void 
 
   desenharHeroi(ctx, paleta, dados.pontosTexto, fimDoSelo + 350);
 
-  desenharBarraDaMeta(ctx, paleta, dados.rotuloMeta, dados.metaPct, 800);
+  desenharMetas(ctx, paleta, dados.metas);
 
   // Rodape: assinatura a esquerda, periodo a direita.
   ctx.fillStyle = hsla(paleta.texto, 0.3);

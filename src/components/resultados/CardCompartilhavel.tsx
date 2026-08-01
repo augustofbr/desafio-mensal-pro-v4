@@ -118,25 +118,26 @@ export function CardCompartilhavel({
       ? `${FORMATO_DECIMAL.format(numeroDoEntry(entry, "revenuePercentage"))}%`
       : `${FORMATO_INTEIRO.format(numeroDoEntry(entry, "points"))} pts`;
 
-    // Mesma meta que o MeuCartao usa no ritmo: a primeira EM ABERTO. Com todas
-    // batidas o card mostra 100% — e nao a media, que faria uma meta batida
-    // "puxar para baixo" o numero de quem ja cumpriu tudo.
-    const metas = resolveMetas(entry, regras);
-    const metaEmAberto = metas.find((meta) => !meta.batida);
-    const metaPct = metas.length === 0 ? 0 : (metaEmAberto?.pct ?? 100);
-    // O rotulo acompanha o MESMO seletor do percentual, para a imagem falar da
-    // meta que a tela esta cobrando. Com tudo batido e mais de uma meta, o nome
-    // generico e o honesto: eleger uma das metas cumpridas seria arbitrario.
-    const rotuloMeta =
-      metaEmAberto?.rotulo ?? (metas.length === 1 ? metas[0].rotulo : "Meta do mês");
+    // TODAS as metas, na mesma ordem e da mesma fonte do MeuCartao: a imagem
+    // mostra o quadro completo do periodo, sem eleger uma meta para representar
+    // as outras.
+    const metas = resolveMetas(entry, regras).map((meta) => ({
+      rotulo: meta.rotulo,
+      atual: meta.atual,
+      alvo: meta.alvo,
+      pct: meta.pct,
+      batida: meta.batida,
+      // Metas de faturamento saem em percentual — o dashboard nunca expoe reais
+      // (mesma condicao que o MeuCartao usa para trocar o texto).
+      percentual: meta.chave === "receita",
+    }));
 
     return {
       apelido: nomeExibicao(perfil),
       categoria: getCategoryDisplayName(categoria),
       posicao,
       pontosTexto,
-      rotuloMeta,
-      metaPct,
+      metas,
       mesLabel: rotuloDoPeriodo(startDate, endDate),
     };
   }, [regras, entry, posicao, perfil, categoria, startDate, endDate]);
