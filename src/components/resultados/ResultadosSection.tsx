@@ -11,9 +11,11 @@ import {
 } from "@/lib/categoryDisplayNames";
 import { getCategoryRules, type RulesVersion } from "@/lib/rulesConfig";
 import { normalizeProfessionalId } from "@/lib/scoring";
+import type { ServicoDoDia } from "@/lib/semana";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 import CorridaChart from "./CorridaChart";
 import MeuCartao from "./MeuCartao";
+import MinhaSemana from "./MinhaSemana";
 import ProfileSelector from "./ProfileSelector";
 
 interface ResultadosSectionProps {
@@ -120,7 +122,12 @@ export default function ResultadosSection({
   // Entry / posicao / lider do perfil na PROPRIA categoria (mesmo dataset do
   // ranking, sem reordenar).
   const meuRanking = useMemo(() => {
-    const semDados = { entry: null, posicao: null, liderPontos: null };
+    const semDados = {
+      entry: null,
+      posicao: null,
+      liderPontos: null,
+      servicos: [] as ServicoDoDia[],
+    };
     if (!perfilId || !categoriaDoPerfil) return semDados;
 
     const entries = dadosPorCategoria[categoriaDoPerfil] ?? [];
@@ -134,18 +141,23 @@ export default function ResultadosSection({
 
     const pontosDoLider = numeroDoEntry(entries[0], "points");
     const liderPontos = pontosDoLider > 0 ? pontosDoLider : null;
+    // Os servicos vem do entry BRUTO: a semana mostra os dias trabalhados mesmo
+    // quando o guard de podio abaixo zera o entry do cartao.
+    const bruto = entries[indice].services;
+    const servicos = Array.isArray(bruto) ? (bruto as ServicoDoDia[]) : [];
 
     // Zerado no periodo = sem atendimento, nao "1o lugar". Com o mes inteiro em
     // zero a ordem do array decidiria a lideranca, e o cartao coroaria quem
     // simplesmente veio primeiro na lista.
     if (numeroDoEntry(entries[indice], "points") <= 0) {
-      return { entry: null, posicao: null, liderPontos };
+      return { entry: null, posicao: null, liderPontos, servicos };
     }
 
     return {
       entry: entries[indice],
       posicao: posicaoNoRanking(entries, indice),
       liderPontos,
+      servicos,
     };
   }, [perfilId, categoriaDoPerfil, dadosPorCategoria]);
 
@@ -259,6 +271,16 @@ export default function ResultadosSection({
           )}
         </CardContent>
       </Card>
+
+      {/* Detalhe pessoal fica DEPOIS da corrida: primeiro a pessoa se situa na
+          equipe, depois olha os proprios dias. Sem perfil nao ha semana. */}
+      {perfil && (
+        <MinhaSemana
+          services={meuRanking.servicos}
+          categoria={categoriaDoPerfil ?? ""}
+          rules={rules}
+        />
+      )}
 
       <ProfileSelector
         aberto={seletorAberto}
