@@ -16,6 +16,11 @@ export interface DadosCard {
   posicao: number;
   /** Ja formatado com unidade pelo componente ("128 pts", "88,4%"). */
   pontosTexto: string;
+  /**
+   * Nome da meta em foco ("SPA dos Pés", "Clientes únicos", "Meta do mês").
+   * Sem ele o percentual ficaria orfao: 70% de que?
+   */
+  rotuloMeta: string;
   /** 0..100 da meta em foco (a mesma que o cartao usa no ritmo). */
   metaPct: number;
   mesLabel: string;
@@ -291,22 +296,45 @@ function desenharHeroi(
   ctx.fillText(unidade, MARGEM + larguraNumero + espaco, y);
 }
 
+/**
+ * Meta com nome e percentual na mesma linha ("SPA dos Pés · 70%"), logo acima da
+ * barra. Nome e percentual juntos porque separados o numero fica orfao — "70%"
+ * sozinho nao diz de que meta se trata. O percentual e maior que o rotulo: o
+ * numero e a noticia, o nome so situa (mesma licao do "pts" gigante do heroi).
+ */
 function desenharBarraDaMeta(
   ctx: CanvasRenderingContext2D,
   paleta: Paleta,
+  rotuloMeta: string,
   metaPct: number,
   y: number
 ): void {
   const pct = Math.min(100, Math.max(0, metaPct));
   const altura = 34;
+  const tamanhoRotulo = 34;
+  const tamanhoPct = 56;
+  const separador = " · ";
 
-  ctx.font = fonteTexto(36, 500);
-  ctx.fillStyle = hsla(paleta.texto, 0.9);
-  ctx.fillText("Meta do mês", MARGEM, y);
+  const textoPct = `${Math.round(pct)}%`;
+  ctx.font = fonteNumero(tamanhoPct, 500);
+  const larguraPct = ctx.measureText(textoPct).width;
 
-  ctx.font = fonteNumero(36, 500);
-  const rotulo = `${Math.round(pct)}%`;
-  ctx.fillText(rotulo, TAMANHO - MARGEM - ctx.measureText(rotulo).width, y);
+  ctx.font = fonteTexto(tamanhoRotulo, 500);
+  const larguraSeparador = ctx.measureText(separador).width;
+  const nome = truncar(
+    ctx,
+    rotuloMeta.trim() || "Meta do mês",
+    LARGURA_CONTEUDO - larguraPct - larguraSeparador
+  );
+
+  ctx.fillStyle = hsla(paleta.texto, 0.85);
+  ctx.fillText(nome, MARGEM, y);
+  const depoisDoNome = MARGEM + ctx.measureText(nome).width;
+  ctx.fillText(separador, depoisDoNome, y);
+
+  ctx.font = fonteNumero(tamanhoPct, 500);
+  ctx.fillStyle = hsla(paleta.texto);
+  ctx.fillText(textoPct, depoisDoNome + larguraSeparador, y);
 
   const topo = y + 28;
   preencherArredondado(
@@ -361,7 +389,7 @@ export function desenharCard(canvas: HTMLCanvasElement, dados: DadosCard): void 
 
   desenharHeroi(ctx, paleta, dados.pontosTexto, fimDoSelo + 350);
 
-  desenharBarraDaMeta(ctx, paleta, dados.metaPct, 800);
+  desenharBarraDaMeta(ctx, paleta, dados.rotuloMeta, dados.metaPct, 800);
 
   // Rodape: assinatura a esquerda, periodo a direita.
   ctx.fillStyle = hsla(paleta.texto, 0.3);

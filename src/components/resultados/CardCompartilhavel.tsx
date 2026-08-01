@@ -124,12 +124,18 @@ export function CardCompartilhavel({
     const metas = resolveMetas(entry, regras);
     const metaEmAberto = metas.find((meta) => !meta.batida);
     const metaPct = metas.length === 0 ? 0 : (metaEmAberto?.pct ?? 100);
+    // O rotulo acompanha o MESMO seletor do percentual, para a imagem falar da
+    // meta que a tela esta cobrando. Com tudo batido e mais de uma meta, o nome
+    // generico e o honesto: eleger uma das metas cumpridas seria arbitrario.
+    const rotuloMeta =
+      metaEmAberto?.rotulo ?? (metas.length === 1 ? metas[0].rotulo : "Meta do mês");
 
     return {
       apelido: nomeExibicao(perfil),
       categoria: getCategoryDisplayName(categoria),
       posicao,
       pontosTexto,
+      rotuloMeta,
       metaPct,
       mesLabel: rotuloDoPeriodo(startDate, endDate),
     };
