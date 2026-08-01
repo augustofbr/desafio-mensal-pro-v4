@@ -257,9 +257,13 @@ nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
   pelo botao "Trocar" / "limpar".
   - `MeuCartao`: cartao pessoal (pontos, metas de `src/lib/metaProgress.ts`, projecao de ritmo,
     posicao). `CorridaChart`: barras horizontais por categoria em HTML/CSS (sem Recharts).
-    `ProfileSelector`: sheet "Quem e voce?".
+    `ProfileSelector`: sheet "Quem e voce?". `MinhaSemana`: blocos seg-sab do periodo
+    (`src/lib/semana.ts`). `CardCompartilhavel`: PNG 1080x1080 desenhado em canvas
+    (`src/lib/shareCard.ts`), Web Share API com fallback de download.
   - Nenhum deles consulta o banco: recebem os MESMOS datasets ja rankeados que alimentam o
     `DataRankings`, entao os numeros batem entre as duas secoes.
+  - O card compartilhavel so mostra numeros de quem o gerou (spec §4.5) e sai SEMPRE no tema
+    claro — `shareCard.ts` le as variaveis CSS da marca com a classe `.dark` suspensa.
 
 ### Edge Functions
 - **daily-trinks-automation**: Processes and formats service data

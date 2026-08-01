@@ -13,6 +13,7 @@ import { getCategoryRules, type RulesVersion } from "@/lib/rulesConfig";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import type { ServicoDoDia } from "@/lib/semana";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
+import CardCompartilhavel from "./CardCompartilhavel";
 import CorridaChart from "./CorridaChart";
 import MeuCartao from "./MeuCartao";
 import MinhaSemana from "./MinhaSemana";
@@ -278,6 +279,18 @@ export default function ResultadosSection({
         <MinhaSemana
           services={meuRanking.servicos}
           categoria={categoriaDoPerfil ?? ""}
+          rules={rules}
+        />
+      )}
+
+      {/* Fecha a secao: a pessoa se situou, viu os proprios dias e agora leva o
+          resultado embora. Sem perfil nao ha o que compartilhar; sem entry (nem
+          um atendimento no periodo) o proprio card se esconde. */}
+      {perfil && (
+        <CardCompartilhavel
+          perfil={perfil}
+          entry={meuRanking.entry}
+          posicao={meuRanking.posicao}
           rules={rules}
         />
       )}
