@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { Check } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
   SheetContent,
@@ -107,12 +106,18 @@ export function ProfileSelector({
           </SheetDescription>
         </SheetHeader>
 
+        {/*
+          A lista rola com overflow nativo, e nao com <ScrollArea>: o viewport do
+          Radix usa `h-full`, que nao resolve dentro de um flex de altura
+          automatica — ele crescia ate a altura do conteudo e o container
+          recortava Unhas/Estetica, sem rolagem nenhuma.
+        */}
         {grupos.length === 0 ? (
           <p className="py-6 text-center text-base text-muted-foreground">
             Nenhum profissional disponível para escolher neste período.
           </p>
         ) : (
-          <ScrollArea className="-mx-2 flex-1">
+          <div className="-mx-2 min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="space-y-5 px-2 pb-2">
               {grupos.map((grupo) => (
                 <div key={grupo.categoria} className="space-y-2">
@@ -151,7 +156,7 @@ export function ProfileSelector({
                 </div>
               ))}
             </div>
-          </ScrollArea>
+          </div>
         )}
 
         <Button
