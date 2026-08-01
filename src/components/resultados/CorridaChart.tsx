@@ -57,7 +57,10 @@ interface Linha {
 export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) {
   const percentual = unidade === "%";
 
-  const linhas = useMemo<Linha[]>(() => {
+  const { linhas, corridaComecou } = useMemo<{
+    linhas: Linha[];
+    corridaComecou: boolean;
+  }>(() => {
     // `points` e o valor pelo qual TODOS os modelos ordenam; no modelo
     // revenue-percentage ele ja e o proprio percentual da meta.
     const valores = entries.map((entry) => numeroDoEntry(entry, "points"));
@@ -66,7 +69,7 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
     let posicaoAnterior = 0;
     let valorAnterior: number | null = null;
 
-    return entries.map((entry, indice) => {
+    const montadas = entries.map((entry, indice) => {
       const valor = valores[indice];
       const id = normalizeProfessionalId(entry.professionalId as string | number | null | undefined);
 
@@ -89,9 +92,14 @@ export function CorridaChart({ entries, perfilId, unidade }: CorridaChartProps) 
         euMesma: id !== null && id === perfilId,
       };
     });
+
+    // Todo mundo zerado nao e um empate no 1o lugar: e uma corrida que ainda
+    // nao comecou. Sem isso o mes recem-aberto entrega medalha de ouro a
+    // equipe inteira.
+    return { linhas: montadas, corridaComecou: maior > 0 };
   }, [entries, perfilId, percentual]);
 
-  if (linhas.length === 0) {
+  if (linhas.length === 0 || !corridaComecou) {
     return (
       <p className="py-6 text-center text-base text-muted-foreground">
         Nenhum atendimento na categoria neste período.

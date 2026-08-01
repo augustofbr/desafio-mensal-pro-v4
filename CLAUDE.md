@@ -69,7 +69,7 @@ npm run preview
 ### Key Directories
 
 - `/src/components/` - React components organized by feature
-  - `/charts/` - Chart components (Evolution, Distribution, Comparison)
+  - `/resultados/` - "Minha Meta + Corrida": acompanhamento pessoal mobile-first
   - `/dashboard/` - Dashboard-specific components including data processors
   - `/ui/` - shadcn/ui components (auto-generated, don't modify directly)
 - `/src/hooks/` - Custom React hooks for data fetching
@@ -242,12 +242,6 @@ painel de premiacao), via `isCategoryActive()` em `src/lib/categoryDisplayNames.
 Componentes que listam categorias precisam consultar essa funcao — nao a constante estatica
 `ENABLED_PROF_CATEGORIES`, que nao varia por mes.
 
-**Componentes de grafico nao utilizados:** `src/components/charts/ComparisonChart.tsx` e
-`src/components/charts/DistributionChart.tsx` nao sao importados por nenhum arquivo. Ambos
-ainda usam deteccao e rotulos antigos ("Tratamentos" fixo, `isCategoryEnabled`), o que e
-inofensivo enquanto seguirem desmontados. Quem for reativar um deles precisa migra-lo para
-`isCategoryActive` e para `rules.specialServiceLabel` antes.
-
 **V4 (ago/2026):** Cabelo 5 pts por `Cronograma Capilar [pacote]`; Unhas 3 pts por SPA dos Pes;
 Estetica migra para `points` com 3 pts por `Limpeza de Pele*`; volume de atendimento vale 2 pts
 nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
@@ -257,7 +251,15 @@ nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
 - `PremiacaoPanel`: Prize qualification panel showing leaders and prize status per category
 - `ProfessionalModal`: Detailed breakdown when clicking on a professional
 - `DataRankings`: Main ranking display with category tabs
-- `EvolutionChartContainer`: Daily accumulated points chart per category
+- `ResultadosSection` (`src/components/resultados/`): mobile-first "Minha Meta + Corrida" section
+  that replaced the old line charts. Identidade local (sem login) por `localStorage`
+  (`destaque.perfil.v1`, ver `src/lib/perfilLocal.ts` + `usePerfilLocal`), sempre reversivel
+  pelo botao "Trocar" / "limpar".
+  - `MeuCartao`: cartao pessoal (pontos, metas de `src/lib/metaProgress.ts`, projecao de ritmo,
+    posicao). `CorridaChart`: barras horizontais por categoria em HTML/CSS (sem Recharts).
+    `ProfileSelector`: sheet "Quem e voce?".
+  - Nenhum deles consulta o banco: recebem os MESMOS datasets ja rankeados que alimentam o
+    `DataRankings`, entao os numeros batem entre as duas secoes.
 
 ### Edge Functions
 - **daily-trinks-automation**: Processes and formats service data
@@ -365,9 +367,10 @@ TRINKS_PASSWORD=<configured in dashboard>
 
 ## Common Development Tasks
 
-### Adding a New Chart
-1. Create component in `/src/components/charts/`
-2. Use Recharts components for consistency
+### Adding a New Visualization
+1. Create component in `/src/components/resultados/`
+2. Prefira HTML/CSS puro (padrao do `CorridaChart`); Recharts sobrou apenas nas primitivas
+   nao usadas de `/components/ui/`
 3. Accept data as props (no direct Supabase queries)
 4. Apply date filtering through parent component
 

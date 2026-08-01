@@ -2,7 +2,7 @@
 import { Card } from "@/components/ui/card";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DataRankings from "@/components/dashboard/DataRankings";
-import DashboardCharts from "@/components/dashboard/DashboardCharts";
+import ResultadosSection from "@/components/resultados/ResultadosSection";
 import PremiacaoPanel from "@/components/PremiacaoPanel";
 import RegrasDoDesafio from "@/components/RegrasDoDesafio";
 import DateFilter from "@/components/DateFilter";
@@ -249,12 +249,13 @@ function DashboardContent() {
                 </div>
               </Card>
             ) : (
-              <DashboardCharts
+              <ResultadosSection
                 hairData={hairData}
                 manicureData={manicureData}
                 esteticaData={esteticaData}
                 maquiagemData={maquiagemData}
                 rules={rules}
+                activeProfessionals={activeProfessionals}
               />
             )}
           </div>
