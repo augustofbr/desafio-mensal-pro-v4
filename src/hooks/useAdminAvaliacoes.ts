@@ -1,4 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  removerDoCache,
+  restaurarCache,
+  type SnapshotCache,
+} from "@/lib/avaliacoesCache";
 // Mesma instância que todo o resto do app usa — `@/lib/supabase` só reexporta o
 // client de `@/integrations/supabase/client` sem o genérico `Database` gerado,
 // que não conhece `avaliacoes_cadastradas`. Sem isso, cada `.from()` aqui
@@ -24,12 +29,29 @@ export interface AvaliacaoAdmin {
 const COLUNAS =
   "id, profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro, aprovado_por, data_aprovacao";
 
-/** Teto do historico: a tabela ja passa de 700 aprovadas e o painel so precisa
- *  das decisoes recentes (o resto vive no dashboard). */
-export const HISTORICO_LIMITE = 100;
+/**
+ * Teto do historico POR PERIODO. O historico deixou de ser "as N ultimas
+ * decisoes" e passou a ser "as decisoes do periodo escolhido", entao o teto tem
+ * de caber um mes cheio: os meses de pico da tabela chegam a 200 decisoes
+ * (out/2025: 192, nov/2025: 200, mar/2026: 191). 500 da folga de ~2,5x sobre o
+ * pior mes ja registrado e continua sendo uma resposta pequena.
+ * Quando o retorno bate exatamente no teto, a tela avisa que pode ter cortado.
+ */
+export const HISTORICO_LIMITE = 500;
+
+/** Janela de busca ja resolvida em instantes UTC — ver `resolverPeriodo` em
+ *  `@/lib/periodoHistorico`. Fim EXCLUSIVO. */
+export interface JanelaHistorico {
+  inicioISO: string;
+  fimISO: string;
+}
 
 const CHAVE_PENDENTES = ["admin_avaliacoes", "pendentes"] as const;
+/** Prefixo: cada periodo tem sua propria entrada de cache abaixo dele. */
 const CHAVE_HISTORICO = ["admin_avaliacoes", "historico"] as const;
+
+const chaveHistorico = (janela: JanelaHistorico) =>
+  [...CHAVE_HISTORICO, janela.inicioISO, janela.fimISO] as const;
 
 /**
  * Um UPDATE barrado pela RLS nao volta com erro: volta com ZERO linhas. Sem
@@ -57,12 +79,25 @@ async function buscarPendentes(): Promise<AvaliacaoAdmin[]> {
   return (data as AvaliacaoAdmin[] | null) ?? [];
 }
 
-async function buscarHistorico(): Promise<AvaliacaoAdmin[]> {
+/**
+ * Historico do periodo. O recorte e por `data_hora_cadastro` — a data que
+ * decide em QUE MES a estrela pontua (`useStarsData`), e a mesma que a fila usa
+ * para avisar sobre mes fechado. Filtrar pela data da DECISAO daria outra
+ * lista: 22 das ~816 decisoes ja registradas foram tomadas num mes diferente do
+ * cadastro.
+ *
+ * O filtro roda no servidor de proposito: com teto de linhas, filtrar no
+ * cliente mostraria "nada em julho" so porque as 500 ultimas linhas eram de
+ * agosto.
+ */
+async function buscarHistorico(janela: JanelaHistorico): Promise<AvaliacaoAdmin[]> {
   const { data, error } = await supabase
     .from("avaliacoes_cadastradas")
     .select(COLUNAS)
     .in("status", ["aprovada", "rejeitada"])
-    .order("data_aprovacao", { ascending: false, nullsFirst: false })
+    .gte("data_hora_cadastro", janela.inicioISO)
+    .lt("data_hora_cadastro", janela.fimISO)
+    .order("data_hora_cadastro", { ascending: false })
     .limit(HISTORICO_LIMITE);
 
   if (error) throw error;
@@ -82,44 +117,32 @@ export function useAvaliacoesPendentes() {
   return { pendentes: data ?? [], isLoading };
 }
 
-export function useAdminAvaliacoes() {
+/**
+ * Rollback + refetch das mutacoes. A remocao otimista em si vive em
+ * `@/lib/avaliacoesCache` (com o `QueryClient` injetado, para ter teste).
+ */
+function useRemocaoOtimista() {
   const queryClient = useQueryClient();
+
+  return {
+    remover: (prefixo: readonly unknown[], ids: string[]) =>
+      removerDoCache(queryClient, prefixo, ids),
+    restaurar: (anterior?: SnapshotCache) => restaurarCache(queryClient, anterior),
+    // `onSettled` sempre invalida o ramo inteiro: aprovar tira da fila e poe no
+    // historico, devolver faz o contrario — os dois lados saem do ar juntos.
+    invalidar: () => queryClient.invalidateQueries({ queryKey: ["admin_avaliacoes"] }),
+  };
+}
+
+/** Fila de pendentes + a decisao (aprovar/recusar). */
+export function useAdminAvaliacoes() {
   const { acesso } = useAcesso();
+  const { remover, restaurar, invalidar } = useRemocaoOtimista();
 
   const pendentesQuery = useQuery({
     queryKey: CHAVE_PENDENTES,
     queryFn: buscarPendentes,
   });
-
-  const historicoQuery = useQuery({
-    queryKey: CHAVE_HISTORICO,
-    queryFn: buscarHistorico,
-  });
-
-  const invalidar = () => {
-    queryClient.invalidateQueries({ queryKey: ["admin_avaliacoes"] });
-  };
-
-  /**
-   * Remocao otimista: tira as linhas decididas da lista JA, sem esperar o
-   * round-trip. Sem isso, no celular do salao a linha fica no lugar por um
-   * tempo apos o toque — o admin acha que nao pegou, toca de novo ou comeca a
-   * rolar, e a lista muda debaixo do dedo. Devolve o estado anterior para o
-   * `onError` reverter (a RLS pode barrar: UPDATE bloqueado volta com zero
-   * linhas, e `conferirLinhasEscritas` transforma isso em erro).
-   */
-  async function removerOtimista(chave: readonly unknown[], ids: string[]) {
-    await queryClient.cancelQueries({ queryKey: chave });
-    const anterior = queryClient.getQueryData<AvaliacaoAdmin[]>(chave);
-    queryClient.setQueryData<AvaliacaoAdmin[]>(chave, (atual) =>
-      (atual ?? []).filter((a) => !ids.includes(a.id)),
-    );
-    return anterior;
-  }
-
-  function restaurar(chave: readonly unknown[], anterior?: AvaliacaoAdmin[]) {
-    if (anterior) queryClient.setQueryData(chave, anterior);
-  }
 
   /**
    * Aprovar/rejeitar. A regra de negocio do score exige os TRES campos juntos:
@@ -153,14 +176,36 @@ export function useAdminAvaliacoes() {
       conferirLinhasEscritas(data as { id: string }[] | null, ids);
     },
     onMutate: async ({ ids }) => ({
-      anterior: await removerOtimista(CHAVE_PENDENTES, ids),
+      anterior: await remover(CHAVE_PENDENTES, ids),
     }),
     onError: (_erro, _variaveis, contexto) => {
-      restaurar(CHAVE_PENDENTES, contexto?.anterior);
+      restaurar(contexto?.anterior);
     },
     // `onSettled` e nao `onSuccess`: no erro tambem queremos o refetch, para a
     // fila voltar a refletir o servidor e nao o rollback local.
     onSettled: invalidar,
+  });
+
+  return {
+    pendentes: pendentesQuery.data ?? [],
+    isLoading: pendentesQuery.isLoading,
+    decidir,
+  };
+}
+
+/**
+ * Historico de decisoes de UM periodo + o desfazer.
+ *
+ * Cada janela e uma entrada de cache propria, entao trocar o filtro de periodo
+ * dispara uma busca nova (e `isLoading` volta a ser true na primeira vez que
+ * aquele periodo aparece — e o sinal que a tela usa para o esqueleto).
+ */
+export function useHistoricoAvaliacoes(janela: JanelaHistorico) {
+  const { remover, restaurar, invalidar } = useRemocaoOtimista();
+
+  const historicoQuery = useQuery({
+    queryKey: chaveHistorico(janela),
+    queryFn: () => buscarHistorico(janela),
   });
 
   /**
@@ -180,21 +225,20 @@ export function useAdminAvaliacoes() {
       if (error) throw error;
       conferirLinhasEscritas(data as { id: string }[] | null, ids);
     },
-    onMutate: async (ids) => ({
-      anterior: await removerOtimista(CHAVE_HISTORICO, ids),
-    }),
+    onMutate: async (ids) => ({ anterior: await remover(CHAVE_HISTORICO, ids) }),
     onError: (_erro, _variaveis, contexto) => {
-      restaurar(CHAVE_HISTORICO, contexto?.anterior);
+      restaurar(contexto?.anterior);
     },
     onSettled: invalidar,
   });
 
+  const historico = historicoQuery.data ?? [];
+
   return {
-    pendentes: pendentesQuery.data ?? [],
-    historico: historicoQuery.data ?? [],
-    isLoading: pendentesQuery.isLoading,
-    isLoadingHistorico: historicoQuery.isLoading,
-    decidir,
+    historico,
+    isLoading: historicoQuery.isLoading,
+    /** O periodo tem mais decisoes do que coube na resposta. */
+    atingiuTeto: historico.length >= HISTORICO_LIMITE,
     reverter,
   };
 }

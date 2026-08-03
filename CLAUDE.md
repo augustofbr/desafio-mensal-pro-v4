@@ -330,12 +330,32 @@ nenhum. O `AuthProvider` do kit e montado **so na subarvore `/admin`** (`src/App
 
 ### Aba "Aprovacoes" (fila de estrelas do Google)
 
-`src/components/admin/AvaliacoesManager.tsx` + `src/hooks/useAdminAvaliacoes.ts`. Portada em
+`src/components/admin/AvaliacoesManager.tsx` (fila) + `HistoricoDecisoes.tsx` (historico) +
+`AvaliacoesUI.tsx` (pecas comuns) + `src/hooks/useAdminAvaliacoes.ts`. Portada em
 2026-08-01 do app `ranking_por_categoria-estrela_google` (era a rota `/admin/painel-aprovacao`
 la); antes disso o dono aprovava por SQL manual. **E a aba padrao** do `AdminPanel` — as
 outras tres sao configuracao, esta e a tarefa diaria. A `TabsList` mostra o numero de
 pendentes; o contador vem de `useAvaliacoesPendentes()`, que compartilha a queryKey
 `["admin_avaliacoes","pendentes"]` com o manager (uma requisicao para os dois).
+
+**Historico de decisoes** (`useHistoricoAvaliacoes`, desde 2026-08-03): recortado por
+periodo — mes atual (padrao), mes anterior, hoje, ontem, semana passada (seg-dom) ou
+intervalo livre — resolvido por `resolverPeriodo()` em `src/lib/periodoHistorico.ts` (fuso
+Manaus, offset fixo -04:00, fim EXCLUSIVO). Pontos que nao podem ser afrouxados:
+
+- O recorte roda **no servidor** (`.gte`/`.lt`) e por **`data_hora_cadastro`** — a data que
+  define em que mes a estrela pontua. Filtrar no cliente esconderia meses inteiros atras do
+  teto de linhas (mes de pico ja teve 200 decisoes; o teto e `HISTORICO_LIMITE = 500` e a
+  tela avisa quando bate nele). Consequencia visivel e correta: "Ontem" pode vir vazio
+  mesmo tendo havido decisoes ontem, se as avaliacoes forem de outro dia.
+- Cada periodo e uma **entrada de cache propria**
+  (`["admin_avaliacoes","historico",<inicioISO>,<fimISO>]`), entao a remocao otimista opera
+  por **prefixo** de chave (`src/lib/avaliacoesCache.ts`, com teste em `avaliacoesCache.test.ts`).
+  Voltar a usar chave exata quebra o "Devolver para a fila" em silencio: a linha so sumiria
+  no refetch.
+- Filtros de profissional/busca/ordenacao e as abas Todas/Aprovadas/Recusadas sao
+  client-side, sobre o periodo ja carregado. A lista de profissionais sai do periodo INTEIRO
+  (antes dos demais filtros), senao escolher um esvaziaria as opcoes dos outros.
 
 Regras que **nao** podem ser afrouxadas ao mexer aqui:
 
