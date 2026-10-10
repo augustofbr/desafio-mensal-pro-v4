@@ -12,8 +12,11 @@
 -- inteira (sem merge linha a linha). Sem versao <= M, nenhuma marca autorizada.
 -- A resolucao roda no cliente: src/lib/marcasPorMes.ts.
 --
--- Dados existentes: recebem valid_from = '2000-01' pelo DEFAULT da coluna, entao
--- continuam valendo para qualquer mes — nada muda na tela ate alguem criar uma versao.
+-- Dados existentes: recebem valid_from = '2000-01' pelo DEFAULT usado SO no backfill
+-- (o ADD COLUMN preenche as linhas existentes), entao continuam valendo para qualquer
+-- mes — nada muda na tela ate alguem criar uma versao. Logo em seguida o DEFAULT e
+-- removido: todo escritor TEM de informar a versao. Um INSERT sem valid_from falha com
+-- NOT NULL em vez de cair calado na versao-base (o que reescreveria o historico inteiro).
 --
 -- tratamento_fabricante (marca de cada tratamento) NAO e versionada e nao e tocada.
 --
@@ -38,17 +41,29 @@
 --       unique (profissional_id, fabricante),
 --     drop constraint profissional_fabricante_valid_from_formato,
 --     drop column valid_from;
+--   (o drop default nao precisa de rollback: some junto com a coluna)
 --   grant truncate on public.profissional_fabricante to authenticated;
 --
--- Ordem de deploy: esta migracao ANTES do app novo (o app passa a selecionar
--- valid_from; sem a coluna a query falha). O app antigo continua funcionando com a
--- coluna nova enquanto so existir a versao '2000-01'.
+-- Ordem de deploy e compatibilidade:
+--   1. Esta migracao ANTES do app novo: o app novo seleciona e grava valid_from; sem a
+--      coluna, a leitura falha (o dashboard entao suprime o ranking de Cabelo e avisa,
+--      nos meses com manufacturerConstraints) e a escrita do admin falha.
+--   2. Entre a migracao e o deploy do app, o app ANTIGO:
+--      - le normalmente (ignora valid_from; com so a versao '2000-01' o resultado e igual);
+--      - "Autorizar" no admin FALHA (NOT NULL em valid_from, sem default) — intencional;
+--      - remover e "Sincronizar" continuam funcionando sobre a versao '2000-01'.
+--      Publicar o app logo depois da migracao. Abas com o bundle antigo abertas depois que
+--      existir uma 2a versao enxergam a uniao das versoes ate recarregar.
 
 begin;
 
--- 1. Coluna de versao (linhas existentes ficam em '2000-01' pelo default).
+-- 1. Coluna de versao. O default existe so para o backfill das linhas atuais
+--    ('2000-01') e e removido logo abaixo. Reaplicar: o ADD e pulado e o DROP DEFAULT
+--    e no-op.
 alter table public.profissional_fabricante
   add column if not exists valid_from text not null default '2000-01';
+alter table public.profissional_fabricante
+  alter column valid_from drop default;
 
 -- 2. Formato 'YYYY-MM' (mesmo formato de regras_desafio.valid_from).
 do $$
@@ -60,7 +75,7 @@ begin
   ) then
     alter table public.profissional_fabricante
       add constraint profissional_fabricante_valid_from_formato
-      check (valid_from ~ '^\d{4}-(0[1-9]|1[0-2])$');
+      check (valid_from ~ '^[0-9]{4}-(0[1-9]|1[0-2])$');
   end if;
 end $$;
 
