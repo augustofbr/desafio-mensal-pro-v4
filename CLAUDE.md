@@ -271,6 +271,28 @@ em versao passada nem esvazia uma versao) — para mudar so a partir de um mes, 
 Se a leitura das marcas falhar com a regra ligada, o ranking de Cabelo e suprimido com aviso
 (`cabeloIndisponivel`), nunca exibido com tudo reprovado. `tratamento_fabricante` NAO e versionada.
 
+#### Bônus Estrelas (out/2026)
+
+Extra em R$ por estrela Google aprovada, **separado do ranking e da pontuação** (não mexe em
+pontos nem no `PremiacaoPanel`). Seção na home, logo abaixo de "Minha Meta + Corrida" e acima
+do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado via
+`renderAbaixo` de `ResultadosSection`, que **compartilha a identidade local e o seletor
+"Quem é você?"** — não crie outra identidade).
+
+- **Config**: `CategoryRules.starBonusValue?: number` (R$ por estrela; ausente/0 = sem bônus),
+  vindo do JSONB de `regras_desafio` por categoria (sem migração). Editável na aba Regras do
+  `/admin` ("Bônus por estrela aprovada (R$)"); o editor espalha o objeto da categoria, então
+  o campo sobrevive ao salvar. `RegrasDoDesafio` mostra a linha "Bônus extra" por categoria.
+  A seção inteira só aparece se alguma categoria **ativa** do mês tiver `starBonusValue > 0`.
+- **Elegibilidade** (`src/lib/bonusEstrelas.ts`, testes em `bonusEstrelas.test.ts`): profissional
+  em `profissionais_ativos` com `ativo !== false`, `categoria` não nula, categoria ativa no mês
+  (`isCategoryActive`) e bônus > 0. O valor de cada um é o `starBonusValue` da categoria dele.
+- **Mês de atribuição = mês do `data_hora_cadastro`** (Manaus), o mesmo critério de
+  `useStarsData`: as aprovadas vêm de `starsData` (exposto por `useDashboardData`); as pendentes,
+  de `useEstrelasPendentes` (consulta própria, recorte no servidor `.gte/.lt`, uma vez por período).
+- **Nunca mostrar soma/total da equipe**, só valores individuais. Sem botão "Atualizar":
+  carrega ao abrir/recarregar a página, como o resto do app.
+
 #### Key Components
 
 - `PremiacaoPanel`: Prize qualification panel showing leaders and prize status per category

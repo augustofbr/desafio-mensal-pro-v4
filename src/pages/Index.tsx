@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DataRankings from "@/components/dashboard/DataRankings";
 import ResultadosSection from "@/components/resultados/ResultadosSection";
+import BonusEstrelas from "@/components/resultados/BonusEstrelas";
 import PremiacaoPanel from "@/components/PremiacaoPanel";
 import RegrasDoDesafio from "@/components/RegrasDoDesafio";
 import DateFilter from "@/components/DateFilter";
@@ -30,6 +31,7 @@ function DashboardContent() {
     lastServiceDate,
     loading,
     rules,
+    starsData,
     selectProfessional,
     professionalDetails,
     activeProfessionals
@@ -234,6 +236,16 @@ function DashboardContent() {
                 maquiagemData={maquiagemData}
                 rules={rules}
                 activeProfessionals={activeProfessionals}
+                renderAbaixo={({ perfilId, perfil, abrirSeletor }) => (
+                  <BonusEstrelas
+                    starsData={starsData}
+                    rules={rules}
+                    activeProfessionals={activeProfessionals}
+                    perfilId={perfilId}
+                    perfil={perfil}
+                    onAbrirSeletor={abrirSeletor}
+                  />
+                )}
               />
             )}
           </div>

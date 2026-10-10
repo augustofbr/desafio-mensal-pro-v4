@@ -100,6 +100,9 @@ export function useDashboardData() {
     maquiagemData,
     invalidTreatments: cabeloIndisponivel ? SEM_RANKING : invalidTreatments,
     rules,
+    // Estrelas aprovadas do periodo por profissional (mesmo dado do scoring);
+    // o Bonus Estrelas as le sem uma segunda consulta.
+    starsData,
     refreshData: fetchServicesData,
     selectedProfessional,
     professionalDetails: cabeloIndisponivel && selectedCategory === "Cabelo" ? null : professionalDetails,

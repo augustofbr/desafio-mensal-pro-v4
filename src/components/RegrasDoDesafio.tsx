@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BookOpen, Scissors, Sparkles, Heart, Palette, LucideIcon } from "lucide-react";
 import { RulesVersion, CategoryRules, getCategoryRules } from "@/lib/rulesConfig";
+import { formatarBRL } from "@/lib/bonusEstrelas";
 
 interface CategoriaRegra {
   id: string;
@@ -103,6 +104,12 @@ function buildRegrasForCategory(catRules: CategoryRules, manufacturerLabel?: str
     );
   } else if (!catRules.starsCountInScore) {
     regras.push("Avaliacoes Google aparecem no perfil, mas nao somam pontos nesta categoria");
+  }
+
+  if (typeof catRules.starBonusValue === "number" && catRules.starBonusValue > 0) {
+    regras.push(
+      `Bônus extra: cada estrela Google aprovada vale ${formatarBRL(catRules.starBonusValue)} (pago após o fechamento do mês)`
+    );
   }
 
   return regras;

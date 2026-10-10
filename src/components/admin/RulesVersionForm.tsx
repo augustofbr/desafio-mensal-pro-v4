@@ -259,6 +259,24 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
                       </div>
                     </div>
 
+                    <div>
+                      <Label className="text-xs text-gray-500">Bônus por estrela aprovada (R$)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={cat.starBonusValue ?? ""}
+                        onChange={(e) =>
+                          updateCategory(key, "starBonusValue", e.target.value === "" ? undefined : Number(e.target.value))
+                        }
+                        placeholder="Sem bônus"
+                        className="font-body text-sm w-40"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Extra pago por estrela Google aprovada, separado do ranking. Vazio ou 0 = sem bônus.
+                      </p>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="text-xs text-gray-500">Label servico especial</Label>

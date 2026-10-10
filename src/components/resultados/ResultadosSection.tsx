@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,6 +21,16 @@ interface ResultadosSectionProps {
   maquiagemData: Record<string, unknown>[];
   rules: RulesVersion;
   activeProfessionals: ProfissionalAtivo[];
+  /**
+   * Conteudo extra renderizado logo abaixo da secao, COMPARTILHANDO a mesma
+   * identidade local e o mesmo seletor "Quem e voce?" (o Bonus Estrelas usa
+   * isto em vez de abrir uma segunda identidade).
+   */
+  renderAbaixo?: (contexto: {
+    perfilId: string | null;
+    perfil: ProfissionalAtivo | null;
+    abrirSeletor: () => void;
+  }) => ReactNode;
 }
 
 /** Le um campo numerico do entry; ausente/invalido vira 0. */
@@ -43,6 +53,7 @@ export default function ResultadosSection({
   maquiagemData,
   rules,
   activeProfessionals,
+  renderAbaixo,
 }: ResultadosSectionProps) {
   const { perfilId, perfil, escolher, limpar, autoLimpou, reconhecerAutoLimpeza } =
     usePerfilLocal(activeProfessionals);
@@ -177,6 +188,12 @@ export default function ResultadosSection({
           rules={rules}
         />
       )}
+
+      {renderAbaixo?.({
+        perfilId,
+        perfil,
+        abrirSeletor: () => setSeletorAberto(true),
+      })}
 
       <ProfileSelector
         aberto={seletorAberto}

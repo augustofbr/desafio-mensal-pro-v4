@@ -194,7 +194,7 @@ export function calcularBonus(
 export function formatarBRL(valor: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
     .format(valor)
-    .replace(/ /g, " ");
+    .replace(/\s/g, " ");
 }
 
 /** "R$ 5" quando inteiro (selo compacto), senao "R$ 2,50". */
