@@ -32,6 +32,7 @@ function DashboardContent() {
     loading,
     rules,
     starsData,
+    starsError,
     selectProfessional,
     professionalDetails,
     activeProfessionals
@@ -239,6 +240,7 @@ function DashboardContent() {
                 renderAbaixo={({ perfilId, perfil, abrirSeletor }) => (
                   <BonusEstrelas
                     starsData={starsData}
+                    starsError={starsError}
                     rules={rules}
                     activeProfessionals={activeProfessionals}
                     perfilId={perfilId}

@@ -37,11 +37,16 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
     estetica: new Map(),
   });
   const [loading, setLoading] = useState(true);
+  // true quando a leitura/processamento das estrelas falhou. Os mapas continuam
+  // zerados (scoring inalterado); o flag so permite a quem exibe valores em R$
+  // (Bonus Estrelas) nao confundir "falhou" com "nenhuma estrela".
+  const [falhou, setFalhou] = useState(false);
   const { getFilteredDateRange } = useDateFilter();
 
   const fetchStars = useCallback(async () => {
     try {
       setLoading(true);
+      setFalhou(false);
 
       // Buscar estrelas aprovadas
       const { data: avaliacoes, error } = await supabase
@@ -52,6 +57,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
 
       if (error) {
         console.error("Erro ao buscar avaliacoes_cadastradas:", error);
+        setFalhou(true);
         setStarsData({ cabelo: new Map(), unhas: new Map(), maquiagem: new Map(), estetica: new Map() });
         return;
       }
@@ -131,6 +137,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
       setStarsData(result);
     } catch (error) {
       console.error("Erro ao processar estrelas:", error);
+      setFalhou(true);
       setStarsData({ cabelo: new Map(), unhas: new Map(), maquiagem: new Map(), estetica: new Map() });
     } finally {
       setLoading(false);
@@ -145,7 +152,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
     }
   }, [activeProfessionals, fetchStars]);
 
-  return { starsData, loading };
+  return { starsData, loading, error: falhou };
 }
 
 export { STAR_POINTS_VALUE };

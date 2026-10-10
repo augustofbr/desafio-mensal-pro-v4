@@ -46,7 +46,7 @@ export interface LinhaBonus extends ElegivelBonus {
 }
 
 export interface ResultadoBonus {
-  /** Quem tem >= 1 aprovada: estrelas desc, empate por nome. */
+  /** Quem tem >= 1 aprovada: valor desc, depois estrelas desc e nome. */
   ranking: LinhaBonus[];
   /** Elegiveis sem nenhuma aprovada no periodo. */
   semEstrela: number;
@@ -159,7 +159,14 @@ function contagem(origem: Record<string, number>, id: string): number {
   return typeof qtd === "number" && Number.isFinite(qtd) && qtd > 0 ? Math.floor(qtd) : 0;
 }
 
-export function compararPorEstrelasENome(a: LinhaBonus, b: LinhaBonus): number {
+/**
+ * Ordem do ranking do bonus: por VALOR em R$ (desc), depois estrelas aprovadas
+ * (desc) e por fim nome. Ordenar por valor — e nao por estrelas — evita que
+ * quem recebe menos apareca acima de quem recebe mais quando as categorias
+ * pagam valores diferentes por estrela.
+ */
+export function compararPorValorEstrelasENome(a: LinhaBonus, b: LinhaBonus): number {
+  if (b.valor !== a.valor) return b.valor - a.valor;
   if (b.aprovadas !== a.aprovadas) return b.aprovadas - a.aprovadas;
   return a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
 }
@@ -186,7 +193,7 @@ export function calcularBonus(
     });
   }
   const linhas = [...porId.values()];
-  const ranking = linhas.filter((l) => l.aprovadas > 0).sort(compararPorEstrelasENome);
+  const ranking = linhas.filter((l) => l.aprovadas > 0).sort(compararPorValorEstrelasENome);
   return { ranking, semEstrela: linhas.length - ranking.length, porId };
 }
 

@@ -130,7 +130,13 @@ function useRemocaoOtimista() {
     restaurar: (anterior?: SnapshotCache) => restaurarCache(queryClient, anterior),
     // `onSettled` sempre invalida o ramo inteiro: aprovar tira da fila e poe no
     // historico, devolver faz o contrario — os dois lados saem do ar juntos.
-    invalidar: () => queryClient.invalidateQueries({ queryKey: ["admin_avaliacoes"] }),
+    // Tambem invalida as pendentes do Bonus Estrelas da home (`useEstrelasPendentes`,
+    // staleTime infinito): sem isso, voltar a home pelo SPA mostraria contagem velha.
+    invalidar: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin_avaliacoes"] }),
+        queryClient.invalidateQueries({ queryKey: ["bonus_estrelas"] }),
+      ]),
   };
 }
 

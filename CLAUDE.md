@@ -290,6 +290,10 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
 - **Mês de atribuição = mês do `data_hora_cadastro`** (Manaus), o mesmo critério de
   `useStarsData`: as aprovadas vêm de `starsData` (exposto por `useDashboardData`); as pendentes,
   de `useEstrelasPendentes` (consulta própria, recorte no servidor `.gte/.lt`, uma vez por período).
+- **Ranking por valor em R$** (desempate: estrelas, depois nome; posição por valor). A seção
+  fica oculta no filtro `custom` (só mês atual/anterior). Se `useStarsData` falhar (`error`), a
+  seção mostra aviso de erro, nunca "R$ 0,00". Mutações da aba Aprovações invalidam
+  `["bonus_estrelas"]` para as pendentes não ficarem velhas.
 - **Nunca mostrar soma/total da equipe**, só valores individuais. Sem botão "Atualizar":
   carrega ao abrir/recarregar a página, como o resto do app.
 

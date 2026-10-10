@@ -219,7 +219,7 @@ describe("calcularBonus", () => {
     expect(formatarBRL(r.porId.get("1")!.valor)).toBe("R$ 25,00");
   });
 
-  it("ordena por estrelas desc e desempata por nome", () => {
+  it("com o mesmo valor por estrela, ordena por estrelas desc e desempata por nome", () => {
     const r = calcularBonus(elegiveis, { "1": 3, "2": 3, "3": 7 });
     expect(r.ranking.map((l) => l.nome)).toEqual(["Alice", "Bruna", "Carla"]);
   });
@@ -231,6 +231,37 @@ describe("calcularBonus", () => {
     );
     const r = calcularBonus(lista, { "1": 2, "2": 2, "3": 2 });
     expect(r.ranking.map((l) => l.nome)).toEqual(["ana", "Bia", "Érica"]);
+  });
+
+  it("ordena por VALOR em R$, nao por estrelas: Estetica R$ 10 x 3 acima de Cabelo R$ 5 x 4", () => {
+    const lista = profissionaisElegiveis(
+      [prof(1, "Ana", "Cabelo"), prof(2, "Bia", "Estetica")],
+      regras({ estetica: { starBonusValue: 10 } })
+    );
+    const r = calcularBonus(lista, { "1": 4, "2": 3 });
+    expect(r.porId.get("1")?.valor).toBe(20);
+    expect(r.porId.get("2")?.valor).toBe(30);
+    expect(r.ranking.map((l) => l.nome)).toEqual(["Bia", "Ana"]);
+  });
+
+  it("mesmo numero de estrelas com valores distintos: quem recebe mais vem antes", () => {
+    const lista = profissionaisElegiveis(
+      [prof(1, "Zélia", "Estetica"), prof(2, "Ana", "Cabelo")],
+      regras({ estetica: { starBonusValue: 10 } })
+    );
+    const r = calcularBonus(lista, { "1": 3, "2": 3 });
+    expect(r.ranking.map((l) => l.nome)).toEqual(["Zélia", "Ana"]);
+    expect(r.ranking.map((l) => l.valor)).toEqual([30, 15]);
+  });
+
+  it("mesmo valor com estrelas diferentes: desempata por estrelas e depois por nome", () => {
+    // Estetica R$ 10 x 2 = R$ 20 = Cabelo R$ 5 x 4 = R$ 20.
+    const lista = profissionaisElegiveis(
+      [prof(1, "Ana", "Cabelo"), prof(2, "Bia", "Estetica"), prof(3, "Cris", "Cabelo")],
+      regras({ estetica: { starBonusValue: 10 } })
+    );
+    const r = calcularBonus(lista, { "1": 4, "2": 2, "3": 4 });
+    expect(r.ranking.map((l) => l.nome)).toEqual(["Ana", "Cris", "Bia"]);
   });
 
   it("so entra no ranking quem tem >= 1 aprovada; o resto vira 'sem estrela'", () => {

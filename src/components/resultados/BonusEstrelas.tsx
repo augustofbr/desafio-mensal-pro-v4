@@ -25,6 +25,8 @@ import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
 interface BonusEstrelasProps {
   starsData: StarsByCategory;
+  /** A leitura das estrelas falhou: `starsData` esta zerado e NAO vale como "0 estrelas". */
+  starsError: boolean;
   rules: RulesVersion;
   activeProfessionals: ProfissionalAtivo[];
   perfilId: string | null;
@@ -213,7 +215,7 @@ function MeuBonus({
     >
       {cabecalho}
       <p
-        className="mt-2 font-mono-num text-4xl font-medium leading-none"
+        className="mt-2 font-mono-num text-3xl font-medium leading-none sm:text-4xl"
         style={{ color: COR_VERDE }}
       >
         {formatarBRL(linha.valor)}
@@ -274,8 +276,9 @@ interface RankingProps {
 }
 
 function RankingBonus({ linhas, semEstrela, mes, perfilId }: RankingProps) {
-  // Mesma regra de empate do ranking da página (1, 1, 3...).
-  const posicoes = useMemo(() => calcularPosicoes(linhas.map((l) => l.aprovadas)), [linhas]);
+  // Posição por VALOR em R$ (a lista já vem ordenada por valor desc). Mesma
+  // regra de empate do ranking da página (1, 1, 3...), só quando o valor empata.
+  const posicoes = useMemo(() => calcularPosicoes(linhas.map((l) => l.valor)), [linhas]);
 
   return (
     <div className={CARD}>
@@ -316,7 +319,7 @@ function RankingBonus({ linhas, semEstrela, mes, perfilId }: RankingProps) {
                   {linha.aprovadas}
                 </span>
                 <span
-                  className="w-24 shrink-0 text-right font-mono-num text-sm font-medium"
+                  className="min-w-[5.5rem] shrink-0 whitespace-nowrap text-right font-mono-num text-sm font-medium"
                   style={{ color: COR_VERDE }}
                 >
                   {formatarBRL(linha.valor)}
@@ -346,9 +349,34 @@ function RankingBonus({ linhas, semEstrela, mes, perfilId }: RankingProps) {
  * MESMA da seção Minha Meta (recebida por props), nunca uma segunda.
  */
 export default function BonusEstrelas(props: BonusEstrelasProps) {
+  const { filterType, getFilteredDateRange } = useDateFilter();
+
+  // Intervalo livre não é "o mês": o bônus é mensal e o texto/pagamento falam em
+  // mês fechado. A área só aparece em mês atual e mês anterior.
+  if (filterType === "custom") return null;
+
   // Sem bônus configurado nas categorias ativas do mês, a área some — e nem a
   // consulta de pendentes é feita.
   if (!bonusDisponivel(props.rules)) return null;
+
+  // Estrelas não carregaram: nunca mostrar "nenhuma estrela" / R$ 0,00 no lugar
+  // de um erro. Sem ranking e sem valores.
+  if (props.starsError) {
+    return (
+      <section aria-labelledby="bonus-estrelas-titulo" className="space-y-4">
+        <div className={CARD}>
+          <Cabecalho mes={nomeDoMes(getFilteredDateRange().startDate)} valorUnico={null} />
+          <p
+            role="alert"
+            className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 font-body text-sm text-gray-700"
+          >
+            Não foi possível carregar as estrelas agora. Recarregue a página para ver seu bônus.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   return <BonusEstrelasConteudo {...props} />;
 }
 
