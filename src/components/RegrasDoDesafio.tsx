@@ -85,7 +85,7 @@ function buildRegrasForCategory(catRules: CategoryRules, manufacturerLabel?: str
       const label = catRules.specialServiceLabel || "servico especial";
       const extra = catRules.manufacturerConstraints ? " da marca autorizada" : "";
       regras.push(
-        `Cada ${label}${extra} vale ${catRules.specialServicePointValue} ponto${catRules.specialServicePointValue > 1 ? "s" : ""}`
+        `${label}${extra}: ${catRules.specialServicePointValue} ponto${catRules.specialServicePointValue > 1 ? "s" : ""} cada`
       );
     }
   } else if (catRules.scoringModel === "revenue-percentage") {
@@ -130,7 +130,7 @@ function buildMetaText(catRules: CategoryRules): string {
 
 function buildMetaExcelencia(catRules: CategoryRules): string | undefined {
   if (catRules.symbolicGoals.stars && catRules.symbolicGoals.stars > 0) {
-    return `Meta excelencia profissional: ${catRules.symbolicGoals.stars} estrelas Google`;
+    return `Mínimo de Estrelas Google: ${catRules.symbolicGoals.stars} (não elimina prêmio)`;
   }
   return undefined;
 }
