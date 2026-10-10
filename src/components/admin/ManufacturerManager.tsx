@@ -5,66 +5,122 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 // Native selects used instead of Radix Select for better mobile/click compatibility
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, X, Loader2, Factory, User, RefreshCw } from "lucide-react";
-import { useAdminManufacturer } from "@/hooks/useAdminManufacturer";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Plus, X, Loader2, Factory, User, RefreshCw, CopyPlus } from "lucide-react";
+import { useAdminManufacturer, ProfissionalFabricante } from "@/hooks/useAdminManufacturer";
 import { useActiveProfessionals } from "@/hooks/useActiveProfessionals";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { isMesValido, ultimoMesDaVersao, versaoVigente } from "@/lib/marcasPorMes";
+import { mesManausAtual } from "@/lib/dateUtils";
+import { fabricanteDb, mensagemDeErro } from "@/lib/fabricanteDb";
 // auth-kit: controles de escrita só para quem tem write na página "admin".
 // Isto é UX — quem burlar o DOM esbarra na RLS (policies destaque_can_write_page).
 import { RequireWrite } from "@/auth/guards";
 
+/** 'AAAA-MM' -> 'MM/AAAA' para exibicao; '2000-01' e a versao-base, sem data real. */
+function rotuloVersao(v: string): string {
+  if (v === "2000-01") return "Base (desde o início)";
+  const [ano, mes] = v.split("-");
+  return `A partir de ${mes}/${ano}`;
+}
+
+function rotuloMes(v: string): string {
+  const [ano, mes] = v.split("-");
+  return `${mes}/${ano}`;
+}
+
 export function ManufacturerManager() {
   const {
     treatmentsByBrand,
-    brandsByProfessional,
     profBrands,
+    versions,
     allBrands,
     isLoading,
     addTreatment,
     removeTreatment,
     addProfBrand,
     removeProfBrand,
+    createVersion,
+    invalidateProf,
   } = useAdminManufacturer();
 
   const { activeProfessionals, fetchActiveProfessionals } = useActiveProfessionals();
   const cabeloProfessionals = activeProfessionals.filter((p) => p.categoria === "Cabelo" && p.nome_profissional);
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [syncing, setSyncing] = useState(false);
+
+  // Versao de profissional_fabricante em edicao. Padrao: a mais recente. Se a
+  // selecionada deixar de existir (ultima linha removida), volta para a mais recente.
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const versaoAtual =
+    selectedVersion && versions.includes(selectedVersion) ? selectedVersion : versions[0] ?? null;
+  const rowsDaVersao = versaoAtual ? profBrands.filter((p) => p.valid_from === versaoAtual) : [];
+  const brandsByProfessionalId = rowsDaVersao.reduce<Record<number, ProfissionalFabricante[]>>((acc, p) => {
+    if (!acc[p.profissional_id]) acc[p.profissional_id] = [];
+    acc[p.profissional_id].push(p);
+    return acc;
+  }, {});
+  const fimVersaoAtual = versaoAtual ? ultimoMesDaVersao(versions, versaoAtual) : null;
+  const mesCorrente = mesManausAtual();
+  const versaoDoMesCorrente = versaoVigente(versions, mesCorrente);
+
+  // Tabela sem nenhuma versao: a primeira autorizacao precisa dizer de que mes vale.
+  const [versaoInicial, setVersaoInicial] = useState(mesCorrente);
+  const versaoParaInserir = versaoAtual ?? versaoInicial;
+
+  const [newVersionOpen, setNewVersionOpen] = useState(false);
+  const [newVersionOrigin, setNewVersionOrigin] = useState("");
+  const [newVersionMonth, setNewVersionMonth] = useState("");
 
   // Auto-fetch profissionais on mount
   useEffect(() => {
     fetchActiveProfessionals();
   }, [fetchActiveProfessionals]);
 
+  /**
+   * Sincroniza SO a versao selecionada: atualiza o nome exibido e remove quem saiu
+   * de Cabelo. Versoes anteriores ficam intocadas — sao o historico de meses ja
+   * apurados.
+   */
   const handleSyncProfessionals = async () => {
+    if (!versaoAtual) return;
     setSyncing(true);
     try {
       // 1. Refresh profissionais_ativos from DB
       await fetchActiveProfessionals();
 
-      // 2. Get current profissional_fabricante rows
-      const { data: currentRows } = await supabase
-        .from("profissional_fabricante" as any)
-        .select("id, profissional_id, nome_profissional, fabricante");
+      // 2. Linhas atuais da versao selecionada
+      const { data: currentRows, error: readError } = await fabricanteDb
+        .from("profissional_fabricante")
+        .select("id, profissional_id, nome_profissional, fabricante")
+        .eq("valid_from", versaoAtual);
+      if (readError) throw readError;
 
-      const rows = (currentRows || []) as { id: number; profissional_id: number; nome_profissional: string; fabricante: string }[];
+      const rows = (currentRows || []) as unknown as { id: number; profissional_id: number; nome_profissional: string; fabricante: string }[];
 
-      // 3. Get fresh cabelo professionals
+      // 3. Profissionais de Cabelo
       const freshCabelo = activeProfessionals.filter((p) => p.categoria === "Cabelo" && p.nome_profissional);
+      // Lista vazia = cadastro nao carregou (ou falhou). Remover com base nela
+      // apagaria a versao inteira.
+      if (freshCabelo.length === 0) {
+        throw new Error("Lista de profissionais de Cabelo vazia; nada foi alterado. Recarregue e tente de novo.");
+      }
       const cabeloIds = new Set(freshCabelo.map((p) => p.profissionalId));
       const cabeloNameMap = new Map(freshCabelo.map((p) => [p.profissionalId, p.nome_profissional!]));
 
       // 4. Update nome_profissional for existing rows where name changed
+      let updated = 0;
       for (const row of rows) {
         const newName = cabeloNameMap.get(row.profissional_id);
         if (newName && newName !== row.nome_profissional) {
-          await supabase
-            .from("profissional_fabricante" as any)
+          const { data, error } = await fabricanteDb
+            .from("profissional_fabricante")
             .update({ nome_profissional: newName })
-            .eq("id", row.id);
+            .eq("id", row.id)
+            .select("id");
+          if (error) throw error;
+          if (!data || data.length !== 1) throw new Error("Atualizacao de nome barrada (0 linhas gravadas).");
+          updated++;
         }
       }
 
@@ -73,29 +129,51 @@ export function ManufacturerManager() {
         .filter((r) => !cabeloIds.has(r.profissional_id))
         .map((r) => r.id);
       if (idsToRemove.length > 0) {
-        await supabase
-          .from("profissional_fabricante" as any)
+        const { data, error } = await fabricanteDb
+          .from("profissional_fabricante")
           .delete()
-          .in("id", idsToRemove);
+          .in("id", idsToRemove)
+          .select("id");
+        if (error) throw error;
+        if (!data || data.length !== idsToRemove.length) {
+          throw new Error(`Remocao parcial: ${data?.length ?? 0} de ${idsToRemove.length} linha(s).`);
+        }
       }
-
-      // 6. Refresh frontend data
-      await queryClient.invalidateQueries({ queryKey: ["admin_profissional_fabricante"] });
-      await queryClient.invalidateQueries({ queryKey: ["profissional_fabricante"] });
-
-      const updated = rows.filter((r) => {
-        const newName = cabeloNameMap.get(r.profissional_id);
-        return newName && newName !== r.nome_profissional;
-      }).length;
 
       toast({
         title: "Sincronizacao concluida",
-        description: `${freshCabelo.length} profissionais de Cabelo. ${updated} nomes atualizados. ${idsToRemove.length} removidos.`,
+        description: `Versao ${rotuloVersao(versaoAtual)}: ${freshCabelo.length} profissionais de Cabelo. ${updated} nomes atualizados. ${idsToRemove.length} removidos.`,
       });
-    } catch (err: any) {
-      toast({ title: "Erro na sincronizacao", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro na sincronizacao", description: mensagemDeErro(err), variant: "destructive" });
     } finally {
+      // 6. Refresh frontend data (tambem apos erro: pode ter havido escrita parcial)
+      await invalidateProf();
       setSyncing(false);
+    }
+  };
+
+  const openNewVersion = () => {
+    setNewVersionOrigin(versaoAtual ?? "");
+    setNewVersionMonth(mesCorrente);
+    setNewVersionOpen(true);
+  };
+
+  const newVersionError = (() => {
+    if (!isMesValido(newVersionMonth)) return "Informe o mes no formato AAAA-MM.";
+    if (versions.includes(newVersionMonth)) return `A versao ${rotuloMes(newVersionMonth)} ja existe.`;
+    return null;
+  })();
+
+  const handleCreateVersion = async () => {
+    if (!newVersionOrigin || newVersionError) return;
+    try {
+      const n = await createVersion.mutateAsync({ origem: newVersionOrigin, destino: newVersionMonth });
+      setSelectedVersion(newVersionMonth);
+      setNewVersionOpen(false);
+      toast({ title: "Versao criada", description: `${n} autorizacao(oes) copiada(s) para ${rotuloVersao(newVersionMonth)}.` });
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: mensagemDeErro(err), variant: "destructive" });
     }
   };
 
@@ -108,6 +186,16 @@ export function ManufacturerManager() {
 
   const [deleteTarget, setDeleteTarget] = useState<{ type: "treatment" | "profBrand"; id: number; label: string } | null>(null);
 
+  // Uma versao so existe enquanto tiver linhas. Remover a ultima faz os meses dela
+  // caírem na versao anterior (ou em "nenhuma marca"), entao o dialogo avisa.
+  const avisoUltimaLinha = (() => {
+    if (deleteTarget?.type !== "profBrand" || !versaoAtual || rowsDaVersao.length !== 1) return null;
+    const anterior = versions.find((v) => v < versaoAtual);
+    return anterior
+      ? `É a última autorização desta versão: ela deixa de existir e os meses dela passam a usar a versão "${rotuloVersao(anterior)}".`
+      : "É a última autorização desta versão: ela deixa de existir e os meses dela ficam sem nenhuma marca autorizada.";
+  })();
+
   const handleAddTreatment = async () => {
     const brand = newBrandName.trim() || newTreatmentBrand;
     const name = newTreatmentName.trim();
@@ -117,8 +205,8 @@ export function ManufacturerManager() {
       setNewTreatmentName("");
       setNewBrandName("");
       toast({ title: "Tratamento adicionado" });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: mensagemDeErro(err), variant: "destructive" });
     }
   };
 
@@ -131,12 +219,15 @@ export function ManufacturerManager() {
         profissional_id: prof.profissionalId,
         nome_profissional: prof.nome_profissional,
         fabricante: newProfBrandFabricante,
+        // So a versao selecionada muda; as outras (outros meses) ficam intocadas.
+        valid_from: versaoParaInserir,
       });
+      setSelectedVersion(versaoParaInserir);
       setNewProfBrandProfId("");
       setNewProfBrandFabricante("");
       toast({ title: "Marca autorizada adicionada" });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: mensagemDeErro(err), variant: "destructive" });
     }
   };
 
@@ -149,8 +240,8 @@ export function ManufacturerManager() {
         await removeProfBrand.mutateAsync(deleteTarget.id);
       }
       toast({ title: "Removido com sucesso" });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro", description: mensagemDeErro(err), variant: "destructive" });
     }
     setDeleteTarget(null);
   };
@@ -244,7 +335,7 @@ export function ManufacturerManager() {
         </CardContent>
       </Card>
 
-      {/* Professional → Allowed Brands */}
+      {/* Professional → Allowed Brands (versionado por mes) */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -257,7 +348,7 @@ export function ManufacturerManager() {
                 variant="outline"
                 size="sm"
                 onClick={handleSyncProfessionals}
-                disabled={syncing}
+                disabled={syncing || !versaoAtual}
                 className="gap-1.5 font-body text-xs"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
@@ -267,8 +358,61 @@ export function ManufacturerManager() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Seletor de versao */}
+          <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="text-xs text-gray-500 font-body">Versão das autorizações</label>
+                <select
+                  value={versaoAtual ?? ""}
+                  onChange={(e) => setSelectedVersion(e.target.value)}
+                  disabled={versions.length === 0}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm font-body ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  {versions.length === 0 && <option value="">Nenhuma versão cadastrada</option>}
+                  {versions.map((v) => (
+                    <option key={v} value={v}>
+                      {rotuloVersao(v)}{v === versaoDoMesCorrente ? " (vigente)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <RequireWrite chave="admin">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openNewVersion}
+                  disabled={!versaoAtual || createVersion.isPending}
+                  className="gap-1.5 font-body text-xs h-10"
+                >
+                  <CopyPlus className="h-3.5 w-3.5" />
+                  Nova versão a partir desta…
+                </Button>
+              </RequireWrite>
+            </div>
+            {versaoAtual && (
+              <p className="text-xs font-body text-gray-500">
+                Vale para os meses de{" "}
+                <strong>{versaoAtual === "2000-01" ? "todo o histórico" : rotuloMes(versaoAtual)}</strong>
+                {fimVersaoAtual ? <> até <strong>{rotuloMes(fimVersaoAtual)}</strong></> : " em diante"}.
+                Mudanças aqui alteram o ranking de todos esses meses. Para mudar só a partir de um mês, crie uma nova versão.
+              </p>
+            )}
+          </div>
+
           <RequireWrite chave="admin">
           <div className="flex flex-wrap gap-2 items-end">
+            {!versaoAtual && (
+              <div className="min-w-[140px]">
+                <label className="text-xs text-gray-500 font-body">Vale a partir de (AAAA-MM)</label>
+                <Input
+                  value={versaoInicial}
+                  onChange={(e) => setVersaoInicial(e.target.value.trim())}
+                  placeholder="2026-10"
+                  className="font-body text-sm"
+                />
+              </div>
+            )}
             <div className="flex-1 min-w-[180px]">
               <label className="text-xs text-gray-500 font-body">Profissional (Cabelo)</label>
               <select
@@ -299,7 +443,7 @@ export function ManufacturerManager() {
             </div>
             <Button
               onClick={handleAddProfBrand}
-              disabled={addProfBrand.isPending || !newProfBrandProfId || !newProfBrandFabricante}
+              disabled={addProfBrand.isPending || !newProfBrandProfId || !newProfBrandFabricante || !isMesValido(versaoParaInserir)}
               size="sm"
               className="gap-1 font-body"
             >
@@ -311,7 +455,7 @@ export function ManufacturerManager() {
 
           <div className="space-y-3">
             {cabeloProfessionals.map((prof) => {
-              const brands = brandsByProfessional[prof.nome_profissional] || [];
+              const brands = brandsByProfessionalId[prof.profissionalId] || [];
               return (
                 <div key={prof.profissionalId} className="border rounded-lg p-3">
                   <h4 className="text-sm font-semibold font-body text-gray-700 mb-2">{prof.nome_profissional}</h4>
@@ -322,7 +466,7 @@ export function ManufacturerManager() {
                           {p.fabricante}
                           <RequireWrite chave="admin">
                             <button
-                              onClick={() => setDeleteTarget({ type: "profBrand", id: p.id, label: `${p.fabricante} de ${prof.nome_profissional}` })}
+                              onClick={() => setDeleteTarget({ type: "profBrand", id: p.id, label: `${p.fabricante} de ${prof.nome_profissional} (versão ${rotuloVersao(p.valid_from)})` })}
                               className="ml-1 hover:text-red-500 transition-colors"
                             >
                               <X className="h-3 w-3" />
@@ -345,12 +489,71 @@ export function ManufacturerManager() {
         </CardContent>
       </Card>
 
+      <Dialog open={newVersionOpen} onOpenChange={setNewVersionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Nova versão de marcas autorizadas</DialogTitle>
+            <DialogDescription className="font-body">
+              Copia todas as autorizações da versão de origem para um novo mês. A partir desse mês,
+              o ranking usa a nova versão; os meses anteriores continuam com a versão que já usavam.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-500 font-body">Copiar de</label>
+              <select
+                value={newVersionOrigin}
+                onChange={(e) => setNewVersionOrigin(e.target.value)}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm font-body ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                {versions.map((v) => (
+                  <option key={v} value={v}>{rotuloVersao(v)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-body">Vale a partir do mês (AAAA-MM)</label>
+              <Input
+                value={newVersionMonth}
+                onChange={(e) => setNewVersionMonth(e.target.value.trim())}
+                placeholder="2026-10"
+                className="font-body text-sm"
+              />
+              {newVersionError && (
+                <p className="text-xs text-red-600 font-body mt-1">{newVersionError}</p>
+              )}
+              {!newVersionError && newVersionMonth <= mesCorrente && (
+                <p className="text-xs text-amber-700 font-body mt-1">
+                  {rotuloMes(newVersionMonth)} já começou: o ranking desse mês passa a usar a nova versão assim que ela for editada.
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewVersionOpen(false)} className="font-body">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCreateVersion}
+              disabled={!newVersionOrigin || !!newVersionError || createVersion.isPending}
+              className="gap-1 font-body"
+            >
+              {createVersion.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+              Criar versão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="font-heading">Confirmar remocao</AlertDialogTitle>
             <AlertDialogDescription className="font-body">
               Remover "{deleteTarget?.label}"?
+              {avisoUltimaLinha && (
+                <span className="block mt-2 text-amber-700">{avisoUltimaLinha}</span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

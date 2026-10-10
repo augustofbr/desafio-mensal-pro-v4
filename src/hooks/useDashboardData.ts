@@ -10,6 +10,7 @@ import { useProfessionalDetails } from "./useProfessionalDetails";
 import { useStarsData } from "./useStarsData";
 import { getRulesForDateFromVersions } from "@/lib/rulesConfig";
 import { useManufacturerData } from "./useManufacturerData";
+import { mesDaData } from "@/lib/marcasPorMes";
 import { useRulesData } from "./useRulesData";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 
@@ -36,7 +37,11 @@ export function useDashboardData() {
   } = useActiveProfessionals();
 
   const { starsData, loading: starsLoading } = useStarsData(activeProfessionals);
-  const manufacturerData = useManufacturerData(rules.cabelo.manufacturerConstraints);
+  // Marcas autorizadas sao versionadas por mes: mesmo mes de referencia das regras.
+  const manufacturerData = useManufacturerData(
+    rules.cabelo.manufacturerConstraints,
+    mesDaData(dateRange.startDate)
+  );
 
   const cabeloProfessionals = getProfessionalsByCategory("Cabelo");
   const unhasProfessionals = getProfessionalsByCategory("Unhas");

@@ -256,6 +256,17 @@ Componentes que listam categorias precisam consultar essa funcao — nao a const
 Estetica migra para `points` com 3 pts por `Limpeza de Pele*`; volume de atendimento vale 2 pts
 nas tres; estrelas valem 3 pts e contam em todas; Maquiagem fora do desafio.
 
+#### Marcas autorizadas versionadas por mes (`profissional_fabricante.valid_from`)
+
+Quando `manufacturerConstraints` esta ligado (V2/V3 mar–mai/2026, V5 out/2026), as marcas de cada
+profissional vem de `profissional_fabricante`, **versionada como `regras_desafio`**: versao = conjunto
+inteiro de linhas com o mesmo `valid_from` ('YYYY-MM'); o mes M usa a versao com o maior
+`valid_from <= M`, sem merge; sem versao <= M, nenhuma marca autorizada. Resolucao em
+`src/lib/marcasPorMes.ts`, pelo mes do `startDate` do filtro (o mesmo das regras) dentro de
+`useManufacturerData`. As linhas anteriores ao versionamento ficaram em `'2000-01'`. No admin, editar
+uma versao muda TODOS os meses que ela cobre — para mudar so a partir de um mes, use "Nova versao".
+`tratamento_fabricante` NAO e versionada.
+
 #### Key Components
 
 - `PremiacaoPanel`: Prize qualification panel showing leaders and prize status per category
@@ -572,6 +583,7 @@ When working with Supabase operations in this project, **ALWAYS use the Supabase
 - `src/lib/constants.ts` - System constants (now minimal after profissionais_ativos migration)
 - `src/lib/workingDaysConfig.ts` - Working days and holidays configuration
 - `src/lib/dateUtils.ts` - Date filtering and conversion utilities
+- `src/lib/marcasPorMes.ts` - Resolve a versao vigente de `profissional_fabricante` para um mes
 - `src/lib/utils.ts` - General utilities including date formatting and data grouping
 - `src/types/profissionaisAtivos.ts` - TypeScript types for professional management
 

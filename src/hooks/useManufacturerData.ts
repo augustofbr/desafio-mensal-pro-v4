@@ -1,5 +1,7 @@
+import { useMemo } from "react";
+import { fabricanteDb } from "@/lib/fabricanteDb";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { linhasDoMes } from "@/lib/marcasPorMes";
 
 interface TratamentoFabricante {
   service_name: string;
@@ -10,6 +12,7 @@ interface ProfissionalFabricante {
   profissional_id: number;
   nome_profissional: string;
   fabricante: string;
+  valid_from: string;
 }
 
 export interface ManufacturerData {
@@ -19,18 +22,24 @@ export interface ManufacturerData {
   isLoading: boolean;
 }
 
-export function useManufacturerData(enabled: boolean = true): ManufacturerData {
+/**
+ * @param enabled liga as queries (so quando a regra do mes usa manufacturerConstraints)
+ * @param mes 'YYYY-MM' do inicio do filtro de data. As marcas autorizadas vem da
+ *   versao de `profissional_fabricante` vigente nesse mes (ver `src/lib/marcasPorMes.ts`).
+ *   `tratamento_fabricante` nao e versionada.
+ */
+export function useManufacturerData(enabled: boolean, mes: string): ManufacturerData {
   const { data: treatmentMap, isLoading: treatmentLoading } = useQuery({
     queryKey: ['tratamento_fabricante'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('tratamento_fabricante' as any)
+      const { data, error } = await fabricanteDb
+        .from('tratamento_fabricante')
         .select('service_name, fabricante');
 
       if (error) throw error;
 
       const map = new Map<string, string[]>();
-      for (const row of (data as TratamentoFabricante[])) {
+      for (const row of (data as unknown as TratamentoFabricante[])) {
         const existing = map.get(row.service_name) || [];
         existing.push(row.fabricante);
         map.set(row.service_name, existing);
@@ -41,51 +50,64 @@ export function useManufacturerData(enabled: boolean = true): ManufacturerData {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: profMap, isLoading: profLoading } = useQuery({
+  // Busca TODAS as versoes (tabela pequena); a resolucao pelo mes fica fora do
+  // queryFn, entao a chave nao depende do mes e as invalidacoes do admin
+  // (['profissional_fabricante']) continuam valendo.
+  const { data: profRows, isLoading: profLoading } = useQuery({
     queryKey: ['profissional_fabricante'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profissional_fabricante' as any)
-        .select('profissional_id, nome_profissional, fabricante');
+      const { data, error } = await fabricanteDb
+        .from('profissional_fabricante')
+        .select('profissional_id, nome_profissional, fabricante, valid_from');
 
       if (error) throw error;
-
-      const map = new Map<number, string[]>();
-      for (const row of (data as ProfissionalFabricante[])) {
-        const existing = map.get(row.profissional_id) || [];
-        existing.push(row.fabricante);
-        map.set(row.profissional_id, existing);
-      }
-      return map;
+      return data as unknown as ProfissionalFabricante[];
     },
     enabled,
     staleTime: 5 * 60 * 1000,
   });
 
-  const getTreatmentManufacturers = (serviceName: string): string[] => {
-    return treatmentMap?.get(serviceName) || [];
-  };
+  const profMap = useMemo(() => {
+    const map = new Map<number, string[]>();
+    for (const row of linhasDoMes(profRows || [], mes)) {
+      const existing = map.get(row.profissional_id) || [];
+      existing.push(row.fabricante);
+      map.set(row.profissional_id, existing);
+    }
+    return map;
+  }, [profRows, mes]);
 
-  const getProfessionalAllowedManufacturers = (profissionalId: number): string[] => {
-    return profMap?.get(profissionalId) || [];
-  };
+  const isLoading = enabled ? (treatmentLoading || profLoading) : false;
 
-  const isTreatmentAllowed = (serviceName: string, profissionalId: number): boolean => {
-    const treatmentManufacturers = getTreatmentManufacturers(serviceName);
-    const allowedManufacturers = getProfessionalAllowedManufacturers(profissionalId);
+  // Memoizado: os consumidores (useHairTreatmentData, useProfessionalDetails) poem
+  // este objeto em deps de effect/callback; um objeto novo a cada render refaria
+  // o calculo a cada render.
+  return useMemo(() => {
+    const getTreatmentManufacturers = (serviceName: string): string[] => {
+      return treatmentMap?.get(serviceName) || [];
+    };
 
-    if (treatmentManufacturers.length === 0) return false;
-    if (allowedManufacturers.length === 0) return false;
+    const getProfessionalAllowedManufacturers = (profissionalId: number): string[] => {
+      return profMap.get(profissionalId) || [];
+    };
 
-    return treatmentManufacturers.some(
-      tm => tm !== 'Não classificado' && allowedManufacturers.includes(tm)
-    );
-  };
+    const isTreatmentAllowed = (serviceName: string, profissionalId: number): boolean => {
+      const treatmentManufacturers = getTreatmentManufacturers(serviceName);
+      const allowedManufacturers = getProfessionalAllowedManufacturers(profissionalId);
 
-  return {
-    getTreatmentManufacturers,
-    getProfessionalAllowedManufacturers,
-    isTreatmentAllowed,
-    isLoading: enabled ? (treatmentLoading || profLoading) : false,
-  };
+      if (treatmentManufacturers.length === 0) return false;
+      if (allowedManufacturers.length === 0) return false;
+
+      return treatmentManufacturers.some(
+        tm => tm !== 'Não classificado' && allowedManufacturers.includes(tm)
+      );
+    };
+
+    return {
+      getTreatmentManufacturers,
+      getProfessionalAllowedManufacturers,
+      isTreatmentAllowed,
+      isLoading,
+    };
+  }, [treatmentMap, profMap, isLoading]);
 }
