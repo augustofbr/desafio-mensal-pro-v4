@@ -263,9 +263,13 @@ profissional vem de `profissional_fabricante`, **versionada como `regras_desafio
 inteiro de linhas com o mesmo `valid_from` ('YYYY-MM'); o mes M usa a versao com o maior
 `valid_from <= M`, sem merge; sem versao <= M, nenhuma marca autorizada. Resolucao em
 `src/lib/marcasPorMes.ts`, pelo mes do `startDate` do filtro (o mesmo das regras) dentro de
-`useManufacturerData`. As linhas anteriores ao versionamento ficaram em `'2000-01'`. No admin, editar
-uma versao muda TODOS os meses que ela cobre — para mudar so a partir de um mes, use "Nova versao".
-`tratamento_fabricante` NAO e versionada.
+`useManufacturerData`. Filtro `custom` usa a versao do mes do `startDate`, exatamente como as regras.
+As linhas anteriores ao versionamento ficaram em `'2000-01'`; a coluna **nao tem default** — todo
+INSERT informa `valid_from`. No admin, editar uma versao muda TODOS os meses que ela cobre (o seletor
+abre na vigente; mexer em versao que cobre mes encerrado pede confirmacao; "Sincronizar" nunca remove
+em versao passada nem esvazia uma versao) — para mudar so a partir de um mes, use "Nova versao".
+Se a leitura das marcas falhar com a regra ligada, o ranking de Cabelo e suprimido com aviso
+(`cabeloIndisponivel`), nunca exibido com tudo reprovado. `tratamento_fabricante` NAO e versionada.
 
 #### Key Components
 

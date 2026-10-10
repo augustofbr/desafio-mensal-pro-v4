@@ -70,10 +70,12 @@ export function useAdminManufacturer() {
 
   const addTreatment = useMutation({
     mutationFn: async (input: { service_name: string; fabricante: string }) => {
-      const { error } = await fabricanteDb
+      const { data, error } = await fabricanteDb
         .from("tratamento_fabricante")
-        .insert(input);
+        .insert(input)
+        .select("id");
       if (error) throw error;
+      exigirLinhas(data, 1, "Adicionar tratamento");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin_tratamento_fabricante"] });
@@ -83,11 +85,13 @@ export function useAdminManufacturer() {
 
   const removeTreatment = useMutation({
     mutationFn: async (id: number) => {
-      const { error } = await fabricanteDb
+      const { data, error } = await fabricanteDb
         .from("tratamento_fabricante")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .select("id");
       if (error) throw error;
+      exigirLinhas(data, 1, "Remover tratamento");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin_tratamento_fabricante"] });
