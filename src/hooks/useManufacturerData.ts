@@ -20,6 +20,9 @@ export interface ManufacturerData {
   getProfessionalAllowedManufacturers: (profissionalId: number) => string[];
   isTreatmentAllowed: (serviceName: string, profissionalId: number) => boolean;
   isLoading: boolean;
+  /** Alguma das leituras falhou (depois das retentativas do React Query). */
+  isError: boolean;
+  error: Error | null;
 }
 
 /**
@@ -29,7 +32,11 @@ export interface ManufacturerData {
  *   `tratamento_fabricante` nao e versionada.
  */
 export function useManufacturerData(enabled: boolean, mes: string): ManufacturerData {
-  const { data: treatmentMap, isLoading: treatmentLoading } = useQuery({
+  const {
+    data: treatmentMap,
+    isLoading: treatmentLoading,
+    error: treatmentError,
+  } = useQuery({
     queryKey: ['tratamento_fabricante'],
     queryFn: async () => {
       const { data, error } = await fabricanteDb
@@ -53,7 +60,7 @@ export function useManufacturerData(enabled: boolean, mes: string): Manufacturer
   // Busca TODAS as versoes (tabela pequena); a resolucao pelo mes fica fora do
   // queryFn, entao a chave nao depende do mes e as invalidacoes do admin
   // (['profissional_fabricante']) continuam valendo.
-  const { data: profRows, isLoading: profLoading } = useQuery({
+  const { data: profRows, isLoading: profLoading, error: profError } = useQuery({
     queryKey: ['profissional_fabricante'],
     queryFn: async () => {
       const { data, error } = await fabricanteDb
@@ -78,6 +85,7 @@ export function useManufacturerData(enabled: boolean, mes: string): Manufacturer
   }, [profRows, mes]);
 
   const isLoading = enabled ? (treatmentLoading || profLoading) : false;
+  const error = enabled ? ((treatmentError ?? profError) as Error | null) : null;
 
   // Memoizado: os consumidores (useHairTreatmentData, useProfessionalDetails) poem
   // este objeto em deps de effect/callback; um objeto novo a cada render refaria
@@ -108,6 +116,8 @@ export function useManufacturerData(enabled: boolean, mes: string): Manufacturer
       getProfessionalAllowedManufacturers,
       isTreatmentAllowed,
       isLoading,
+      isError: error !== null,
+      error,
     };
-  }, [treatmentMap, profMap, isLoading]);
+  }, [treatmentMap, profMap, isLoading, error]);
 }

@@ -10,9 +10,12 @@ import { useProfessionalDetails } from "./useProfessionalDetails";
 import { useStarsData } from "./useStarsData";
 import { getRulesForDateFromVersions } from "@/lib/rulesConfig";
 import { useManufacturerData } from "./useManufacturerData";
-import { mesDaData } from "@/lib/marcasPorMes";
+import { estadoMarcas, mesDaData } from "@/lib/marcasPorMes";
 import { useRulesData } from "./useRulesData";
 import { useDateFilter } from "@/contexts/DateFilterContext";
+
+// Referencia estavel para o ranking de Cabelo suprimido (ver `cabeloIndisponivel`).
+const SEM_RANKING: never[] = [];
 
 export function useDashboardData() {
   const { getFilteredDateRange } = useDateFilter();
@@ -70,23 +73,36 @@ export function useDashboardData() {
     fetchActiveProfessionals();
   }, [fetchServicesData, fetchActiveProfessionals]);
 
+  // Com a regra de marca ligada e a leitura das marcas falhando, todo tratamento
+  // seria reprovado: o ranking de Cabelo sairia com numeros falsos em silencio.
+  // Nesse caso ele e suprimido e a pagina mostra o aviso `cabeloIndisponivel`.
+  const marcas = estadoMarcas(
+    rules.cabelo.manufacturerConstraints,
+    manufacturerData.isLoading,
+    manufacturerData.isError
+  );
+  const cabeloIndisponivel = marcas === "erro"
+    ? "Não foi possível carregar as marcas autorizadas. O ranking de Cabelo deste período está indisponível; recarregue a página em instantes."
+    : null;
+
   // Combined loading state
   const loading = servicesLoading || profsLoading || detailsLoading || starsLoading ||
-    (rules.cabelo.manufacturerConstraints && manufacturerData.isLoading);
+    marcas === "carregando";
 
   return {
     loading,
     lastUpdate,
     lastServiceDate,
-    hairData,
+    hairData: cabeloIndisponivel ? SEM_RANKING : hairData,
+    cabeloIndisponivel,
     manicureData,
     esteticaData,
     maquiagemData,
-    invalidTreatments,
+    invalidTreatments: cabeloIndisponivel ? SEM_RANKING : invalidTreatments,
     rules,
     refreshData: fetchServicesData,
     selectedProfessional,
-    professionalDetails,
+    professionalDetails: cabeloIndisponivel && selectedCategory === "Cabelo" ? null : professionalDetails,
     selectProfessional,
     activeProfessionals
   };

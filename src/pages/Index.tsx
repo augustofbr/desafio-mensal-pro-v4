@@ -1,5 +1,6 @@
 
 import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DataRankings from "@/components/dashboard/DataRankings";
 import ResultadosSection from "@/components/resultados/ResultadosSection";
@@ -12,7 +13,7 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { useMonthProgress } from "@/hooks/useMonthProgress";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Cake, Star, ClipboardList, QrCode, ExternalLink, ChevronRight, ChevronDown } from "lucide-react";
+import { AlertTriangle, Cake, Star, ClipboardList, QrCode, ExternalLink, ChevronRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
 import QrCodeOverlay from "@/components/QrCodeOverlay";
@@ -21,6 +22,7 @@ function DashboardContent() {
   const navigate = useNavigate();
   const {
     hairData,
+    cabeloIndisponivel,
     manicureData,
     esteticaData,
     maquiagemData,
@@ -204,6 +206,16 @@ function DashboardContent() {
           {/* Ordem da pagina (diretiva do owner, ago/2026): o acompanhamento
               pessoal abre a tela, o ranking vem logo depois, e as regras e a
               premiacao — consulta, nao acompanhamento — fecham a pagina. */}
+          {/* Marcas autorizadas indisponiveis: o ranking de Cabelo foi suprimido
+              (useDashboardData) para nao exibir numeros falsos. */}
+          {cabeloIndisponivel && !loading && (
+            <Alert variant="destructive" className="mb-5">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle className="font-heading">Ranking de Cabelo indisponível</AlertTitle>
+              <AlertDescription className="font-body">{cabeloIndisponivel}</AlertDescription>
+            </Alert>
+          )}
+
           <div className="animate-fade-slide-up stagger-5">
             {loading ? (
               <Card className="p-6 border-0 shadow-sm">

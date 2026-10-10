@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  estadoMarcas,
+  impactoNovaVersao,
+  isVersaoPassada,
+  mesAnterior,
+  mesesFechadosDaVersao,
+  planejarSincronizacao,
   isMesValido,
   linhasDoMes,
   listarVersoes,
@@ -100,5 +106,96 @@ describe("utilitarios de versao", () => {
     expect(ultimoMesDaVersao(versoes, "2000-01")).toBe("2025-12");
     expect(ultimoMesDaVersao(versoes, "2026-01")).toBe("2026-09");
     expect(ultimoMesDaVersao(versoes, "2026-10")).toBeNull();
+  });
+});
+
+describe("meses fechados e versao passada", () => {
+  it("mesAnterior vira o ano em janeiro", () => {
+    expect(mesAnterior("2026-01")).toBe("2025-12");
+    expect(mesAnterior("2026-10")).toBe("2026-09");
+  });
+
+  it("versao base vigente cobre meses fechados ate o mes anterior", () => {
+    expect(mesesFechadosDaVersao(["2000-01"], "2000-01", "2026-10")).toEqual({ de: "2000-01", ate: "2026-09" });
+  });
+
+  it("versao que comeca no mes corrente ou no futuro nao cobre mes fechado", () => {
+    expect(mesesFechadosDaVersao(["2000-01", "2026-10"], "2026-10", "2026-10")).toBeNull();
+    expect(mesesFechadosDaVersao(["2000-01", "2026-11"], "2026-11", "2026-10")).toBeNull();
+  });
+
+  it("versao passada termina antes do mes anterior", () => {
+    const v = ["2000-01", "2026-04", "2026-10"];
+    expect(mesesFechadosDaVersao(v, "2026-04", "2026-11")).toEqual({ de: "2026-04", ate: "2026-09" });
+    expect(isVersaoPassada(v, "2026-04", "2026-11")).toBe(true);
+    expect(isVersaoPassada(v, "2026-10", "2026-11")).toBe(false);
+    expect(isVersaoPassada(["2026-12"], "2026-12", "2026-10")).toBe(false);
+  });
+});
+
+describe("impactoNovaVersao", () => {
+  it("origem igual a vigente no destino: ranking nao muda na criacao", () => {
+    const r = impactoNovaVersao(["2000-01"], "2000-01", "2026-10", "2026-10");
+    expect(r.mudaRankingNaCriacao).toBe(false);
+    expect(r.meses).toEqual({ de: "2026-10", ate: null });
+    expect(r.mesesFechados).toBeNull();
+  });
+
+  it("origem diferente da vigente no destino: muda na criacao, nomeando os meses", () => {
+    // Copiar a versao de out/2026 para abr/2026: abr-set passam a usar o conjunto de outubro.
+    const r = impactoNovaVersao(["2000-01", "2026-10"], "2026-10", "2026-04", "2026-10");
+    expect(r.vigenteNoDestino).toBe("2000-01");
+    expect(r.mudaRankingNaCriacao).toBe(true);
+    expect(r.meses).toEqual({ de: "2026-04", ate: "2026-09" });
+    expect(r.mesesFechados).toEqual({ de: "2026-04", ate: "2026-09" });
+  });
+
+  it("destino sem versao anterior: muda (de 'nenhuma marca' para a origem)", () => {
+    const r = impactoNovaVersao(["2026-10"], "2026-10", "2026-05", "2026-10");
+    expect(r.vigenteNoDestino).toBeNull();
+    expect(r.mudaRankingNaCriacao).toBe(true);
+  });
+});
+
+describe("planejarSincronizacao", () => {
+  const linhas = [
+    { id: 1, profissional_id: 10, nome_profissional: "Ana" },
+    { id: 2, profissional_id: 20, nome_profissional: "Bia" },
+  ];
+
+  it("lista de Cabelo vazia nao faz nada", () => {
+    const p = planejarSincronizacao(linhas, new Map(), false);
+    expect(p).toEqual({ renomear: [], remover: [], bloqueadas: [], bloqueio: "lista-vazia" });
+  });
+
+  it("renomeia e remove na versao vigente", () => {
+    const p = planejarSincronizacao(linhas, new Map([[10, "Ana Paula"]]), false);
+    expect(p.renomear).toEqual([{ id: 1, nome: "Ana Paula" }]);
+    expect(p.remover).toEqual([2]);
+    expect(p.bloqueio).toBeNull();
+  });
+
+  it("versao passada so renomeia", () => {
+    const p = planejarSincronizacao(linhas, new Map([[10, "Ana Paula"]]), true);
+    expect(p.renomear).toEqual([{ id: 1, nome: "Ana Paula" }]);
+    expect(p.remover).toEqual([]);
+    expect(p.bloqueadas).toEqual([2]);
+    expect(p.bloqueio).toBe("versao-passada");
+  });
+
+  it("bloqueia remocao que esvaziaria a versao", () => {
+    const p = planejarSincronizacao(linhas, new Map([[99, "Outra"]]), false);
+    expect(p.remover).toEqual([]);
+    expect(p.bloqueadas).toEqual([1, 2]);
+    expect(p.bloqueio).toBe("esvaziaria");
+  });
+});
+
+describe("estadoMarcas", () => {
+  it("erro com a regra ligada bloqueia o ranking; com a regra desligada, irrelevante", () => {
+    expect(estadoMarcas(true, false, true)).toBe("erro");
+    expect(estadoMarcas(true, true, false)).toBe("carregando");
+    expect(estadoMarcas(true, false, false)).toBe("ok");
+    expect(estadoMarcas(false, false, true)).toBe("desligado");
   });
 });
