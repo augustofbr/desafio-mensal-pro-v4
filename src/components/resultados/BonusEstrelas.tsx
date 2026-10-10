@@ -330,7 +330,7 @@ function RankingBonus({ linhas, semEstrela, mes, perfilId }: RankingProps) {
         </ol>
       )}
 
-      {semEstrela > 0 && (
+      {semEstrela > 0 && linhas.length > 0 && (
         <p className="mt-3 font-body text-xs text-gray-600">
           Mais {semEstrela} {plural(semEstrela, "profissional ainda sem", "profissionais ainda sem")}{" "}
           estrela aprovada em {mes}.

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
+import { limitesDoPeriodoISO } from "@/lib/bonusEstrelas";
 
 const STAR_POINTS_VALUE = 3;
 
@@ -48,12 +49,24 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
       setLoading(true);
       setFalhou(false);
 
-      // Buscar estrelas aprovadas
-      const { data: avaliacoes, error } = await supabase
+      // Periodo do dashboard (YYYY-MM-DD, dias em fuso Manaus)
+      const { startDate, endDate } = getFilteredDateRange();
+      const limites = limitesDoPeriodoISO(startDate, endDate);
+
+      // Buscar estrelas aprovadas, recortadas NO SERVIDOR pelo periodo: sem o
+      // recorte a consulta trazia o historico inteiro e o PostgREST corta em
+      // 1000 linhas (max-rows), descartando estrelas em silencio.
+      let query = supabase
         .from('avaliacoes_cadastradas' as any)
         .select('profissional_id, data_hora_cadastro')
         .eq('status', 'aprovada')
         .not('data_aprovacao', 'is', null);
+      if (limites) {
+        query = query
+          .gte('data_hora_cadastro', limites.inicioISO)
+          .lt('data_hora_cadastro', limites.fimISO);
+      }
+      const { data: avaliacoes, error } = await query;
 
       if (error) {
         console.error("Erro ao buscar avaliacoes_cadastradas:", error);
@@ -75,10 +88,6 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
           idToCategory.set(prof.profissionalId, prof.categoria.trim());
         }
       });
-
-      // Filtrar por período do dashboard
-      const dateRange = getFilteredDateRange();
-      const { startDate, endDate } = dateRange;
 
       const result: StarsByCategory = {
         cabelo: new Map(),
