@@ -36,6 +36,11 @@ export interface CategoryRules {
   specialServiceMatch?: SpecialServiceMatch;
   /** Ausente = true. Quando false, a categoria fica fora do desafio no periodo. */
   enabled?: boolean;
+  /**
+   * Bonus extra em R$ por estrela Google aprovada (cadastrada no mes), pago a
+   * parte e SEM relacao com o ranking/pontuacao. Ausente ou <= 0 = sem bonus.
+   */
+  starBonusValue?: number;
   prize: string;
 }
 
