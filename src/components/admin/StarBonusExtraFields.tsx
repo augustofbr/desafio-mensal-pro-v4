@@ -20,6 +20,10 @@ interface StarBonusExtraFieldsProps {
   onValorChange: (valor: string) => void;
   ids: number[];
   onIdsChange: (ids: number[]) => void;
+  /** O valor salvo no banco tem dados invalidos (o app o ignora em parte ou no todo). */
+  avisoBancoInvalido?: boolean;
+  /** Marca a secao como alterada: ao salvar, grava so os dados validos mostrados. */
+  onCorrigir?: () => void;
 }
 
 function nomeDe(prof: ProfissionalLinha): string {
@@ -33,7 +37,14 @@ function nomeDe(prof: ProfissionalLinha): string {
  * Lista quem está sem categoria e ativo, mais quem já estiver marcado (mesmo
  * que hoje tenha categoria ou esteja inativo), para dar para desmarcar.
  */
-export function StarBonusExtraFields({ valor, onValorChange, ids, onIdsChange }: StarBonusExtraFieldsProps) {
+export function StarBonusExtraFields({
+  valor,
+  onValorChange,
+  ids,
+  onIdsChange,
+  avisoBancoInvalido = false,
+  onCorrigir,
+}: StarBonusExtraFieldsProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin_profissionais_bonus_extra"],
     queryFn: async (): Promise<ProfissionalLinha[]> => {
@@ -71,11 +82,26 @@ export function StarBonusExtraFields({ valor, onValorChange, ids, onIdsChange }:
         </p>
       </div>
 
+      {avisoBancoInvalido && (
+        <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 font-body">
+          O valor salvo no banco tem dados inválidos e está sendo ignorado; salve de novo esta seção para corrigir.
+          {onCorrigir && (
+            <>
+              {" "}
+              <button type="button" onClick={onCorrigir} className="font-semibold underline underline-offset-2">
+                Gravar os dados válidos mostrados abaixo ao salvar
+              </button>
+            </>
+          )}
+        </p>
+      )}
+
       <div>
         <Label className="text-xs text-gray-500">Valor por estrela aprovada (R$)</Label>
         <Input
           type="number"
           min={0}
+          max={1000}
           step="0.01"
           value={valor}
           onChange={(e) => onValorChange(e.target.value)}

@@ -302,10 +302,15 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   `20261011120000_regras_desafio_star_bonus_extra.sql`): `{"valuePerStar": 5,
   "profissionalIds": [648177, 783999]}`, versionada com a regra do mês (mesma resolução por
   `valid_from`); NULL = ninguém. Mapeada para `RulesVersion.starBonusExtra` em `useRulesData` e
-  **validada no consumo** por `extrasDoBonus()` (valor finito > 0, ids inteiros > 0; forma
-  inválida = ignorada). Quem está na lista, ativo (`ativo !== false`), entra no bônus com esse
-  valor **mesmo sem categoria**; se tiver categoria ativa com bônus, vale a regra da categoria
-  (entra uma vez só). Nunca entra em ranking, pontos, `PremiacaoPanel` nem metas.
+  **validada no consumo** por `extrasDoBonus()` (valor arredondado em centavos, > 0 e
+  <= R$ 1.000; ids inteiros > 0; forma inválida = ignorada). Quem está na lista, ativo
+  (`ativo !== false`) e **sem categoria ativa no mês** (nula, desconhecida ou desativada) entra
+  no bônus com esse valor. Quem tem categoria ATIVA segue SEMPRE a regra da categoria, mesmo
+  listado nos extras: com `starBonusValue` 0/ausente, fica sem bônus. Nunca entra em ranking,
+  pontos, `PremiacaoPanel` nem metas.
+  - Valores em R$ (`starBonusValue` e `valuePerStar`): centavos (2 casas) e teto
+    `TETO_VALOR_POR_ESTRELA` = R$ 1.000, no consumo (`valorPorEstrelaValido`: acima = ignorado)
+    e no editor (arredonda ao salvar; acima = erro de validação).
   - Estrelas: `useStarsData` expõe `starsData.semCategoria` (aprovadas de quem não está numa das
     quatro categorias). O scoring **nunca** lê esse mapa; só o `BonusEstrelas` o soma. As
     pendentes (`useEstrelasPendentes`) já contam por id, sem filtro de categoria.
@@ -317,9 +322,10 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   - Cadastro de avaliação (`CadastrarAvaliacaoModal`) e `/minhas-avaliacoes` já listam todo o
     cadastro (sem filtro de categoria), então quem é só do bônus já aparece lá.
   - Admin: o editor de regras tem a seção "Bônus Estrelas — sem categoria" (valor + quem
-    participa). `useAdminRules` só envia `star_bonus_extra` quando o form o inclui (há valor, ou
-    a versão editada já tinha um e foi limpa): editar uma versão sem extras não toca na coluna,
-    e duplicar copia o campo.
+    participa). `useAdminRules` só envia `star_bonus_extra` quando o form o inclui. Na
+    **edição**, só se o admin mexeu na seção (inclusive para limpar): um valor cru inválido no
+    banco nunca é reescrito/apagado sem ação explícita, e a seção avisa quando ele é inválido
+    (`extrasBrutoInvalido`). Criar/duplicar envia quando há extras (duplicar copia os válidos).
 
 #### Key Components
 

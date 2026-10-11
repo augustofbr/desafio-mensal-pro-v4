@@ -58,6 +58,26 @@ export interface ResultadoBonus {
   porId: Map<string, LinhaBonus>;
 }
 
+/** Teto do valor por estrela (R$). Acima disso o valor e tratado como invalido. */
+export const TETO_VALOR_POR_ESTRELA = 1000;
+
+/** Arredonda em centavos (2 casas). */
+export function arredondarCentavos(valor: number): number {
+  return Math.round(valor * 100) / 100;
+}
+
+/**
+ * Valor em R$ por estrela vindo de regra/banco: numero finito, arredondado em
+ * centavos, > 0 e <= TETO_VALOR_POR_ESTRELA. Qualquer outra coisa vira 0
+ * (= sem bonus). Usado no consumo de `starBonusValue` e de `valuePerStar`.
+ */
+export function valorPorEstrelaValido(valor: unknown): number {
+  if (typeof valor !== "number" || !Number.isFinite(valor)) return 0;
+  if (valor > TETO_VALOR_POR_ESTRELA) return 0;
+  const centavos = arredondarCentavos(valor);
+  return centavos > 0 ? centavos : 0;
+}
+
 /** Valor do bonus de uma categoria no mes; 0 quando nao ha bonus. */
 export function valorPorEstrelaDaCategoria(
   rules: RulesVersion | null | undefined,
@@ -68,8 +88,7 @@ export function valorPorEstrelaDaCategoria(
   // Categoria desativada no mes (ou fora do dashboard) nao participa.
   if (!isCategoryActive(rules, nome)) return 0;
   const regras: CategoryRules | undefined = getCategoryRules(rules, nome);
-  const valor = regras?.starBonusValue;
-  return typeof valor === "number" && Number.isFinite(valor) && valor > 0 ? valor : 0;
+  return valorPorEstrelaValido(regras?.starBonusValue);
 }
 
 /** Extras do mes ja validados: valor por estrela + ids normalizados. */
@@ -78,26 +97,52 @@ export interface ExtrasBonus {
   ids: Set<string>;
 }
 
+function idValido(item: unknown): item is number {
+  return typeof item === "number" && Number.isSafeInteger(item) && item > 0;
+}
+
 /**
- * `star_bonus_extra` da regra do mes, validado: valor finito > 0 e ids
- * inteiros positivos. Ids invalidos sao descartados um a um; valor invalido,
- * lista ausente ou sem nenhum id valido = null (sem extras). O JSONB vem do
- * banco sem garantia de forma, entao nada aqui confia no tipo declarado.
+ * `star_bonus_extra` da regra do mes, validado: valor finito, arredondado em
+ * centavos, > 0 e <= R$ 1.000, e ids inteiros positivos. Ids invalidos sao
+ * descartados um a um; valor invalido, lista ausente ou sem nenhum id valido =
+ * null (sem extras). O JSONB vem do banco sem garantia de forma, entao nada
+ * aqui confia no tipo declarado.
  */
 export function extrasDoBonus(rules: RulesVersion | null | undefined): ExtrasBonus | null {
-  const bruto: unknown = rules?.starBonusExtra;
+  return extrasDoBruto(rules?.starBonusExtra);
+}
+
+function extrasDoBruto(bruto: unknown): ExtrasBonus | null {
   if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return null;
   const { valuePerStar, profissionalIds } = bruto as Record<string, unknown>;
-  if (typeof valuePerStar !== "number" || !Number.isFinite(valuePerStar) || valuePerStar <= 0) {
-    return null;
-  }
+  const valor = valorPorEstrelaValido(valuePerStar);
+  if (valor <= 0) return null;
   if (!Array.isArray(profissionalIds)) return null;
   const ids = new Set<string>();
   for (const item of profissionalIds) {
-    if (typeof item === "number" && Number.isSafeInteger(item) && item > 0) ids.add(String(item));
+    if (idValido(item)) ids.add(String(item));
   }
   if (ids.size === 0) return null;
-  return { valorPorEstrela: valuePerStar, ids };
+  return { valorPorEstrela: valor, ids };
+}
+
+/**
+ * O valor CRU de `star_bonus_extra` tem algo que o consumo ignora ou corrige?
+ * (forma errada, chaves a mais, valor fora de centavos/teto, id invalido.)
+ * null/undefined = coluna vazia, nao e invalido. Usado pelo editor do admin
+ * para avisar que o que esta no banco nao e o que vale.
+ */
+export function extrasBrutoInvalido(bruto: unknown): boolean {
+  if (bruto === null || bruto === undefined) return false;
+  if (typeof bruto !== "object" || Array.isArray(bruto)) return true;
+  const objeto = bruto as Record<string, unknown>;
+  const chaves = Object.keys(objeto);
+  if (chaves.some((chave) => chave !== "valuePerStar" && chave !== "profissionalIds")) return true;
+  const { valuePerStar, profissionalIds } = objeto;
+  const valor = valorPorEstrelaValido(valuePerStar);
+  if (valor <= 0 || valor !== valuePerStar) return true;
+  if (!Array.isArray(profissionalIds) || profissionalIds.length === 0) return true;
+  return !profissionalIds.every(idValido);
 }
 
 /** Categoria do profissional, se ela estiver ATIVA no desafio do mes; senao null. */
@@ -154,10 +199,12 @@ export function nomeExibicaoBonus(prof: ProfissionalParaBonus): string {
 
 /**
  * Quem participa do bonus: profissional ativo (`ativo` nao e false), com id e
- *  - categoria ATIVA no mes com bonus > 0 (valor da categoria), ou
- *  - id listado nos extras do mes (`star_bonus_extra`), com o valor dos extras.
- * A regra da categoria tem precedencia: um id extra que tambem esta numa
- * categoria ativa com bonus entra UMA vez, com o valor da categoria.
+ *  - categoria ATIVA no mes: vale SEMPRE a regra da categoria — entra com o
+ *    valor dela se for > 0 e fica fora se a categoria nao tiver bonus, mesmo
+ *    estando listado nos extras (quem esta no desafio principal segue a
+ *    categoria);
+ *  - sem categoria ativa no mes (nula, desconhecida ou desativada): entra com o
+ *    valor dos extras se o id estiver em `star_bonus_extra`.
  */
 export function profissionaisElegiveis(
   ativos: ProfissionalParaBonus[],
@@ -171,25 +218,17 @@ export function profissionaisElegiveis(
     const id = normalizeProfessionalId(prof.profissionalId);
     if (!id || vistos.has(id)) continue;
     const nome = nomeExibicaoBonus(prof);
-    const valorDaCategoria = valorPorEstrelaDaCategoria(rules, prof.categoria);
-    if (valorDaCategoria > 0) {
+    const categoriaAtiva = categoriaAtivaNoMes(rules, prof.categoria);
+    if (categoriaAtiva) {
+      const valorDaCategoria = valorPorEstrelaDaCategoria(rules, categoriaAtiva);
+      if (valorDaCategoria <= 0) continue;
       vistos.add(id);
-      resultado.push({
-        id,
-        nome,
-        categoria: prof.categoria!.trim(),
-        valorPorEstrela: valorDaCategoria,
-      });
+      resultado.push({ id, nome, categoria: categoriaAtiva, valorPorEstrela: valorDaCategoria });
       continue;
     }
     if (extras?.ids.has(id)) {
       vistos.add(id);
-      resultado.push({
-        id,
-        nome,
-        categoria: categoriaAtivaNoMes(rules, prof.categoria),
-        valorPorEstrela: extras.valorPorEstrela,
-      });
+      resultado.push({ id, nome, categoria: null, valorPorEstrela: extras.valorPorEstrela });
     }
   }
   return resultado;

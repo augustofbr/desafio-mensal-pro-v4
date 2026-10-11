@@ -8,7 +8,13 @@ import { Switch } from "@/components/ui/switch";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Loader2, Scissors, Sparkles, Heart, Palette } from "lucide-react";
 import type { CategoryRules, RulesVersion, SpecialServiceMatchType, StarBonusExtra } from "@/lib/rulesConfig";
-import { extrasDoBonus } from "@/lib/bonusEstrelas";
+import {
+  TETO_VALOR_POR_ESTRELA,
+  arredondarCentavos,
+  extrasBrutoInvalido,
+  extrasDoBonus,
+  formatarBRL,
+} from "@/lib/bonusEstrelas";
 import { StarBonusExtraFields } from "./StarBonusExtraFields";
 
 type ScoringModel = "points" | "revenue-percentage" | "revenue-points";
@@ -78,6 +84,18 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
   const [extraIds, setExtraIds] = useState<number[]>(
     extrasIniciais ? [...extrasIniciais.ids].map(Number).sort((a, b) => a - b) : []
   );
+  // O admin mexeu na secao de extras? Na EDICAO a coluna so e enviada se sim:
+  // um valor cru invalido no banco nunca e reescrito/apagado sem acao explicita.
+  const [extrasMexidos, setExtrasMexidos] = useState(false);
+  const extrasDoBancoInvalidos = extrasBrutoInvalido(initialData?.starBonusExtra);
+  const mudarExtraValor = (valor: string) => {
+    setExtraValor(valor);
+    setExtrasMexidos(true);
+  };
+  const mudarExtraIds = (ids: number[]) => {
+    setExtraIds(ids);
+    setExtrasMexidos(true);
+  };
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -141,6 +159,10 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
   };
 
   const normalizeCategory = (cat: CategoryRules): CategoryRules => {
+    // Bonus por estrela sempre gravado em centavos (o consumo tambem arredonda).
+    if (typeof cat.starBonusValue === "number") {
+      cat = { ...cat, starBonusValue: arredondarCentavos(cat.starBonusValue) };
+    }
     const values = cat.specialServiceMatch?.values.filter((v) => v.trim().length > 0) ?? [];
     if (values.length === 0) {
       const { specialServiceMatch, ...rest } = cat;
@@ -155,23 +177,39 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
       setError("Formato deve ser AAAA-MM (ex: 2026-04)");
       return;
     }
-    const valorExtra = extraValor.trim() === "" ? 0 : Number(extraValor);
-    if (!Number.isFinite(valorExtra) || valorExtra < 0) {
-      setError("Valor do Bônus Estrelas (sem categoria) inválido");
-      return;
+    for (const [key, meta] of Object.entries(CATEGORY_META)) {
+      const bonus = categories[key].starBonusValue;
+      if (bonus === undefined) continue;
+      if (!Number.isFinite(bonus) || bonus < 0 || bonus > TETO_VALOR_POR_ESTRELA) {
+        setError(
+          `${meta.label}: bônus por estrela deve ficar entre R$ 0 e ${formatarBRL(TETO_VALOR_POR_ESTRELA)}.`
+        );
+        return;
+      }
     }
-    if ((valorExtra > 0) !== (extraIds.length > 0)) {
-      setError(
-        "Bônus Estrelas sem categoria: informe o valor por estrela e marque ao menos um profissional (ou deixe os dois vazios)."
-      );
-      return;
+
+    // Edicao: a coluna so vai no payload se o admin mexeu na secao (inclusive
+    // para limpar). Criar/duplicar: vai quando ha extras (duplicar copia).
+    const enviarExtraSeHouver = mode !== "edit" || extrasMexidos;
+    let extraNovo: StarBonusExtra | null = null;
+    if (enviarExtraSeHouver) {
+      const bruto = extraValor.trim() === "" ? 0 : Number(extraValor);
+      if (!Number.isFinite(bruto) || bruto < 0 || bruto > TETO_VALOR_POR_ESTRELA) {
+        setError(
+          `Bônus Estrelas sem categoria: o valor por estrela deve ficar entre R$ 0 e ${formatarBRL(TETO_VALOR_POR_ESTRELA)}.`
+        );
+        return;
+      }
+      const valorExtra = arredondarCentavos(bruto);
+      if ((valorExtra > 0) !== (extraIds.length > 0)) {
+        setError(
+          "Bônus Estrelas sem categoria: informe o valor por estrela e marque ao menos um profissional (ou deixe os dois vazios)."
+        );
+        return;
+      }
+      extraNovo = valorExtra > 0 ? { valuePerStar: valorExtra, profissionalIds: extraIds } : null;
     }
-    const extraNovo: StarBonusExtra | null =
-      valorExtra > 0 ? { valuePerStar: valorExtra, profissionalIds: extraIds } : null;
-    // So envia a coluna quando ha o que gravar ou o que limpar: editar uma
-    // versao que nunca teve extras nao toca em star_bonus_extra.
-    const tinhaNoBanco = initialData?.starBonusExtra != null;
-    const enviarExtra = extraNovo !== null || (mode === "edit" && tinhaNoBanco);
+    const enviarExtra = mode === "edit" ? extrasMexidos : extraNovo !== null;
 
     setError(null);
     setSubmitting(true);
@@ -299,6 +337,7 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
                       <Input
                         type="number"
                         min={0}
+                        max={1000}
                         step="0.01"
                         value={cat.starBonusValue ?? ""}
                         onChange={(e) =>
@@ -450,9 +489,11 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
 
           <StarBonusExtraFields
             valor={extraValor}
-            onValorChange={setExtraValor}
+            onValorChange={mudarExtraValor}
             ids={extraIds}
-            onIdsChange={setExtraIds}
+            onIdsChange={mudarExtraIds}
+            avisoBancoInvalido={extrasDoBancoInvalidos && !extrasMexidos}
+            onCorrigir={() => setExtrasMexidos(true)}
           />
 
           {error && <p className="text-sm text-red-500 font-body">{error}</p>}

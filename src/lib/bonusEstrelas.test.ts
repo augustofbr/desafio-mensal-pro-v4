@@ -3,8 +3,12 @@ import {
   bonusDisponivel,
   calcularBonus,
   ehElegivel,
+  arredondarCentavos,
+  extrasBrutoInvalido,
   extrasDoBonus,
   fraseSoDoBonus,
+  valorPorEstrelaValido,
+  TETO_VALOR_POR_ESTRELA,
   participaSoDoBonus,
   profissionaisSoDoBonus,
   formatarBRL,
@@ -437,6 +441,16 @@ describe("star_bonus_extra (profissionais só do bônus)", () => {
     expect(participaSoDoBonus(prof(1, "Ana", "Cabelo"), rules)).toBe(false);
   });
 
+  it("extra com categoria ATIVA sem bônus fica fora (a regra da categoria manda)", () => {
+    const ana = prof(1, "Ana", "Cabelo");
+    for (const valor of [0, undefined]) {
+      const rules = comExtras({ valuePerStar: 5, profissionalIds: [1] }, { cabelo: { starBonusValue: valor } });
+      expect(profissionaisElegiveis([ana], rules)).toEqual([]);
+      expect(participaSoDoBonus(ana, rules)).toBe(false);
+      expect(profissionaisSoDoBonus([ana], rules)).toEqual([]);
+    }
+  });
+
   it("extra cuja categoria está fora do desafio no mês participa só do bônus", () => {
     const rules = comExtras({ valuePerStar: 5, profissionalIds: [7] });
     const maquiadora = prof(7, "Mara", "Maquiagem"); // maquiagem desativada em regras()
@@ -515,5 +529,64 @@ describe("star_bonus_extra (profissionais só do bônus)", () => {
     expect(fraseSoDoBonus([prof(KELLE, "Kelle", null)], rules)).toBe(
       "Kelle participa só do Bônus Estrelas (R$ 5,00 por estrela aprovada)"
     );
+  });
+});
+
+describe("valores em R$: centavos e teto", () => {
+  it("arredonda em centavos no consumo (starBonusValue e valuePerStar)", () => {
+    expect(arredondarCentavos(2.345)).toBe(2.35);
+    expect(valorPorEstrelaValido(2.333)).toBe(2.33);
+    expect(valorPorEstrelaDaCategoria(regras({ cabelo: { starBonusValue: 4.999 } }), "Cabelo")).toBe(5);
+    const rules = { ...regras(), starBonusExtra: { valuePerStar: 5.004, profissionalIds: [9] } };
+    expect(extrasDoBonus(rules)?.valorPorEstrela).toBe(5);
+  });
+
+  it("valor que arredonda para 0 conta como sem bônus", () => {
+    expect(valorPorEstrelaValido(0.004)).toBe(0);
+    expect(valorPorEstrelaDaCategoria(regras({ cabelo: { starBonusValue: 0.001 } }), "Cabelo")).toBe(0);
+  });
+
+  it(`teto de R$ ${TETO_VALOR_POR_ESTRELA}: acima disso é inválido e ignorado`, () => {
+    expect(valorPorEstrelaValido(1000)).toBe(1000);
+    expect(valorPorEstrelaValido(1000.01)).toBe(0);
+    expect(valorPorEstrelaDaCategoria(regras({ cabelo: { starBonusValue: 1500 } }), "Cabelo")).toBe(0);
+    const rules = { ...regras(), starBonusExtra: { valuePerStar: 1001, profissionalIds: [9] } };
+    expect(extrasDoBonus(rules)).toBeNull();
+  });
+
+  it("calcularBonus usa o valor já arredondado", () => {
+    const rules = regras({ cabelo: { starBonusValue: 3.333 } });
+    const elegiveis = profissionaisElegiveis([prof(1, "Ana", "Cabelo")], rules);
+    const r = calcularBonus(elegiveis, { "1": 3 });
+    expect(r.porId.get("1")?.valor).toBe(9.99);
+  });
+});
+
+describe("extrasBrutoInvalido (aviso do editor)", () => {
+  it("coluna vazia não é inválida", () => {
+    expect(extrasBrutoInvalido(null)).toBe(false);
+    expect(extrasBrutoInvalido(undefined)).toBe(false);
+  });
+
+  it("forma canônica é válida", () => {
+    expect(extrasBrutoInvalido({ valuePerStar: 5, profissionalIds: [648177, 783999] })).toBe(false);
+    expect(extrasBrutoInvalido({ valuePerStar: 2.5, profissionalIds: [1] })).toBe(false);
+  });
+
+  it("parcial ou totalmente inválido é sinalizado", () => {
+    const casos: unknown[] = [
+      "texto",
+      [1],
+      { valuePerStar: 5, profissionalIds: ["648177"] },
+      { valuePerStar: 5, profissionalIds: [648177, "x"] },
+      { valuePerStar: 5, profissionalIds: [] },
+      { valuePerStar: 5 },
+      { valuePerStar: 5, profissionalIds: [1], extra: true },
+      { valuePerStar: 5.005, profissionalIds: [1] },
+      { valuePerStar: 1001, profissionalIds: [1] },
+      { valuePerStar: 0, profissionalIds: [1] },
+      { valuePerStar: "5", profissionalIds: [1] },
+    ];
+    for (const caso of casos) expect(extrasBrutoInvalido(caso)).toBe(true);
   });
 });
