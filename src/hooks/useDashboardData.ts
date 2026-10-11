@@ -1,5 +1,5 @@
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useServicesData } from "./useServicesData";
 import { useActiveProfessionals } from "./useActiveProfessionals";
 import { useHairTreatmentData } from "./useHairTreatmentData";
@@ -46,10 +46,13 @@ export function useDashboardData() {
     mesDaData(dateRange.startDate)
   );
 
-  const cabeloProfessionals = getProfessionalsByCategory("Cabelo");
-  const unhasProfessionals = getProfessionalsByCategory("Unhas");
-  const esteticaProfessionals = getProfessionalsByCategory("Estetica");
-  const maquiagemProfessionals = getProfessionalsByCategory("Maquiagem");
+  // Memoizadas: getProfessionalsByCategory devolve um array novo a cada chamada, e
+  // essas listas sao deps dos useEffect dos hooks de categoria (que fazem setState).
+  // Sem o memo, cada render gerava um novo array -> novo setState -> loop infinito.
+  const cabeloProfessionals = useMemo(() => getProfessionalsByCategory("Cabelo"), [getProfessionalsByCategory]);
+  const unhasProfessionals = useMemo(() => getProfessionalsByCategory("Unhas"), [getProfessionalsByCategory]);
+  const esteticaProfessionals = useMemo(() => getProfessionalsByCategory("Estetica"), [getProfessionalsByCategory]);
+  const maquiagemProfessionals = useMemo(() => getProfessionalsByCategory("Maquiagem"), [getProfessionalsByCategory]);
 
   const { hairData, invalidTreatments } = useHairTreatmentData(
     allServicesData, cabeloProfessionals, starsData.cabelo,
