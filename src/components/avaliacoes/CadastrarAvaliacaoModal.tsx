@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import ProfessionalSelect from "@/components/avaliacoes/ProfessionalSelect";
 import { Button } from "@/components/ui/button";
+import { useProfissionaisSelecionaveis } from "@/hooks/useProfissionaisSelecionaveis";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
 
 const formSchema = z.object({
@@ -53,7 +54,12 @@ export default function CadastrarAvaliacaoModal({
     },
   });
 
-  const sortedProfessionals = [...activeProfessionals]
+  // Estrela cadastrada AGORA: so quem aparece no desafio do mes atual (Manaus)
+  // ou participa so do Bonus Estrelas. O `find` do submit segue no cadastro todo.
+  const { profissionais: selecionaveis, regrasCarregando } =
+    useProfissionaisSelecionaveis(activeProfessionals);
+
+  const sortedProfessionals = [...selecionaveis]
     .filter((p) => p.nome_profissional)
     .sort((a, b) =>
       (a.nome_profissional ?? "").localeCompare(b.nome_profissional ?? "")
@@ -136,11 +142,15 @@ export default function CadastrarAvaliacaoModal({
                     Profissional
                   </FormLabel>
                   <FormControl>
-                    <ProfessionalSelect
-                      professionals={sortedProfessionals}
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    />
+                    {regrasCarregando ? (
+                      <div className="h-10 rounded-lg animate-shimmer" />
+                    ) : (
+                      <ProfessionalSelect
+                        professionals={sortedProfessionals}
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      />
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>

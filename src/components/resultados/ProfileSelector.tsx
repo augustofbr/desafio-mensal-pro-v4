@@ -15,6 +15,8 @@ import {
   isCategoryActive,
 } from "@/lib/categoryDisplayNames";
 import { profissionaisSoDoBonus } from "@/lib/bonusEstrelas";
+import { profissionaisSelecionaveis } from "@/lib/profissionaisSelecionaveis";
+import { useRegrasDoMesAtual } from "@/hooks/useProfissionaisSelecionaveis";
 import type { RulesVersion } from "@/lib/rulesConfig";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
@@ -66,7 +68,19 @@ export function ProfileSelector({
   onEscolher,
   onLimpar,
 }: ProfileSelectorProps) {
+  // A identidade vale para todos os periodos (localStorage), entao a lista segue
+  // as regras do MES ATUAL, como as demais listas publicas — senao, olhando um
+  // mes passado sem `star_bonus_extra`, quem e so do bonus hoje nao se acharia.
+  // Enquanto as regras do mes atual nao chegam (ou se a leitura falhar), usa as
+  // do periodo, que o dashboard sempre tem.
+  const { rules: regrasDoMesAtual } = useRegrasDoMesAtual();
+  const regras = regrasDoMesAtual ?? rules;
+
   const grupos = useMemo(() => {
+    // Mesma regra das demais listas publicas: so ativos que aparecem no desafio
+    // do mes ou participam so do Bonus Estrelas. O perfil JA salvo nao
+    // depende disto (usePerfilLocal valida contra o cadastro inteiro).
+    const selecionaveis = profissionaisSelecionaveis(ativos, regras);
     const paraPessoas = (lista: ProfissionalAtivo[]) =>
       lista
         .map((prof) => ({
@@ -77,11 +91,11 @@ export function ProfileSelector({
         .filter((pessoa): pessoa is { id: string; nome: string } => pessoa.id !== null)
         .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
-    const porCategoria = ORDEM_CATEGORIAS.filter((categoria) => isCategoryActive(rules, categoria))
+    const porCategoria = ORDEM_CATEGORIAS.filter((categoria) => isCategoryActive(regras, categoria))
       .map((categoria) => ({
         categoria,
         titulo: getCategoryDisplayName(categoria),
-        pessoas: paraPessoas(ativos.filter((prof) => prof.categoria === categoria)),
+        pessoas: paraPessoas(selecionaveis.filter((prof) => prof.categoria?.trim() === categoria)),
       }));
 
     // Quem participa SO do Bonus Estrelas no mes (star_bonus_extra): grupo
@@ -90,11 +104,11 @@ export function ProfileSelector({
     const soBonus = {
       categoria: "__bonus_estrelas__",
       titulo: "Bônus Estrelas",
-      pessoas: paraPessoas(profissionaisSoDoBonus(ativos, rules)),
+      pessoas: paraPessoas(profissionaisSoDoBonus(selecionaveis, regras)),
     };
 
     return [...porCategoria, soBonus].filter((grupo) => grupo.pessoas.length > 0);
-  }, [ativos, rules]);
+  }, [ativos, regras]);
 
   const escolherEFechar = (id: string) => {
     onEscolher(id);

@@ -19,7 +19,7 @@ function dbRowToRulesVersion(row: RegrasDesafioDB): RulesVersion {
 }
 
 export function useRulesData() {
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["regras_desafio"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -39,5 +39,7 @@ export function useRulesData() {
 
   return {
     allVersions: data ?? [],
+    /** true so ate a primeira resposta; erro vira lista vazia (ver queryFn). */
+    isLoading,
   };
 }

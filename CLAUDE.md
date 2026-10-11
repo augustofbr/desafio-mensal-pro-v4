@@ -319,13 +319,35 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
     grupo "Bônus Estrelas" (`participaSoDoBonus`/`profissionaisSoDoBonus`); o `MeuCartao` mostra
     só "Você participa só do Bônus Estrelas neste mês." (sem metas/posição). `RegrasDoDesafio`
     ganha a linha "X e Y participam só do Bônus Estrelas (R$ …)" (`fraseSoDoBonus`).
-  - Cadastro de avaliação (`CadastrarAvaliacaoModal`) e `/minhas-avaliacoes` já listam todo o
-    cadastro (sem filtro de categoria), então quem é só do bônus já aparece lá.
+  - Cadastro de avaliação (`CadastrarAvaliacaoModal`) e `/minhas-avaliacoes` listam quem é só do
+    bônus no mês atual (ver "Listas de selecao de profissional nas paginas publicas", abaixo).
   - Admin: o editor de regras tem a seção "Bônus Estrelas — sem categoria" (valor + quem
     participa). `useAdminRules` só envia `star_bonus_extra` quando o form o inclui. Na
     **edição**, só se o admin mexeu na seção (inclusive para limpar): um valor cru inválido no
     banco nunca é reescrito/apagado sem ação explícita, e a seção avisa quando ele é inválido
     (`extrasBrutoInvalido`). Criar/duplicar envia quando há extras (duplicar copia os válidos).
+
+#### Listas de selecao de profissional nas paginas publicas
+
+"Quem e voce?" (`ProfileSelector`), cadastro de estrela (`CadastrarAvaliacaoModal`) e
+`/minhas-avaliacoes` mostram so quem aparece no desafio do mes **ou** participa so do Bonus
+Estrelas. Regra unica: `profissionaisSelecionaveis(ativos, rules)` em
+`src/lib/profissionaisSelecionaveis.ts` (testes ao lado). Entra: `ativo !== false` E categoria
+(trim) de `PROF_CATEGORIES` ATIVA no mes (`isCategoryActive`), OU `participaSoDoBonus`
+(`star_bonus_extra` validado). Saem inativos e ativos sem categoria fora dos extras; categoria
+desligada no mes (Maquiagem desde ago/2026) sai, salvo se estiver nos extras. **Fallback**: com
+`rules` null (regras do mes indisponiveis) vale so o filtro estatico — ativos com categoria de
+`PROF_CATEGORIES`, sem extras; a lista nunca fica vazia por regras nao carregadas. Regras usadas:
+nas tres listas, as do **mes atual em Manaus**, nao as do filtro do dashboard
+(`useRegrasDoMesAtual` / `useProfissionaisSelecionaveis` em `src/hooks/useProfissionaisSelecionaveis.ts`,
+que devolvem `rules` null se `regras_desafio` veio vazia; o segundo expoe `regrasCarregando`). A
+identidade do "Quem e voce?" vale para todos os periodos, entao olhar um mes passado nao pode
+esconder quem participa hoje; enquanto as regras do mes atual nao chegam, o `ProfileSelector` usa
+as do periodo. `MeuCartao` e `BonusEstrelas` seguem com as regras do PERIODO: quem e so do bonus
+hoje e se escolhe olhando um mes sem `star_bonus_extra` ve "ainda nao tem uma categoria" e nenhuma
+secao de bonus — correto para aquele mes. O perfil ja salvo em `localStorage` continua validado
+contra o cadastro inteiro (`usePerfilLocal`): sair da lista nao apaga a identidade. Nao se aplica ao `/admin` (a `StarBonusExtraFields` lista gente sem
+categoria de proposito).
 
 #### Key Components
 

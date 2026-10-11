@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import ProfessionalSelect from "@/components/avaliacoes/ProfessionalSelect";
 import { useActiveProfessionals } from "@/hooks/useActiveProfessionals";
+import { useProfissionaisSelecionaveis } from "@/hooks/useProfissionaisSelecionaveis";
 import { useMinhasAvaliacoes, type Avaliacao } from "@/hooks/useMinhasAvaliacoes";
 import { useEffect } from "react";
 // Mesmo formatador do painel de aprovação — uma definição só de "hora de Manaus".
@@ -78,7 +79,11 @@ const MinhasAvaliacoes = () => {
     fetchActiveProfessionals();
   }, [fetchActiveProfessionals]);
 
-  const sortedProfessionals = [...activeProfessionals]
+  // So quem aparece no desafio do mes atual (Manaus) ou participa so do Bonus Estrelas.
+  const { profissionais: selecionaveis, regrasCarregando } =
+    useProfissionaisSelecionaveis(activeProfessionals);
+
+  const sortedProfessionals = [...selecionaveis]
     .filter((p) => p.nome_profissional)
     .sort((a, b) =>
       (a.nome_profissional ?? "").localeCompare(b.nome_profissional ?? "")
@@ -172,7 +177,7 @@ const MinhasAvaliacoes = () => {
               </CardHeader>
 
               <CardContent className="px-4 pb-4">
-                {profsLoading ? (
+                {profsLoading || regrasCarregando ? (
                   <div className="h-10 rounded-lg animate-shimmer" />
                 ) : (
                   <>
