@@ -248,23 +248,31 @@ export function MeuCartao({
   const nome = nomeExibicao(perfil);
   const categoriaLabel = categoria ? getCategoryDisplayName(categoria) : null;
 
+  // Inativo (`ativo === false`) fica fora de todos os rankings, em todos os meses
+  // (`participaDoRanking`): sem linha no ranking, o cartao diria "sem
+  // atendimentos" com metas zeradas, o que e falso. Perfil salvo de inativo cai
+  // aqui com texto proprio.
+  const inativo = perfil.ativo === false;
+
   // Categoria fora do desafio (ex.: Maquiagem em agosto/2026) ou perfil sem
   // categoria: nada de metas, mas a troca de perfil continua ao alcance.
-  if (soBonusEstrelas || !regrasCategoria || !isCategoryActive(rules, categoria)) {
+  if (inativo || soBonusEstrelas || !regrasCategoria || !isCategoryActive(rules, categoria)) {
     return (
       <Card>
         <CardContent className="space-y-4 p-4 sm:p-6">
           <Cabecalho
             nome={nome}
-            categoriaLabel={soBonusEstrelas ? "Bônus Estrelas" : categoriaLabel}
+            categoriaLabel={!inativo && soBonusEstrelas ? "Bônus Estrelas" : categoriaLabel}
             onTrocar={onTrocar}
           />
           <p className="text-base text-muted-foreground">
-            {soBonusEstrelas
-              ? "Você participa só do Bônus Estrelas neste mês."
-              : regrasCategoria
-                ? "Sua categoria está fora do desafio neste mês."
-                : "Você ainda não tem uma categoria no desafio."}
+            {inativo
+              ? "Seu cadastro está inativo e não participa do desafio."
+              : soBonusEstrelas
+                ? "Você participa só do Bônus Estrelas neste mês."
+                : regrasCategoria
+                  ? "Sua categoria está fora do desafio neste mês."
+                  : "Você ainda não tem uma categoria no desafio."}
           </p>
         </CardContent>
       </Card>

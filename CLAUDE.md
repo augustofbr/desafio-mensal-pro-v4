@@ -109,10 +109,14 @@ edge function no load da pagina.**
   - Fetches from `profissionais_ativos` table
   - Maps professionals to their categories (Cabelo, Unhas, Estética, Maquiagem)
   - Provides lookup functions: `isActiveProfessional()`, `getProfessionalCategory()`, `getProfessionalsByCategory()`
+  - `getProfessionalsByCategory()` **exclui `ativo === false`** (`profissionaisDaCategoria`, ver
+    "Inativos fora do ranking"); `activeProfessionals` continua sendo o cadastro inteiro
 
 - `useStarsData`: Google Stars management hook
   - Fetches approved reviews from `avaliacoes_cadastradas`
   - Returns stars count per professional per category
+  - Estrela de `ativo === false` nao entra em mapa nenhum (`agruparEstrelasPorCategoria` em
+    `src/lib/estrelasPorCategoria.ts`, ver "Inativos fora do ranking")
   - Stars worth 3 points each in Cabelo/Unhas (display-only in Estética/Maquiagem)
   - **Mes de atribuicao = mes do `data_hora_cadastro`** (fuso `America/Manaus`), **nao** o
     da aprovacao: aprovar hoje uma avaliacao cadastrada em maio soma os 3 pontos ao ranking
@@ -348,6 +352,23 @@ hoje e se escolhe olhando um mes sem `star_bonus_extra` ve "ainda nao tem uma ca
 secao de bonus — correto para aquele mes. O perfil ja salvo em `localStorage` continua validado
 contra o cadastro inteiro (`usePerfilLocal`): sair da lista nao apaga a identidade. Nao se aplica ao `/admin` (a `StarBonusExtraFields` lista gente sem
 categoria de proposito).
+
+#### Inativos fora do ranking (out/2026)
+
+Profissional com `profissionais_ativos.ativo === false` **nao aparece em ranking, premiacao nem
+pontuacao em NENHUM mes**, inclusive os encerrados (decisao do dono: ago/set deixam de mostrar
+quem foi desativado). `ativo` null/ausente conta como ativo (`ativo !== false`, mesma convencao de
+`bonusEstrelas.ts` e `profissionaisSelecionaveis.ts`). A regra vive em `src/lib/rankingProfissionais.ts`
+(`participaDoRanking`, `profissionaisDaCategoria`) e e aplicada nas DUAS fontes do scoring: a lista da
+categoria (`getProfessionalsByCategory` em `useActiveProfessionals` — os hooks de categoria so pegam
+servicos cujo `profissionalid` esta nela) e o mapa de estrelas (`agruparEstrelasPorCategoria` em
+`src/lib/estrelasPorCategoria.ts`, usado por `useStarsData`; estrela de inativo nao entra nem em
+`semCategoria`). `computePointsRanking` cria linha para qualquer id de servico/estrela que receber,
+entao novas fontes de dados do ranking precisam passar por esses dois filtros. O `activeProfessionals`
+bruto continua com o cadastro inteiro (perfil local, mensagem de inativo do Bonus Estrelas, admin).
+Perfil salvo de inativo: o `MeuCartao` mostra "Seu cadastro está inativo e não participa do desafio."
+(sem metas), em vez de "sem atendimentos".
+Testes: `src/lib/rankingProfissionais.test.ts`.
 
 #### Key Components
 
@@ -686,6 +707,7 @@ When working with Supabase operations in this project, **ALWAYS use the Supabase
    - Display only: Estética and Maquiagem (0 points)
    - Filter: `status = 'aprovada'` AND `data_aprovacao IS NOT NULL`
 6. **Timezone**: Stars use `America/Manaus` timezone for date filtering
+   **Inativos**: `ativo === false` fica fora de TODOS os rankings, em todos os meses (ver "Inativos fora do ranking"; `src/lib/rankingProfissionais.ts`)
 7. **Testes**: Vitest cobre o motor de scoring e utilitarios de `src/lib` (`npm test`).
    Componentes React e hooks continuam sem cobertura
 

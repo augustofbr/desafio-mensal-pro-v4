@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import type { ProfissionalAtivo, CategoriaAtiva } from "@/types/profissionaisAtivos";
 import { normalizeProfessionalId, type RankedProfessional } from "@/lib/scoring";
+import { profissionaisDaCategoria } from "@/lib/rankingProfissionais";
 
 export function useActiveProfessionals() {
   const [activeProfessionals, setActiveProfessionals] = useState<ProfissionalAtivo[]>([]);
@@ -134,12 +135,14 @@ export function useActiveProfessionals() {
     return profLookup.get(name)?.categoria ?? null;
   }, [profLookup]);
 
-  /** Profissionais da categoria como pares { id (chave), name (exibicao) }. */
+  /**
+   * Profissionais da categoria como pares { id (chave), name (exibicao) }, SEM
+   * os inativos (`ativo === false`): e a lista que os hooks de categoria usam
+   * para rankear e para recortar os servicos. `activeProfessionals` segue
+   * trazendo o cadastro inteiro (quem precisa do inativo le dele).
+   */
   const getProfessionalsByCategory = useCallback((categoria: CategoriaAtiva): RankedProfessional[] => {
-    return activeProfessionals
-      .filter((p) => p.categoria === categoria && p.nome_profissional)
-      .map((p) => ({ id: String(p.profissionalId), name: p.nome_profissional! }))
-      .filter((p) => p.id !== "");
+    return profissionaisDaCategoria(activeProfessionals, categoria);
   }, [activeProfessionals]);
 
   return {
