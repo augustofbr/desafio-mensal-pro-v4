@@ -44,6 +44,19 @@ export interface CategoryRules {
   prize: string;
 }
 
+/**
+ * Bonus Estrelas para profissionais SEM categoria no desafio (coluna
+ * `regras_desafio.star_bonus_extra`). Eles participam APENAS do bonus — nunca
+ * do ranking, pontos, premiacao ou metas. Vem do banco sem garantia de forma:
+ * quem consome valida (ver `extrasDoBonus` em `bonusEstrelas.ts`).
+ */
+export interface StarBonusExtra {
+  /** R$ por estrela aprovada cadastrada no mes. */
+  valuePerStar: number;
+  /** profissionais_ativos.profissionalId de quem participa so do bonus. */
+  profissionalIds: number[];
+}
+
 export interface RulesVersion {
   id: string;
   validFrom: string;
@@ -52,6 +65,8 @@ export interface RulesVersion {
   unhas: CategoryRules;
   estetica: CategoryRules;
   maquiagem: CategoryRules;
+  /** Ausente/null = ninguem de fora das categorias participa do bonus. */
+  starBonusExtra?: StarBonusExtra | null;
 }
 
 const RULES_V1: RulesVersion = {

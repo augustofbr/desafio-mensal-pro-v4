@@ -8,7 +8,7 @@ import { useRulesData } from "@/hooks/useRulesData";
 import { useAdminRules } from "@/hooks/useAdminRules";
 import { RulesVersionForm } from "./RulesVersionForm";
 import { useToast } from "@/hooks/use-toast";
-import type { RulesVersion, CategoryRules } from "@/lib/rulesConfig";
+import type { RulesVersion, CategoryRules, StarBonusExtra } from "@/lib/rulesConfig";
 // auth-kit: controles de escrita só para quem tem write na página "admin".
 // Isto é UX — quem burlar o DOM esbarra na RLS (policies destaque_can_write_page).
 import { RequireWrite } from "@/auth/guards";
@@ -48,6 +48,7 @@ export function RulesManager() {
     unhas: CategoryRules;
     estetica: CategoryRules;
     maquiagem: CategoryRules;
+    star_bonus_extra?: StarBonusExtra | null;
   }) => {
     if (formMode === "edit" && formData) {
       await updateVersion.mutateAsync({ id: formData.id, ...data });

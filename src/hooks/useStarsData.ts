@@ -12,6 +12,23 @@ export interface StarsByCategory {
   unhas: Map<string, number>;
   maquiagem: Map<string, number>;
   estetica: Map<string, number>;
+  /**
+   * Aprovadas de quem NAO esta numa das quatro categorias (categoria nula ou
+   * desconhecida). Nunca entra no scoring: existe so para o Bonus Estrelas
+   * contar quem participa apenas do bonus (`star_bonus_extra`). Quem esta numa
+   * categoria conta so no mapa dela — os dois nunca somam a mesma estrela.
+   */
+  semCategoria: Map<string, number>;
+}
+
+function vazio(): StarsByCategory {
+  return {
+    cabelo: new Map(),
+    unhas: new Map(),
+    maquiagem: new Map(),
+    estetica: new Map(),
+    semCategoria: new Map(),
+  };
 }
 
 const manausFormatter = new Intl.DateTimeFormat('en-CA', {
@@ -31,12 +48,7 @@ function getManausDate(isoString: string): string {
 }
 
 export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
-  const [starsData, setStarsData] = useState<StarsByCategory>({
-    cabelo: new Map(),
-    unhas: new Map(),
-    maquiagem: new Map(),
-    estetica: new Map(),
-  });
+  const [starsData, setStarsData] = useState<StarsByCategory>(vazio);
   const [loading, setLoading] = useState(true);
   // true quando a leitura/processamento das estrelas falhou. Os mapas continuam
   // zerados (scoring inalterado); o flag so permite a quem exibe valores em R$
@@ -71,13 +83,13 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
       if (error) {
         console.error("Erro ao buscar avaliacoes_cadastradas:", error);
         setFalhou(true);
-        setStarsData({ cabelo: new Map(), unhas: new Map(), maquiagem: new Map(), estetica: new Map() });
+        setStarsData(vazio());
         return;
       }
 
       if (!avaliacoes || avaliacoes.length === 0) {
         console.log("Nenhuma avaliação aprovada encontrada");
-        setStarsData({ cabelo: new Map(), unhas: new Map(), maquiagem: new Map(), estetica: new Map() });
+        setStarsData(vazio());
         return;
       }
 
@@ -89,12 +101,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
         }
       });
 
-      const result: StarsByCategory = {
-        cabelo: new Map(),
-        unhas: new Map(),
-        maquiagem: new Map(),
-        estetica: new Map(),
-      };
+      const result: StarsByCategory = vazio();
 
       (avaliacoes as any[]).forEach((av) => {
         const profId = av.profissional_id;
@@ -102,13 +109,11 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
 
         if (!profId || !dataHoraCadastro) return;
 
-        // Verificar se profissional tem categoria mapeada
-        const categoria = idToCategory.get(profId);
-        if (!categoria) return;
-
         // Filtrar por mês usando data_hora_cadastro em timezone Manaus
         const manausDate = getManausDate(dataHoraCadastro);
         if (manausDate < startDate || manausDate > endDate) return;
+
+        const categoria = idToCategory.get(profId);
 
         // Mapear para categoria do resultado
         let categoryMap: Map<string, number> | null = null;
@@ -127,7 +132,9 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
             break;
         }
 
-        if (!categoryMap) return;
+        // Sem categoria do desafio: so o Bonus Estrelas pode usar (extras do
+        // mes); o scoring nunca le este mapa.
+        if (!categoryMap) categoryMap = result.semCategoria;
 
         // Chave = profissionalId (mesma chave da associacao de servicos).
         // nome_profissional na avaliacao e apenas um snapshot historico.
@@ -141,13 +148,14 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
         unhas: result.unhas.size,
         maquiagem: result.maquiagem.size,
         estetica: result.estetica.size,
+        semCategoria: result.semCategoria.size,
       });
 
       setStarsData(result);
     } catch (error) {
       console.error("Erro ao processar estrelas:", error);
       setFalhou(true);
-      setStarsData({ cabelo: new Map(), unhas: new Map(), maquiagem: new Map(), estetica: new Map() });
+      setStarsData(vazio());
     } finally {
       setLoading(false);
     }

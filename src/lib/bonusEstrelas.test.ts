@@ -3,6 +3,10 @@ import {
   bonusDisponivel,
   calcularBonus,
   ehElegivel,
+  extrasDoBonus,
+  fraseSoDoBonus,
+  participaSoDoBonus,
+  profissionaisSoDoBonus,
   formatarBRL,
   formatarBRLCompacto,
   juntarContagens,
@@ -367,5 +371,149 @@ describe("nomeDoMes / periodoEncerrado", () => {
     expect(periodoEncerrado("2026-10-31", "2026-10-31")).toBe(false);
     expect(periodoEncerrado("2026-10-31", "2026-10-10")).toBe(false);
     expect(periodoEncerrado("", "2026-10-10")).toBe(false);
+  });
+});
+
+describe("star_bonus_extra (profissionais só do bônus)", () => {
+  const ANDRESSA = 648177;
+  const KELLE = 783999;
+
+  function comExtras(extra: unknown, overrides: Parameters<typeof regras>[0] = {}): RulesVersion {
+    return { ...regras(overrides), starBonusExtra: extra as RulesVersion["starBonusExtra"] };
+  }
+
+  const cadastro = [
+    prof(1, "Ana", "Cabelo"),
+    prof(ANDRESSA, "Andressa", null),
+    prof(KELLE, "Kelle", null),
+    prof(593837, "Augusto", null),
+  ];
+
+  it("extra sem categoria entra com o valor dos extras e categoria null", () => {
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [ANDRESSA, KELLE] });
+    const lista = profissionaisElegiveis(cadastro, rules);
+    expect(lista.map((e) => e.nome)).toEqual(["Ana", "Andressa", "Kelle"]);
+    expect(lista[1]).toEqual({
+      id: String(ANDRESSA),
+      nome: "Andressa",
+      categoria: null,
+      valorPorEstrela: 5,
+    });
+    // Sem categoria e fora dos extras continua fora.
+    expect(lista.some((e) => e.nome === "Augusto")).toBe(false);
+  });
+
+  it("extras entram no ranking misturados, por valor, e contam em 'sem estrela'", () => {
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [ANDRESSA, KELLE] }, {
+      cabelo: { starBonusValue: 3 },
+    });
+    const elegiveis = profissionaisElegiveis(cadastro, rules);
+    const aprovadas = juntarContagens([
+      new Map([["1", 4]]),
+      // mapa semCategoria do useStarsData
+      new Map([[String(ANDRESSA), 3], ["593837", 9]]),
+    ]);
+    const r = calcularBonus(elegiveis, aprovadas, { [String(KELLE)]: 2 });
+    expect(r.ranking.map((l) => [l.nome, l.valor])).toEqual([
+      ["Andressa", 15],
+      ["Ana", 12],
+    ]);
+    expect(r.semEstrela).toBe(1); // Kelle (só pendentes)
+    expect(r.porId.get(String(KELLE))).toMatchObject({ pendentes: 2, valorPendente: 10 });
+    // Augusto tem estrelas mas não é elegível: ignorado.
+    expect(r.porId.has("593837")).toBe(false);
+  });
+
+  it("extra inativo (ativo=false) fica fora", () => {
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [ANDRESSA] });
+    const lista = profissionaisElegiveis([prof(ANDRESSA, "Andressa", null, { ativo: false })], rules);
+    expect(lista).toEqual([]);
+  });
+
+  it("extra com categoria ativa com bônus usa a regra da categoria, sem duplicar", () => {
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [1] }, { cabelo: { starBonusValue: 3 } });
+    const lista = profissionaisElegiveis([prof(1, "Ana", "Cabelo")], rules);
+    expect(lista).toEqual([{ id: "1", nome: "Ana", categoria: "Cabelo", valorPorEstrela: 3 }]);
+    expect(participaSoDoBonus(prof(1, "Ana", "Cabelo"), rules)).toBe(false);
+  });
+
+  it("extra cuja categoria está fora do desafio no mês participa só do bônus", () => {
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [7] });
+    const maquiadora = prof(7, "Mara", "Maquiagem"); // maquiagem desativada em regras()
+    expect(profissionaisElegiveis([maquiadora], rules)).toEqual([
+      { id: "7", nome: "Mara", categoria: null, valorPorEstrela: 5 },
+    ]);
+    expect(participaSoDoBonus(maquiadora, rules)).toBe(true);
+  });
+
+  it("extras inválidos são ignorados", () => {
+    const invalidos: unknown[] = [
+      null,
+      undefined,
+      "texto",
+      [ANDRESSA],
+      { valuePerStar: 0, profissionalIds: [ANDRESSA] },
+      { valuePerStar: -5, profissionalIds: [ANDRESSA] },
+      { valuePerStar: Number.NaN, profissionalIds: [ANDRESSA] },
+      { valuePerStar: Number.POSITIVE_INFINITY, profissionalIds: [ANDRESSA] },
+      { valuePerStar: "5", profissionalIds: [ANDRESSA] },
+      { valuePerStar: 5 },
+      { valuePerStar: 5, profissionalIds: "648177" },
+      { valuePerStar: 5, profissionalIds: [] },
+      { valuePerStar: 5, profissionalIds: ["648177", 1.5, -3, 0, null] },
+    ];
+    for (const extra of invalidos) {
+      const rules = comExtras(extra);
+      expect(extrasDoBonus(rules)).toBeNull();
+      expect(profissionaisElegiveis(cadastro, rules).map((e) => e.nome)).toEqual(["Ana"]);
+    }
+  });
+
+  it("ids inválidos são descartados um a um; os válidos continuam", () => {
+    const rules = comExtras({ valuePerStar: 2.5, profissionalIds: [KELLE, "x", 1.2, ANDRESSA] });
+    expect(extrasDoBonus(rules)).toEqual({
+      valorPorEstrela: 2.5,
+      ids: new Set([String(KELLE), String(ANDRESSA)]),
+    });
+  });
+
+  it("mês sem extras fica inalterado", () => {
+    const rules = regras();
+    expect(extrasDoBonus(rules)).toBeNull();
+    expect(profissionaisElegiveis(cadastro, rules).map((e) => e.nome)).toEqual(["Ana"]);
+    expect(profissionaisSoDoBonus(cadastro, rules)).toEqual([]);
+    expect(fraseSoDoBonus(cadastro, rules)).toBeNull();
+    expect(valorUnicoPorEstrela(rules)).toBe(5);
+  });
+
+  it("bonusDisponivel: só extras (nenhuma categoria com bônus) já mostra a área", () => {
+    const semBonusNasCategorias = {
+      cabelo: { starBonusValue: 0 },
+      unhas: { starBonusValue: 0 },
+      estetica: { starBonusValue: 0 },
+    };
+    expect(bonusDisponivel(regras(semBonusNasCategorias))).toBe(false);
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [ANDRESSA] }, semBonusNasCategorias);
+    expect(bonusDisponivel(rules)).toBe(true);
+    expect(valorUnicoPorEstrela(rules)).toBe(5);
+  });
+
+  it("valorUnicoPorEstrela considera o valor dos extras", () => {
+    expect(valorUnicoPorEstrela(comExtras({ valuePerStar: 5, profissionalIds: [ANDRESSA] }))).toBe(5);
+    expect(valorUnicoPorEstrela(comExtras({ valuePerStar: 4, profissionalIds: [ANDRESSA] }))).toBeNull();
+  });
+
+  it("profissionaisSoDoBonus e fraseSoDoBonus nomeiam quem participa só do bônus", () => {
+    const rules = comExtras({ valuePerStar: 5, profissionalIds: [KELLE, ANDRESSA, 999] });
+    expect(profissionaisSoDoBonus(cadastro, rules).map((p) => p.nome_profissional)).toEqual([
+      "Andressa",
+      "Kelle",
+    ]);
+    expect(fraseSoDoBonus(cadastro, rules)).toBe(
+      "Andressa e Kelle participam só do Bônus Estrelas (R$ 5,00 por estrela aprovada)"
+    );
+    expect(fraseSoDoBonus([prof(KELLE, "Kelle", null)], rules)).toBe(
+      "Kelle participa só do Bônus Estrelas (R$ 5,00 por estrela aprovada)"
+    );
   });
 });

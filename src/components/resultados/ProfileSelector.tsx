@@ -14,6 +14,7 @@ import {
   getCategoryDisplayName,
   isCategoryActive,
 } from "@/lib/categoryDisplayNames";
+import { profissionaisSoDoBonus } from "@/lib/bonusEstrelas";
 import type { RulesVersion } from "@/lib/rulesConfig";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
@@ -66,21 +67,33 @@ export function ProfileSelector({
   onLimpar,
 }: ProfileSelectorProps) {
   const grupos = useMemo(() => {
-    return ORDEM_CATEGORIAS.filter((categoria) => isCategoryActive(rules, categoria))
+    const paraPessoas = (lista: ProfissionalAtivo[]) =>
+      lista
+        .map((prof) => ({
+          id: normalizeProfessionalId(prof.profissionalId),
+          nome: nomeExibicao(prof),
+        }))
+        // Sem id nao ha como associar aos servicos — fica fora da lista.
+        .filter((pessoa): pessoa is { id: string; nome: string } => pessoa.id !== null)
+        .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+
+    const porCategoria = ORDEM_CATEGORIAS.filter((categoria) => isCategoryActive(rules, categoria))
       .map((categoria) => ({
         categoria,
         titulo: getCategoryDisplayName(categoria),
-        pessoas: ativos
-          .filter((prof) => prof.categoria === categoria)
-          .map((prof) => ({
-            id: normalizeProfessionalId(prof.profissionalId),
-            nome: nomeExibicao(prof),
-          }))
-          // Sem id nao ha como associar aos servicos — fica fora da lista.
-          .filter((pessoa): pessoa is { id: string; nome: string } => pessoa.id !== null)
-          .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
-      }))
-      .filter((grupo) => grupo.pessoas.length > 0);
+        pessoas: paraPessoas(ativos.filter((prof) => prof.categoria === categoria)),
+      }));
+
+    // Quem participa SO do Bonus Estrelas no mes (star_bonus_extra): grupo
+    // proprio, depois das categorias. Nunca repete quem ja esta numa categoria
+    // ativa (participaSoDoBonus exige categoria fora do desafio).
+    const soBonus = {
+      categoria: "__bonus_estrelas__",
+      titulo: "Bônus Estrelas",
+      pessoas: paraPessoas(profissionaisSoDoBonus(ativos, rules)),
+    };
+
+    return [...porCategoria, soBonus].filter((grupo) => grupo.pessoas.length > 0);
   }, [ativos, rules]);
 
   const escolherEFechar = (id: string) => {

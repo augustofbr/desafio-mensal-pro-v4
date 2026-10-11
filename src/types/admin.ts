@@ -1,4 +1,4 @@
-import type { CategoryRules } from "@/lib/rulesConfig";
+import type { CategoryRules, StarBonusExtra } from "@/lib/rulesConfig";
 
 export interface RegrasDesafioDB {
   id: string;
@@ -8,6 +8,8 @@ export interface RegrasDesafioDB {
   unhas: CategoryRules;
   estetica: CategoryRules;
   maquiagem: CategoryRules;
+  /** Nullable; ausente antes da migracao 20261011120000. Validado no consumo. */
+  star_bonus_extra?: StarBonusExtra | null;
   created_at: string;
   updated_at: string;
 }

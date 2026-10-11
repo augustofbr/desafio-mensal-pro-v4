@@ -7,7 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Loader2, Scissors, Sparkles, Heart, Palette } from "lucide-react";
-import type { CategoryRules, RulesVersion, SpecialServiceMatchType } from "@/lib/rulesConfig";
+import type { CategoryRules, RulesVersion, SpecialServiceMatchType, StarBonusExtra } from "@/lib/rulesConfig";
+import { extrasDoBonus } from "@/lib/bonusEstrelas";
+import { StarBonusExtraFields } from "./StarBonusExtraFields";
 
 type ScoringModel = "points" | "revenue-percentage" | "revenue-points";
 
@@ -45,6 +47,11 @@ interface RulesVersionFormProps {
     unhas: CategoryRules;
     estetica: CategoryRules;
     maquiagem: CategoryRules;
+    /**
+     * Presente = gravar a coluna `star_bonus_extra` (null limpa). Ausente = nao
+     * tocar nela — assim o editor funciona mesmo antes da migracao da coluna.
+     */
+    star_bonus_extra?: StarBonusExtra | null;
   }) => Promise<void>;
   mode: "create" | "edit" | "duplicate";
 }
@@ -62,6 +69,15 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
     estetica: initialData?.estetica ?? { ...defaultCategoryRules(), scoringModel: "revenue-percentage", clientPointValue: 0, starsCountInScore: false },
     maquiagem: initialData?.maquiagem ?? { ...defaultCategoryRules(), clientPointValue: 0, specialServicePointValue: 1, specialServiceLabel: "Servicos", starsCountInScore: false },
   });
+  // star_bonus_extra: vem da versao editada/duplicada (validada; forma
+  // invalida no banco abre como "vazio").
+  const extrasIniciais = extrasDoBonus(initialData);
+  const [extraValor, setExtraValor] = useState(
+    extrasIniciais ? String(extrasIniciais.valorPorEstrela) : ""
+  );
+  const [extraIds, setExtraIds] = useState<number[]>(
+    extrasIniciais ? [...extrasIniciais.ids].map(Number).sort((a, b) => a - b) : []
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,6 +155,24 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
       setError("Formato deve ser AAAA-MM (ex: 2026-04)");
       return;
     }
+    const valorExtra = extraValor.trim() === "" ? 0 : Number(extraValor);
+    if (!Number.isFinite(valorExtra) || valorExtra < 0) {
+      setError("Valor do Bônus Estrelas (sem categoria) inválido");
+      return;
+    }
+    if ((valorExtra > 0) !== (extraIds.length > 0)) {
+      setError(
+        "Bônus Estrelas sem categoria: informe o valor por estrela e marque ao menos um profissional (ou deixe os dois vazios)."
+      );
+      return;
+    }
+    const extraNovo: StarBonusExtra | null =
+      valorExtra > 0 ? { valuePerStar: valorExtra, profissionalIds: extraIds } : null;
+    // So envia a coluna quando ha o que gravar ou o que limpar: editar uma
+    // versao que nunca teve extras nao toca em star_bonus_extra.
+    const tinhaNoBanco = initialData?.starBonusExtra != null;
+    const enviarExtra = extraNovo !== null || (mode === "edit" && tinhaNoBanco);
+
     setError(null);
     setSubmitting(true);
     try {
@@ -149,6 +183,7 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
         unhas: normalizeCategory(categories.unhas),
         estetica: normalizeCategory(categories.estetica),
         maquiagem: normalizeCategory(categories.maquiagem),
+        ...(enviarExtra ? { star_bonus_extra: extraNovo } : {}),
       });
       onOpenChange(false);
     } catch (err: any) {
@@ -412,6 +447,13 @@ export function RulesVersionForm({ open, onOpenChange, initialData, onSubmit, mo
               );
             })}
           </Accordion>
+
+          <StarBonusExtraFields
+            valor={extraValor}
+            onValorChange={setExtraValor}
+            ids={extraIds}
+            onIdsChange={setExtraIds}
+          />
 
           {error && <p className="text-sm text-red-500 font-body">{error}</p>}
 

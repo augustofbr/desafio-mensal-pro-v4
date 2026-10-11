@@ -31,7 +31,11 @@ export interface ElegivelBonus {
   /** profissionalId normalizado (mesma chave de `useStarsData`). */
   id: string;
   nome: string;
-  categoria: string;
+  /**
+   * Categoria ATIVA do desafio no mes, ou null para quem participa so do bonus
+   * (via `star_bonus_extra`) — a tela mostra "Bônus Estrelas" no lugar.
+   */
+  categoria: string | null;
   /** R$ por estrela aprovada, ja resolvido pela categoria no mes. Sempre > 0. */
   valorPorEstrela: number;
 }
@@ -68,6 +72,44 @@ export function valorPorEstrelaDaCategoria(
   return typeof valor === "number" && Number.isFinite(valor) && valor > 0 ? valor : 0;
 }
 
+/** Extras do mes ja validados: valor por estrela + ids normalizados. */
+export interface ExtrasBonus {
+  valorPorEstrela: number;
+  ids: Set<string>;
+}
+
+/**
+ * `star_bonus_extra` da regra do mes, validado: valor finito > 0 e ids
+ * inteiros positivos. Ids invalidos sao descartados um a um; valor invalido,
+ * lista ausente ou sem nenhum id valido = null (sem extras). O JSONB vem do
+ * banco sem garantia de forma, entao nada aqui confia no tipo declarado.
+ */
+export function extrasDoBonus(rules: RulesVersion | null | undefined): ExtrasBonus | null {
+  const bruto: unknown = rules?.starBonusExtra;
+  if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return null;
+  const { valuePerStar, profissionalIds } = bruto as Record<string, unknown>;
+  if (typeof valuePerStar !== "number" || !Number.isFinite(valuePerStar) || valuePerStar <= 0) {
+    return null;
+  }
+  if (!Array.isArray(profissionalIds)) return null;
+  const ids = new Set<string>();
+  for (const item of profissionalIds) {
+    if (typeof item === "number" && Number.isSafeInteger(item) && item > 0) ids.add(String(item));
+  }
+  if (ids.size === 0) return null;
+  return { valorPorEstrela: valuePerStar, ids };
+}
+
+/** Categoria do profissional, se ela estiver ATIVA no desafio do mes; senao null. */
+function categoriaAtivaNoMes(
+  rules: RulesVersion | null | undefined,
+  categoria: string | null | undefined
+): string | null {
+  const nome = categoria?.trim();
+  if (!nome || !CATEGORIAS_BONUS.includes(nome)) return null;
+  return isCategoryActive(rules, nome) ? nome : null;
+}
+
 /** Categorias ATIVAS no mes com bonus > 0, com o respectivo valor. */
 export function valoresPorCategoria(
   rules: RulesVersion | null | undefined
@@ -78,19 +120,25 @@ export function valoresPorCategoria(
   })).filter((item) => item.valor > 0);
 }
 
-/** A area so aparece se alguma categoria ativa do mes tiver bonus. */
+/**
+ * A area aparece se alguma categoria ativa do mes tiver bonus OU se o mes
+ * tiver extras validos (profissionais so do bonus).
+ */
 export function bonusDisponivel(rules: RulesVersion | null | undefined): boolean {
-  return valoresPorCategoria(rules).length > 0;
+  return valoresPorCategoria(rules).length > 0 || extrasDoBonus(rules) !== null;
 }
 
 /**
- * Valor unico por estrela quando todas as categorias com bonus pagam o mesmo;
- * null quando diferem (ou quando nao ha bonus) — a tela mostra por linha.
+ * Valor unico por estrela quando todas as categorias com bonus (e os extras,
+ * se houver) pagam o mesmo; null quando diferem (ou quando nao ha bonus) — a
+ * tela mostra por linha.
  */
 export function valorUnicoPorEstrela(
   rules: RulesVersion | null | undefined
 ): number | null {
   const valores = new Set(valoresPorCategoria(rules).map((item) => item.valor));
+  const extras = extrasDoBonus(rules);
+  if (extras) valores.add(extras.valorPorEstrela);
   if (valores.size !== 1) return null;
   return [...valores][0];
 }
@@ -105,24 +153,67 @@ export function nomeExibicaoBonus(prof: ProfissionalParaBonus): string {
 }
 
 /**
- * Quem participa do bonus: profissional ativo (`ativo` nao e false), com id,
- * categoria preenchida, categoria ATIVA no mes e bonus > 0 nas regras do mes.
+ * Quem participa do bonus: profissional ativo (`ativo` nao e false), com id e
+ *  - categoria ATIVA no mes com bonus > 0 (valor da categoria), ou
+ *  - id listado nos extras do mes (`star_bonus_extra`), com o valor dos extras.
+ * A regra da categoria tem precedencia: um id extra que tambem esta numa
+ * categoria ativa com bonus entra UMA vez, com o valor da categoria.
  */
 export function profissionaisElegiveis(
   ativos: ProfissionalParaBonus[],
   rules: RulesVersion | null | undefined
 ): ElegivelBonus[] {
+  const extras = extrasDoBonus(rules);
   const resultado: ElegivelBonus[] = [];
+  const vistos = new Set<string>();
   for (const prof of ativos) {
     if (prof.ativo === false) continue;
     const id = normalizeProfessionalId(prof.profissionalId);
-    const categoria = prof.categoria?.trim();
-    if (!id || !categoria) continue;
-    const valorPorEstrela = valorPorEstrelaDaCategoria(rules, categoria);
-    if (valorPorEstrela <= 0) continue;
-    resultado.push({ id, nome: nomeExibicaoBonus(prof), categoria, valorPorEstrela });
+    if (!id || vistos.has(id)) continue;
+    const nome = nomeExibicaoBonus(prof);
+    const valorDaCategoria = valorPorEstrelaDaCategoria(rules, prof.categoria);
+    if (valorDaCategoria > 0) {
+      vistos.add(id);
+      resultado.push({
+        id,
+        nome,
+        categoria: prof.categoria!.trim(),
+        valorPorEstrela: valorDaCategoria,
+      });
+      continue;
+    }
+    if (extras?.ids.has(id)) {
+      vistos.add(id);
+      resultado.push({
+        id,
+        nome,
+        categoria: categoriaAtivaNoMes(rules, prof.categoria),
+        valorPorEstrela: extras.valorPorEstrela,
+      });
+    }
   }
   return resultado;
+}
+
+/**
+ * Participa SO do Bonus Estrelas no mes: elegivel via extras e sem categoria
+ * ativa no desafio. E quem nao tem metas/posicao no cartao pessoal.
+ */
+export function participaSoDoBonus(
+  prof: ProfissionalParaBonus | null | undefined,
+  rules: RulesVersion | null | undefined
+): boolean {
+  if (!prof) return false;
+  const [elegivel] = profissionaisElegiveis([prof], rules);
+  return Boolean(elegivel) && elegivel.categoria === null;
+}
+
+/** Todos os que participam so do bonus no mes (para seletor e regras). */
+export function profissionaisSoDoBonus<T extends ProfissionalParaBonus>(
+  ativos: T[],
+  rules: RulesVersion | null | undefined
+): T[] {
+  return ativos.filter((prof) => participaSoDoBonus(prof, rules));
 }
 
 /** Elegibilidade de um unico profissional (ex.: o perfil escolhido). */
@@ -132,6 +223,31 @@ export function ehElegivel(
 ): boolean {
   if (!prof) return false;
   return profissionaisElegiveis([prof], rules).length === 1;
+}
+
+/** "Ana", "Ana e Bia", "Ana, Bia e Cris". */
+function juntarNomes(nomes: string[]): string {
+  if (nomes.length <= 1) return nomes.join("");
+  return `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+}
+
+/**
+ * Linha discreta das Regras do Desafio: "Andressa e Kelle participam só do
+ * Bônus Estrelas (R$ 5,00 por estrela)". Null quando o mes nao tem extras com
+ * alguem ativo no cadastro. Nomes vem do cadastro (apelido > nome).
+ */
+export function fraseSoDoBonus(
+  ativos: ProfissionalParaBonus[],
+  rules: RulesVersion | null | undefined
+): string | null {
+  const extras = extrasDoBonus(rules);
+  if (!extras) return null;
+  const nomes = profissionaisSoDoBonus(ativos, rules)
+    .map(nomeExibicaoBonus)
+    .sort((x, y) => x.localeCompare(y, "pt-BR", { sensitivity: "base" }));
+  if (nomes.length === 0) return null;
+  const verbo = nomes.length === 1 ? "participa" : "participam";
+  return `${juntarNomes(nomes)} ${verbo} só do Bônus Estrelas (${formatarBRL(extras.valorPorEstrela)} por estrela aprovada)`;
 }
 
 /** Junta varios mapas id -> contagem (um por categoria) num so Record. */

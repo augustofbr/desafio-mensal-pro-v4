@@ -269,7 +269,7 @@ function DashboardContent() {
           </div>
 
           <div className="animate-fade-slide-up stagger-7 mt-5">
-            <RegrasDoDesafio rules={rules} />
+            <RegrasDoDesafio rules={rules} activeProfessionals={activeProfessionals} />
           </div>
 
           <div className="animate-fade-slide-up stagger-8">

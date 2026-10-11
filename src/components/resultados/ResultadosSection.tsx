@@ -3,6 +3,7 @@ import { UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePerfilLocal } from "@/hooks/usePerfilLocal";
+import { participaSoDoBonus } from "@/lib/bonusEstrelas";
 import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
 import { calcularPosicoes } from "@/lib/posicoes";
 import { type RulesVersion } from "@/lib/rulesConfig";
@@ -142,6 +143,7 @@ export default function ResultadosSection({
           liderPontos={meuRanking.liderPontos}
           rules={rules}
           onTrocar={() => setSeletorAberto(true)}
+          soBonusEstrelas={participaSoDoBonus(perfil, rules)}
         />
       ) : (
         <Card>

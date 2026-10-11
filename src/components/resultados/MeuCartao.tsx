@@ -29,6 +29,11 @@ interface MeuCartaoProps {
   rules: RulesVersion;
   /** Reabre o seletor de perfil. Requisito do owner: sempre visivel. */
   onTrocar: () => void;
+  /**
+   * O perfil participa SO do Bonus Estrelas no mes (`star_bonus_extra`): sem
+   * metas nem posicao — o cartao so explica isso e o Bonus mostra os valores.
+   */
+  soBonusEstrelas?: boolean;
 }
 
 const FORMATO_INTEIRO = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
@@ -196,6 +201,7 @@ export function MeuCartao({
   liderPontos,
   rules,
   onTrocar,
+  soBonusEstrelas = false,
 }: MeuCartaoProps) {
   const { getFilteredDateRange } = useDateFilter();
   const { holidays } = useHolidays();
@@ -244,15 +250,21 @@ export function MeuCartao({
 
   // Categoria fora do desafio (ex.: Maquiagem em agosto/2026) ou perfil sem
   // categoria: nada de metas, mas a troca de perfil continua ao alcance.
-  if (!regrasCategoria || !isCategoryActive(rules, categoria)) {
+  if (soBonusEstrelas || !regrasCategoria || !isCategoryActive(rules, categoria)) {
     return (
       <Card>
         <CardContent className="space-y-4 p-4 sm:p-6">
-          <Cabecalho nome={nome} categoriaLabel={categoriaLabel} onTrocar={onTrocar} />
+          <Cabecalho
+            nome={nome}
+            categoriaLabel={soBonusEstrelas ? "Bônus Estrelas" : categoriaLabel}
+            onTrocar={onTrocar}
+          />
           <p className="text-base text-muted-foreground">
-            {regrasCategoria
-              ? "Sua categoria está fora do desafio neste mês."
-              : "Você ainda não tem uma categoria no desafio."}
+            {soBonusEstrelas
+              ? "Você participa só do Bônus Estrelas neste mês."
+              : regrasCategoria
+                ? "Sua categoria está fora do desafio neste mês."
+                : "Você ainda não tem uma categoria no desafio."}
           </p>
         </CardContent>
       </Card>

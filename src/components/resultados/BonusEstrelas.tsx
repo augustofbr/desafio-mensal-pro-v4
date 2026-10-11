@@ -6,11 +6,13 @@ import type { StarsByCategory } from "@/hooks/useStarsData";
 import {
   bonusDisponivel,
   calcularBonus,
+  extrasDoBonus,
   formatarBRL,
   formatarBRLCompacto,
   juntarContagens,
   nomeDoMes,
   nomeExibicaoBonus,
+  participaSoDoBonus,
   periodoEncerrado,
   profissionaisElegiveis,
   valoresPorCategoria,
@@ -46,8 +48,18 @@ const COR_CATEGORIA: Record<string, string> = {
 const COR_VERDE = "#146C34";
 const CARD = "rounded-2xl bg-white p-4 shadow-[0_2px_14px_rgba(60,40,20,0.07)] sm:p-5";
 
-function corDaCategoria(categoria: string): string {
+/** Rotulo de quem participa so do bonus (sem categoria no desafio do mes). */
+const ROTULO_SO_BONUS = "Bônus Estrelas";
+/** Cinza neutro (contraste AA sobre branco), distinto das cores de categoria. */
+const COR_SO_BONUS = "#4b5563";
+
+function corDaCategoria(categoria: string | null): string {
+  if (!categoria) return COR_SO_BONUS;
   return COR_CATEGORIA[categoria] ?? "#374151";
+}
+
+function rotuloDaCategoria(categoria: string | null): string {
+  return categoria ? getCategoryDisplayName(categoria) : ROTULO_SO_BONUS;
 }
 
 function plural(qtd: number, singular: string, pluralForma: string): string {
@@ -65,13 +77,13 @@ function EstrelaIcone({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-function ChipCategoria({ categoria }: { categoria: string }) {
+function ChipCategoria({ categoria }: { categoria: string | null }) {
   return (
     <span
       className="inline-flex items-center rounded-full border border-black/10 bg-white px-2.5 py-0.5 text-xs font-semibold font-body"
       style={{ color: corDaCategoria(categoria) }}
     >
-      {getCategoryDisplayName(categoria)}
+      {rotuloDaCategoria(categoria)}
     </span>
   );
 }
@@ -134,11 +146,28 @@ function TextoDaRegra({
   mes,
   valorUnico,
   porCategoria,
+  valorExtras,
 }: {
   mes: string;
   valorUnico: number | null;
   porCategoria: { categoria: string; valor: number }[];
+  /** R$ por estrela de quem participa só do bônus; null = mês sem extras. */
+  valorExtras: number | null;
 }) {
+  const itens = porCategoria.map(
+    (item) => `${getCategoryDisplayName(item.categoria)} ${formatarBRL(item.valor)}`
+  );
+  if (valorExtras !== null) itens.push(`só do bônus ${formatarBRL(valorExtras)}`);
+
+  let quem: string;
+  if (porCategoria.length > 0 && valorExtras !== null) {
+    quem = "Vale para todos os profissionais do desafio e para quem participa só do bônus neste mês";
+  } else if (valorExtras !== null) {
+    quem = "Vale para quem participa do bônus neste mês";
+  } else {
+    quem = "Vale para todos os profissionais do desafio";
+  }
+
   return (
     <p className="font-body text-sm leading-relaxed text-gray-700">
       Cada estrela do Google <strong>aprovada</strong> e{" "}
@@ -147,20 +176,18 @@ function TextoDaRegra({
         <strong>{formatarBRL(valorUnico)}</strong>
       ) : (
         <>
-          o valor da sua categoria (
-          {porCategoria
-            .map((item) => `${getCategoryDisplayName(item.categoria)} ${formatarBRL(item.valor)}`)
-            .join(" · ")}
-          )
+          o valor da sua categoria ({itens.join(" · ")})
         </>
       )}
-      . Vale para todos os profissionais do desafio, sem mínimo e sem limite.
+      . {quem}, sem mínimo e sem limite.
     </p>
   );
 }
 
 interface MeuBonusProps {
   perfil: ProfissionalAtivo;
+  /** Participa só do bônus no mês (extras): chip "Bônus Estrelas". */
+  soBonus: boolean;
   linha: LinhaBonus | null;
   /** undefined = carregando ou falhou: o número não aparece. */
   pendentes: number | undefined;
@@ -172,6 +199,7 @@ interface MeuBonusProps {
 
 function MeuBonus({
   perfil,
+  soBonus,
   linha,
   pendentes,
   valorPendente,
@@ -186,7 +214,11 @@ function MeuBonus({
     <div className="flex items-center gap-2">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
         <p className="truncate font-body text-base font-semibold text-gray-800">{nome}</p>
-        {categoria && <ChipCategoria categoria={categoria} />}
+        {soBonus ? (
+          <ChipCategoria categoria={null} />
+        ) : (
+          categoria && <ChipCategoria categoria={categoria} />
+        )}
       </div>
       <BotaoTrocar onClick={onTrocar} />
     </div>
@@ -202,7 +234,9 @@ function MeuBonus({
         <p className="mt-1 font-body text-sm text-gray-700">
           {perfil.ativo === false
             ? "Seu cadastro está inativo, então você não participa do bônus."
-            : "Sua categoria não participa do bônus neste mês."}
+            : categoria
+              ? "Sua categoria não participa do bônus neste mês."
+              : "Você não participa do bônus neste mês."}
         </p>
       </div>
     );
@@ -310,7 +344,7 @@ function RankingBonus({ linhas, semEstrela, mes, perfilId }: RankingProps) {
                     className="block font-body text-xs font-medium"
                     style={{ color: corDaCategoria(linha.categoria) }}
                   >
-                    {getCategoryDisplayName(linha.categoria)}
+                    {rotuloDaCategoria(linha.categoria)}
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1 font-mono-num text-sm text-gray-700">
@@ -402,12 +436,15 @@ function BonusEstrelasConteudo({
       starsData.unhas,
       starsData.estetica,
       starsData.maquiagem,
+      // Quem participa só do bônus (extras); só conta para quem é elegível.
+      starsData.semCategoria,
     ]);
     return calcularBonus(elegiveis, aprovadas, pendentesQuery.data ?? {});
   }, [activeProfessionals, rules, starsData, pendentesQuery.data]);
 
   const valorUnico = valorUnicoPorEstrela(rules);
   const porCategoria = valoresPorCategoria(rules);
+  const valorExtras = extrasDoBonus(rules)?.valorPorEstrela ?? null;
 
   const minhaLinha = perfilId ? resultado.porId.get(perfilId) ?? null : null;
 
@@ -420,6 +457,7 @@ function BonusEstrelasConteudo({
           {perfil ? (
             <MeuBonus
               perfil={perfil}
+              soBonus={participaSoDoBonus(perfil, rules)}
               linha={minhaLinha}
               pendentes={pendentesQuery.data ? minhaLinha?.pendentes ?? 0 : undefined}
               valorPendente={minhaLinha?.valorPendente ?? 0}
@@ -433,7 +471,12 @@ function BonusEstrelasConteudo({
         </div>
 
         <div className="mt-4">
-          <TextoDaRegra mes={mes} valorUnico={valorUnico} porCategoria={porCategoria} />
+          <TextoDaRegra
+            mes={mes}
+            valorUnico={valorUnico}
+            porCategoria={porCategoria}
+            valorExtras={valorExtras}
+          />
         </div>
       </div>
 

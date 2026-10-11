@@ -283,10 +283,12 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   vindo do JSONB de `regras_desafio` por categoria (sem migração). Editável na aba Regras do
   `/admin` ("Bônus por estrela aprovada (R$)"); o editor espalha o objeto da categoria, então
   o campo sobrevive ao salvar. `RegrasDoDesafio` mostra a linha "Bônus extra" por categoria.
-  A seção inteira só aparece se alguma categoria **ativa** do mês tiver `starBonusValue > 0`.
+  A seção inteira só aparece se alguma categoria **ativa** do mês tiver `starBonusValue > 0`
+  **ou** o mês tiver `star_bonus_extra` válido (ver "Profissionais só do bônus" abaixo).
 - **Elegibilidade** (`src/lib/bonusEstrelas.ts`, testes em `bonusEstrelas.test.ts`): profissional
   em `profissionais_ativos` com `ativo !== false`, `categoria` não nula, categoria ativa no mês
   (`isCategoryActive`) e bônus > 0. O valor de cada um é o `starBonusValue` da categoria dele.
+  Exceção: os ids de `star_bonus_extra` (abaixo), que entram mesmo sem categoria.
 - **Mês de atribuição = mês do `data_hora_cadastro`** (Manaus), o mesmo critério de
   `useStarsData`: as aprovadas vêm de `starsData` (exposto por `useDashboardData`); as pendentes,
   de `useEstrelasPendentes` (consulta própria, recorte no servidor `.gte/.lt`, uma vez por período).
@@ -296,6 +298,28 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   `["bonus_estrelas"]` para as pendentes não ficarem velhas.
 - **Nunca mostrar soma/total da equipe**, só valores individuais. Sem botão "Atualizar":
   carrega ao abrir/recarregar a página, como o resto do app.
+- **Profissionais só do bônus** (`regras_desafio.star_bonus_extra jsonb`, migração
+  `20261011120000_regras_desafio_star_bonus_extra.sql`): `{"valuePerStar": 5,
+  "profissionalIds": [648177, 783999]}`, versionada com a regra do mês (mesma resolução por
+  `valid_from`); NULL = ninguém. Mapeada para `RulesVersion.starBonusExtra` em `useRulesData` e
+  **validada no consumo** por `extrasDoBonus()` (valor finito > 0, ids inteiros > 0; forma
+  inválida = ignorada). Quem está na lista, ativo (`ativo !== false`), entra no bônus com esse
+  valor **mesmo sem categoria**; se tiver categoria ativa com bônus, vale a regra da categoria
+  (entra uma vez só). Nunca entra em ranking, pontos, `PremiacaoPanel` nem metas.
+  - Estrelas: `useStarsData` expõe `starsData.semCategoria` (aprovadas de quem não está numa das
+    quatro categorias). O scoring **nunca** lê esse mapa; só o `BonusEstrelas` o soma. As
+    pendentes (`useEstrelasPendentes`) já contam por id, sem filtro de categoria.
+  - Tela: no ranking do bônus aparecem misturados, com o rótulo neutro "Bônus Estrelas" no lugar
+    da categoria; contam em "Mais N profissionais ainda sem estrela". No "Quem é você?" ficam no
+    grupo "Bônus Estrelas" (`participaSoDoBonus`/`profissionaisSoDoBonus`); o `MeuCartao` mostra
+    só "Você participa só do Bônus Estrelas neste mês." (sem metas/posição). `RegrasDoDesafio`
+    ganha a linha "X e Y participam só do Bônus Estrelas (R$ …)" (`fraseSoDoBonus`).
+  - Cadastro de avaliação (`CadastrarAvaliacaoModal`) e `/minhas-avaliacoes` já listam todo o
+    cadastro (sem filtro de categoria), então quem é só do bônus já aparece lá.
+  - Admin: o editor de regras tem a seção "Bônus Estrelas — sem categoria" (valor + quem
+    participa). `useAdminRules` só envia `star_bonus_extra` quando o form o inclui (há valor, ou
+    a versão editada já tinha um e foi limpa): editar uma versão sem extras não toca na coluna,
+    e duplicar copia o campo.
 
 #### Key Components
 

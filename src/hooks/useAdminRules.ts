@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { CategoryRules } from "@/lib/rulesConfig";
+import type { CategoryRules, StarBonusExtra } from "@/lib/rulesConfig";
 
 interface CreateVersionInput {
   valid_from: string;
@@ -9,6 +9,16 @@ interface CreateVersionInput {
   unhas: CategoryRules;
   estetica: CategoryRules;
   maquiagem: CategoryRules;
+  /**
+   * Presente = grava `star_bonus_extra` (null limpa). AUSENTE = a coluna nao
+   * vai no payload e fica como esta — o UPDATE so escreve as colunas enviadas.
+   */
+  star_bonus_extra?: StarBonusExtra | null;
+}
+
+/** So inclui a coluna quando o chamador a mandou (ver CreateVersionInput). */
+function colunaExtra(input: CreateVersionInput): Record<string, unknown> {
+  return "star_bonus_extra" in input ? { star_bonus_extra: input.star_bonus_extra ?? null } : {};
 }
 
 interface UpdateVersionInput extends CreateVersionInput {
@@ -29,6 +39,7 @@ export function useAdminRules() {
           unhas: input.unhas as any,
           estetica: input.estetica as any,
           maquiagem: input.maquiagem as any,
+          ...colunaExtra(input),
           updated_at: new Date().toISOString(),
         })
         .select()
@@ -52,6 +63,7 @@ export function useAdminRules() {
           unhas: input.unhas as any,
           estetica: input.estetica as any,
           maquiagem: input.maquiagem as any,
+          ...colunaExtra(input),
           updated_at: new Date().toISOString(),
         })
         .eq("id", input.id)

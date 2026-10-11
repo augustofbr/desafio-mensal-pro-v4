@@ -12,6 +12,9 @@ function dbRowToRulesVersion(row: RegrasDesafioDB): RulesVersion {
     unhas: row.unhas,
     estetica: row.estetica,
     maquiagem: row.maquiagem,
+    // Cru como veio do banco (inclusive null/undefined antes da migracao); a
+    // validacao fica em `extrasDoBonus` — forma invalida vira "sem extras".
+    starBonusExtra: row.star_bonus_extra ?? null,
   };
 }
 

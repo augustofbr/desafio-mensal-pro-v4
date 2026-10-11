@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { BookOpen, Scissors, Sparkles, Heart, Palette, LucideIcon } from "lucide-react";
 import { RulesVersion, CategoryRules, getCategoryRules } from "@/lib/rulesConfig";
-import { formatarBRL } from "@/lib/bonusEstrelas";
+import { formatarBRL, fraseSoDoBonus, type ProfissionalParaBonus } from "@/lib/bonusEstrelas";
 
 interface CategoriaRegra {
   id: string;
@@ -161,8 +161,16 @@ function buildRegras(rules: RulesVersion): CategoriaRegra[] {
   });
 }
 
-export default function RegrasDoDesafio({ rules }: { rules: RulesVersion }) {
+export default function RegrasDoDesafio({
+  rules,
+  activeProfessionals = [],
+}: {
+  rules: RulesVersion;
+  /** Cadastro, para nomear quem participa só do Bônus Estrelas no mês. */
+  activeProfessionals?: ProfissionalParaBonus[];
+}) {
   const regras = buildRegras(rules);
+  const soDoBonus = fraseSoDoBonus(activeProfessionals, rules);
 
   return (
     <Card className="mb-6 border-0 shadow-md bg-gradient-to-br from-sky-50/60 via-white to-indigo-50/40">
@@ -222,6 +230,9 @@ export default function RegrasDoDesafio({ rules }: { rules: RulesVersion }) {
             );
           })}
         </Accordion>
+        {soDoBonus && (
+          <p className="mt-3 px-1 text-xs text-gray-600 font-body">{soDoBonus}.</p>
+        )}
       </CardContent>
     </Card>
   );
