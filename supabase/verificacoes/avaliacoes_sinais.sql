@@ -119,7 +119,8 @@ select * from (values
     ('fraca_velha',  999014, 'Wvd Outro Sumido',          'pendente', interval '-20 days', null, null::bigint, null, null),
     ('loja_pend',    999011, 'Loja Bella Moda',           'pendente', interval '0', 'Cliente Sete Fixture', 7001::bigint, -2, 'lista'),
     ('loja_aprov',   999012, 'Loja Bella Moda',           'aprovada', interval '-3 days', null, null::bigint, null, null),
-    ('loja_trinks',  999013, 'Qzx Fixture Unica Wyk',     'pendente', interval '0', 'Loja Bella Moda', null::bigint, -1, 'digitado'),
+    ('loja_trinks',  999013, 'Qzx Fixture Unica Wyk',     'pendente', interval '0', 'Qlojab Qbellab Qmodab', null::bigint, -1, 'digitado'),
+    ('loja_gb',      999012, 'Qlojab Qbellab Qmodab',     'pendente', interval '-4 days', null, null::bigint, null, null),
     ('sim_a',        999011, 'Qwfixture Antonieta Zzz',   'pendente', interval '0', null, null::bigint, null, null),
     ('sim_b',        999012, 'Qwfixture Antonietta Zzz',  'rejeitada', interval '-1 day', null, null::bigint, null, null),
     ('fraco_a',      999011, 'Qwfixture Ariane Kkk',      'pendente', interval '0', null, null::bigint, null, null),
@@ -154,7 +155,24 @@ select * from (values
     ('gv_alvo',      999013, '   ',                       'pendente', interval '0', 'Xaviera Qwrtz De Sousa', null::bigint, -1, 'digitado'),
     -- os dois criterios: motivo nome_google
     ('m_alvo',       999011, 'Qmotivo Dupla Zzt',         'pendente', interval '0', 'Qmotivo Dupla Zzt', null::bigint, -1, 'digitado'),
-    ('m_outra',      999012, 'Qmotivo Dupla Zzt',         'pendente', interval '-1 day', null, null::bigint, null, null)
+    ('m_outra',      999012, 'Qmotivo Dupla Zzt',         'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- P contido em Q: Trinks da alvo MENOR que o Google da outra
+    ('pq_alvo',      999013, 'Qpq Alvo Zzw',              'pendente', interval '0', 'Vorzina Qwrtz', null::bigint, -1, 'digitado'),
+    ('pq_outra',     999014, 'Vorzina Qwrtz de Sousa Fixture', 'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- stopword dentro do match do B: "No sistema Zandora" casa com Trinks "Zandora Qwrtz"?
+    -- (Q = {sandura} ja sem 'sistema'; P = {sandura, qvrts}; Q contido em P)
+    ('sw_alvo',      999013, 'Qsw Alvo Zzy',              'pendente', interval '0', 'Zandora Qwrtz', null::bigint, -1, 'digitado'),
+    ('sw_outra',     999014, 'No sistema Zandora',        'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- teto de 5 por forca: 1 candidata de nome do Google (a mais ANTIGA) e 6 so-Trinks
+    -- (mais recentes). A do Google nao pode ser cortada; a ordem de exibicao e por recencia.
+    ('tp_alvo',      999013, 'Qtopo Cinco Zzv',           'pendente', interval '0', 'Wumbria Plkx', null::bigint, -1, 'digitado'),
+    ('tp_goo',       999011, 'Qtopo Cinco Zzv',           'aprovada', interval '-30 days', null, null::bigint, null, null),
+    ('tp_1',         999014, 'Wumbria',                   'pendente', interval '-1 day', null, null::bigint, null, null),
+    ('tp_2',         999014, 'Wumbria',                   'pendente', interval '-2 days', null, null::bigint, null, null),
+    ('tp_3',         999014, 'Wumbria',                   'pendente', interval '-3 days', null, null::bigint, null, null),
+    ('tp_4',         999014, 'Wumbria',                   'pendente', interval '-4 days', null, null::bigint, null, null),
+    ('tp_5',         999014, 'Wumbria',                   'pendente', interval '-5 days', null, null::bigint, null, null),
+    ('tp_6',         999014, 'Wumbria',                   'pendente', interval '-6 days', null, null::bigint, null, null)
   ) as v(k, prof, google, status, cad, trinks, cid, da, origem)
 union all
 -- 7 repetidas (limite de 5 e ordem): rep_1 e a mais recente
@@ -203,7 +221,7 @@ begin
 
   insert into _r
     select k.k, s.* from public.avaliacoes_sinais(ids) s join _ids k on k.id = s.avaliacao_id;
-  assert (select count(*) from _ids) = 48, format('fixtures: %s estrelas', (select count(*) from _ids));
+  assert (select count(*) from _ids) = 61, format('fixtures: %s estrelas', (select count(*) from _ids));
 
   select count(*) into n from _r;
   assert n = (select count(*) from _ids), format('uma linha por id pedido: %s', n);
@@ -274,15 +292,14 @@ begin
   assert (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_pend'), 'loja_aprov lista loja_pend';
   assert dup->0->>'status' = 'pendente', 'loja_aprov: status pendente';
 
-  -- nome do Trinks da alvo = Google das outras (criterio B, 20261019180000): lista as duas
-  -- "Loja Bella Moda", com motivo nome_trinks (antes da migracao nova era []).
-  -- (palavras 'loja', 'bila', 'mudu' sao raras no espelho; as outras duas estrelas tem o
-  -- Google igual ao Trinks desta, entao o nome mais curto e o proprio nome inteiro)
+  -- nome do Trinks da alvo = Google de outra (criterio B, 20261019180000; palavras inventadas,
+  -- raras no espelho): lista so loja_gb, com motivo nome_trinks (antes da migracao nova era []).
+  -- As duas "Loja Bella Moda" (Google) NAO entram: o Trinks desta alvo e outro nome.
   select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
     from _r, jsonb_array_elements(_r.duplicatas) e
    where _r.k = 'loja_trinks' and (e->>'id')::uuid in (select id from _ids);
-  assert jsonb_array_length(dup) = 2
-     and not exists (select 1 from jsonb_array_elements(dup) e where e->>'motivo' <> 'nome_trinks'),
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_gb')
+     and dup->0->>'motivo' = 'nome_trinks',
     format('loja_trinks duplicatas: %s', dup);
   -- ... e a direcao inversa nao existe: loja_pend (Trinks = Cliente Sete Fixture) nao lista
   -- loja_trinks, cujo Google e 'Qzx Fixture Unica Wyk'
@@ -369,6 +386,14 @@ begin
     'palavras: vazio/null -> {}';
   assert public.avaliacao_palavras_nome('Mae de Ana 12 Sao Joao') = array['ana','juau','sau'],
     format('palavras: %s', public.avaliacao_palavras_nome('Mae de Ana 12 Sao Joao'));
+  -- stopword e comparada com o token normalizado ANTES da chave: nomes que so DOBRAM para uma
+  -- stopword sobrevivem (Dieylle->dili, May->mai, Nyla->nila, Della->dila), e acento nao salva
+  -- a stopword literal (Irmã, Mãe, Não)
+  assert public.avaliacao_palavras_nome('Dieylle May Nyla Della Nilla Dila Fila') = array['dila','dili','fila','mai','nila'],
+    format('palavras que dobram para stopword sobrevivem: %s', public.avaliacao_palavras_nome('Dieylle May Nyla Della Nilla Dila Fila'));
+  assert public.avaliacao_palavras_nome('Irmã Mãe Não Sistema Google Cliente Nela Dela Del') = array[]::text[],
+    'stopwords literais (com acento) saem';
+  assert public.avaliacao_palavras_nome('Maria da Silva') = array['maria','silva'], 'palavras: Maria da Silva (da < 3 letras)';
 
   -- criterio A (grafia): raw similarity < 0.7 e chaves iguais; os dois lados se listam
   assert public.similarity('nivea xyzqw', 'nivia xyzqw') < 0.7, 'pre: ga_a/ga_b raw < 0.7';
@@ -450,6 +475,36 @@ begin
    where _r.k = 'm_alvo' and (e->>'id')::uuid in (select id from _ids);
   assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'm_outra')
      and dup->0->>'motivo' = 'nome_google', format('m_alvo: %s', dup);
+  -- P contido em Q (Trinks da alvo menor que o Google da outra) -> nome_trinks
+  assert public.similarity('qpq alvo zzw', 'vorzina qwrtz de sousa fixture') < 0.7, 'pre: pq nao e Google';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'pq_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'pq_outra')
+     and dup->0->>'motivo' = 'nome_trinks', format('pq_alvo (P contido em Q): %s', dup);
+
+  -- stopword dentro do match: sem remover 'sistema', |Q|=2 e |C|=1 nao fecharia
+  assert public.avaliacao_palavras_nome('No sistema Zandora') = array['sandura']
+     and public.avaliacao_palavras_nome('Zandora Qwrtz') = array['qvrts','sandura'], 'pre: palavras sw';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'sw_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'sw_outra')
+     and dup->0->>'motivo' = 'nome_trinks', format('sw_alvo (stopword no match): %s', dup);
+
+  -- teto de 5 por forca: a de nome do Google (a mais antiga, 30 dias) entra mesmo com 6
+  -- candidatas so-Trinks mais recentes; ficam as 4 so-Trinks mais recentes; exibicao por recencia
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'tp_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 5, format('tp_alvo: teto 5, veio %s', jsonb_array_length(dup));
+  assert (dup->4->>'id')::uuid = (select id from _ids where k = 'tp_goo') and dup->4->>'motivo' = 'nome_google',
+    format('tp_alvo: a de nome do Google (mais antiga) fica por ultimo e nao e cortada: %s', dup);
+  assert (select array_agg((e->>'id')::uuid order by o) from jsonb_array_elements(dup) with ordinality as t(e, o) where o <= 4)
+         = (select array_agg(id order by k) from _ids where k in ('tp_1','tp_2','tp_3','tp_4')),
+    'tp_alvo: as 4 so-Trinks mais recentes, em ordem de recencia';
+  assert (select count(*) from jsonb_array_elements(dup) e where e->>'motivo' = 'nome_trinks') = 4, 'tp_alvo: 4 nome_trinks';
+
   -- todo item traz motivo valido
   assert not exists (select 1 from _r, jsonb_array_elements(_r.duplicatas) e
                       where coalesce(e->>'motivo', '') not in ('nome_google', 'nome_trinks')),

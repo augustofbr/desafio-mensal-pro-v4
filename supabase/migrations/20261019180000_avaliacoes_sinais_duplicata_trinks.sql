@@ -24,7 +24,10 @@
 --     Google em estrela legada.
 --     public.avaliacao_palavras_nome(texto): do nome normalizado, tudo que nao e [a-z ] vira
 --     espaco; divide por espaco; aplica a chave de grafia em cada palavra; mantem as de
---     comprimento >= 3; remove stopwords (comparadas ja dobradas pela chave); distintas.
+--     comprimento >= 3 (medido na chave); remove stopwords (comparadas com o token NORMALIZADO,
+--     ANTES da chave: assim "Dieylle", "May", "Nyla" ou "Della" nao somem por dobrarem para
+--     'dili', 'mai', 'nila', 'dila', que dobradas colidiriam com 'del'/'mae'/'nela'/'dela');
+--     distintas. "Irma" (nome) continua stopword por estar na lista literal.
 --     Stopwords (campo do Google no legado traz anotacoes tipo "no sistema X, no google Y, a
 --     filha que fez..."): sistema, siste, google, cliente, nome, mesma, mesmo, atendimento,
 --     atendida, filha, filho, irma, irmao, amiga, amigo, comanda, agenda, esta, estara, estava,
@@ -49,8 +52,17 @@
 --     mais recentes primeiro, demais campos iguais. Nome do Google vazio da alvo desliga so os
 --     criterios Google; o B segue valendo.
 --
--- Custo: as palavras das outras estrelas sao calculadas uma vez (CTE materializada); a
--- frequencia usa os ~2.200 nomes distintos do espelho, uma vez por chamada.
+--   Teto de 5: as 5 sao escolhidas por forca (criterio Google antes de so-Trinks) e depois
+--     por recencia, para que muitas candidatas so-Trinks nao cortem a de nome do Google; a
+--     ordem de exibicao no jsonb segue por recencia.
+--
+-- Constantes desta migracao: LIMIAR_DUP = 0.7 (similarity, nome e chave), LIMIAR_RARA = 3
+-- (nomes de cliente distintos) e a lista de stopwords (em avaliacao_palavras_nome).
+--
+-- Custo: as palavras das outras estrelas sao calculadas uma vez (CTE materializada). A
+-- frequencia (criterio B) so olha nomes do espelho cuja chave de grafia contem alguma palavra
+-- dos Trinks das estrelas pedidas (pre-filtro por substring, superconjunto barato) e so
+-- calcula as palavras desses nomes.
 --
 -- As funcoes auxiliares sao immutable, search_path vazio, EXECUTE so para authenticated e
 -- service_role (a RPC e SECURITY INVOKER e roda como authenticated; anon e public revogados).
@@ -78,7 +90,7 @@ $$;
 comment on function public.avaliacao_chave_grafia(text) is
   'Chave de grafia de um nome JA normalizado (avaliacao_normalizar_nome): sem h, e/o/y/z/w/k dobrados em i/u/i/s/v/c e letras repetidas colapsadas. Usada na duplicata das estrelas.';
 
--- Stopwords ja dobradas pela chave de grafia (ex.: sistema -> sistima, que -> qui).
+-- Stopwords: comparadas com o token normalizado, antes da chave de grafia.
 create or replace function public.avaliacao_palavras_nome(p text)
 returns text[]
 language sql
@@ -93,20 +105,20 @@ as $$
            pg_catalog.string_to_array(
              pg_catalog.regexp_replace(public.avaliacao_normalizar_nome(p), '[^a-z ]', ' ', 'g'),
              ' ')) as x
+    where x <> all (array[
+      'sistema', 'siste', 'google', 'cliente', 'nome', 'mesma', 'mesmo', 'atendimento',
+      'atendida', 'filha', 'filho', 'irma', 'irmao', 'amiga', 'amigo', 'comanda', 'agenda',
+      'esta', 'estara', 'estava', 'consta', 'constara', 'somente', 'apenas', 'primeiro',
+      'tambem', 'procedimento', 'studio', 'contato', 'nela', 'dela', 'dele', 'tive', 'marido',
+      'esposa', 'namorada', 'perfil', 'conta', 'celular', 'comentario', 'que', 'fez', 'fiz',
+      'sem', 'mae', 'nao', 'com', 'por', 'dra', 'obs', 'dos', 'das', 'del'
+    ]::text[])
   ) s
   where pg_catalog.length(s.k) >= 3
-    and s.k <> all (array[
-      'aginda', 'amiga', 'amigu', 'apinas', 'atindida', 'atindimintu', 'cilular', 'clinti',
-      'cum', 'cumanda', 'cumintariu', 'cunsta', 'cunstara', 'cunta', 'cuntatu', 'das', 'dil',
-      'dila', 'dili', 'dra', 'dus', 'fila', 'filu', 'fis', 'gugli', 'irma', 'irmau', 'ispusa',
-      'ista', 'istara', 'istava', 'mai', 'maridu', 'misma', 'mismu', 'namurada', 'nau', 'nila',
-      'numi', 'pirfil', 'primiru', 'prucidimintu', 'pur', 'qui', 'sim', 'sisti', 'sistima',
-      'studiu', 'suminti', 'tambim', 'tivi', 'ubs'
-    ]::text[])
 $$;
 
 comment on function public.avaliacao_palavras_nome(text) is
-  'Palavras distintas de um nome (normalizado, so [a-z], chave de grafia, comprimento >= 3, sem stopwords) como text[] ordenado. Usada na duplicata das estrelas pelo nome do Trinks.';
+  'Palavras distintas de um nome (normalizado, so [a-z], sem stopwords comparadas antes da chave, chave de grafia, comprimento >= 3) como text[] ordenado. Usada na duplicata das estrelas pelo nome do Trinks.';
 
 revoke all on function public.avaliacao_chave_grafia(text) from public, anon;
 revoke all on function public.avaliacao_palavras_nome(text) from public, anon;
@@ -245,13 +257,28 @@ begin
     from alvo al
     cross join lateral pg_catalog.unnest(al.trinks_pal) as w(w)
   ),
-  nomes_espelho as materialized (
-    select distinct public.avaliacao_normalizar_nome(t.client_name) as nome_n
-    from public.trinks_services t
-    where t.client_name is not null
-      and exists (select 1 from palavras_alvo)
+  -- so nomes do espelho cuja chave de grafia contem (substring) alguma palavra-alvo: o
+  -- pre-filtro e um superconjunto (a chave de uma palavra e substring da chave do nome
+  -- inteiro); a conferencia exata por palavra vem depois, so nesses nomes.
+  -- a chave de cada nome e calculada UMA vez (CTE materializada = barreira: sem ela o
+  -- planner recalcula a chave por par nome x palavra)
+  nomes_k as materialized (
+    select d.nome_n, public.avaliacao_chave_grafia(d.nome_n) as nome_k
+    from (
+      select distinct public.avaliacao_normalizar_nome(t.client_name) as nome_n
+      from public.trinks_services t
+      where t.client_name is not null
+        and exists (select 1 from palavras_alvo)
+    ) d
   ),
-  freq as (
+  nomes_espelho as materialized (
+    select n.nome_n
+    from nomes_k n
+    where exists (
+      select 1 from palavras_alvo pa
+      where pg_catalog.strpos(n.nome_k, pa.w) > 0)
+  ),
+  freq as materialized (
     select pa.w, pg_catalog.count(*) as n
     from palavras_alvo pa
     join (
@@ -335,7 +362,8 @@ begin
       ) m
       where o.id <> s.id
         and (m.via_google or m.via_trinks)
-      order by o.data_hora_cadastro desc nulls last, o.id
+      -- as 5 mais fortes (Google antes de so-Trinks), depois as mais recentes
+      order by m.via_google desc, o.data_hora_cadastro desc nulls last, o.id
       limit 5
     ) x
   ) dup;
