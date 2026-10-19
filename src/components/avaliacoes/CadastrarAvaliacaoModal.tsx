@@ -84,7 +84,8 @@ function valoresIniciais(hoje: string): FormValues {
     clienteTrinksId: null,
     origem: "lista",
     nomeGoogle: "",
-    mesmoNome: true,
+    // Desmarcado de proposito: o nome do Google e a chave da deteccao de duplicatas.
+    mesmoNome: false,
   };
 }
 
