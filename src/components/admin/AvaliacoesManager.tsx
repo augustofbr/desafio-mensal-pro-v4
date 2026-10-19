@@ -16,6 +16,7 @@ import {
 import {
   ORDENACOES_FILA,
   casaBuscaCliente,
+  estadoDaLista,
   inicial,
   linhaTrinks,
   mensagemDoErro,
@@ -29,7 +30,9 @@ import { useToast } from "@/hooks/use-toast";
 import { RequireWrite } from "@/auth/guards";
 import { cn } from "@/lib/utils";
 import {
+  AvisoDesatualizada,
   ConfirmacaoDialog,
+  ErroCarregamento,
   SelectFiltro,
   Vazio,
   type Confirmacao,
@@ -57,7 +60,8 @@ function ehDeMesAnterior(avaliacao: AvaliacaoAdmin): boolean {
 }
 
 export function AvaliacoesManager() {
-  const { pendentes, isLoading, decidir } = useAdminAvaliacoes();
+  const { pendentes, isLoading, isError, decidir } = useAdminAvaliacoes();
+  const estadoFila = estadoDaLista({ isLoading, isError, total: pendentes.length });
   const { toast } = useToast();
 
   // Sinais de TODAS as pendentes (não só as filtradas): filtrar ou ordenar a
@@ -223,14 +227,19 @@ export function AvaliacoesManager() {
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base font-heading">
             <Clock className="h-4 w-4 text-amber-500" />
-            Aguardando decisão ({filtradas.length})
+            {estadoFila === "erro"
+              ? "Aguardando decisão"
+              : `Aguardando decisão (${filtradas.length})`}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {pendentes.length === 0 ? (
+          {estadoFila === "erro" ? (
+            <ErroCarregamento texto="Não foi possível carregar a fila de aprovações." />
+          ) : estadoFila === "vazio" ? (
             <Vazio texto="Nenhuma avaliação aguardando decisão." />
           ) : (
             <>
+              {estadoFila === "lista_desatualizada" && <AvisoDesatualizada />}
               {/* Filtros: uma linha no desktop; no celular ficam atrás de um
                   toque, porque 3 controles empilhados (~230px) empurravam a
                   fila para fora da tela. `sm:grid` vence o `hidden` por ordem
@@ -485,11 +494,14 @@ export function AvaliacoesManager() {
       </Card>
 
       {/* 2. Estatísticas e contexto — abaixo da fila, por serem leitura ocasional */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <Estatistica rotulo="Na fila" valor={pendentes.length} />
-        <Estatistica rotulo="Profissionais" valor={profissionaisNaFila.length} />
-        <Estatistica rotulo="Selecionadas" valor={selecionadasVisiveis.length} />
-      </div>
+      {/* Numa falha, "Na fila 0" seria a mesma mentira do estado vazio. */}
+      {estadoFila !== "erro" && (
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <Estatistica rotulo="Na fila" valor={pendentes.length} />
+          <Estatistica rotulo="Profissionais" valor={profissionaisNaFila.length} />
+          <Estatistica rotulo="Selecionadas" valor={selecionadasVisiveis.length} />
+        </div>
+      )}
 
       <p className="font-body text-xs text-gray-500">
         Estrelas do Google cadastradas pelas clientes. Cada estrela aprovada vale 3

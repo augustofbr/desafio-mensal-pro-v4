@@ -9,7 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Inbox } from "lucide-react";
+import { AlertTriangle, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Pecas visuais usadas pela fila e pelo historico do painel de aprovacoes. */
@@ -44,6 +44,32 @@ export function Vazio({ texto }: { texto: string }) {
       </span>
       <p className="font-body text-sm text-muted-foreground">{texto}</p>
     </div>
+  );
+}
+
+/** Consulta que falhou. Nunca use `Vazio` no lugar disto: "nenhuma avaliacao"
+ *  numa falha esconde trabalho real (ver `estadoDaLista`). */
+export function ErroCarregamento({ texto }: { texto: string }) {
+  return (
+    <div role="alert" className="py-10 text-center">
+      <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/40">
+        <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-300" aria-hidden="true" />
+      </span>
+      <p className="font-body text-sm font-semibold text-red-700 dark:text-red-300">{texto}</p>
+      <p className="mt-1 font-body text-xs text-muted-foreground">
+        Recarregue a página. Se continuar, avise quem administra o sistema.
+      </p>
+    </div>
+  );
+}
+
+/** Refetch falhou, mas ainda ha dados em cache: a lista fica, com este aviso. */
+export function AvisoDesatualizada() {
+  return (
+    <p role="status" className="font-body text-xs text-red-700 dark:text-red-300">
+      Não foi possível atualizar agora — a lista abaixo pode estar desatualizada.
+      Recarregue a página.
+    </p>
   );
 }
 

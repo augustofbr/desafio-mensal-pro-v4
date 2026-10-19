@@ -22,15 +22,20 @@ interface AvaliacaoCounts {
 export function useMinhasAvaliacoes(profissionalId: number | null) {
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
   const [loading, setLoading] = useState(false);
+  // Falha na consulta precisa chegar a tela: sem isso a lista ficava vazia e
+  // parecia "nenhuma avaliacao", que e informacao falsa para a profissional.
+  const [isError, setIsError] = useState(false);
 
   const fetchAvaliacoes = useCallback(async () => {
     if (!profissionalId) {
       setAvaliacoes([]);
+      setIsError(false);
       return;
     }
 
     try {
       setLoading(true);
+      setIsError(false);
 
       const { data, error } = await supabase
         .from("avaliacoes_cadastradas" as any)
@@ -41,6 +46,7 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
       if (error) {
         console.error("Erro ao buscar avaliações:", error);
         setAvaliacoes([]);
+        setIsError(true);
         return;
       }
 
@@ -48,6 +54,7 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
     } catch (error) {
       console.error("Erro ao buscar avaliações:", error);
       setAvaliacoes([]);
+      setIsError(true);
     } finally {
       setLoading(false);
     }
@@ -66,5 +73,5 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
     };
   }, [avaliacoes]);
 
-  return { avaliacoes, loading, counts };
+  return { avaliacoes, loading, isError, counts };
 }

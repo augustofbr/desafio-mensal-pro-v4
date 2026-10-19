@@ -14,6 +14,7 @@ import { formatDataHoraManaus, mesPorExtensoManaus } from "@/lib/dateUtils";
 import {
   ORDENACOES_HISTORICO,
   casaBuscaCliente,
+  estadoDaLista,
   inicial,
   linhaTrinks,
   mensagemDoErro,
@@ -31,7 +32,9 @@ import { normalizarBusca } from "@/lib/clienteTrinks";
 import { useToast } from "@/hooks/use-toast";
 import { RequireWrite } from "@/auth/guards";
 import {
+  AvisoDesatualizada,
   ConfirmacaoDialog,
+  ErroCarregamento,
   SelectFiltro,
   StatusBadge,
   Vazio,
@@ -133,8 +136,9 @@ export function HistoricoDecisoes() {
     [periodoChave, personalizado],
   );
 
-  const { historico, isLoading, atingiuTeto, reverter } =
+  const { historico, isLoading, isError, atingiuTeto, reverter } =
     useHistoricoAvaliacoes(periodo);
+  const estadoHistorico = estadoDaLista({ isLoading, isError, total: historico.length });
 
   // Derivada do periodo inteiro, ANTES dos demais filtros — se saisse da lista
   // ja filtrada, escolher um profissional esvaziaria as opcoes dos outros.
@@ -343,12 +347,19 @@ export function HistoricoDecisoes() {
 
           {(Object.keys(listaDaAba) as Aba[]).map((valor) => (
             <TabsContent key={valor} value={valor} className="mt-3">
+              {estadoHistorico === "lista_desatualizada" && (
+                <div className="mb-2">
+                  <AvisoDesatualizada />
+                </div>
+              )}
               {isLoading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-[78px] rounded-2xl animate-shimmer" />
                   ))}
                 </div>
+              ) : estadoHistorico === "erro" ? (
+                <ErroCarregamento texto="Não foi possível carregar o histórico de decisões." />
               ) : listaDaAba[valor].length === 0 ? (
                 <Vazio
                   texto={

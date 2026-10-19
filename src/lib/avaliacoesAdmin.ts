@@ -214,3 +214,46 @@ export function rotuloAtendida(
       return { titulo: "Não encontrada", detalhe: "", tom: "vermelho" };
   }
 }
+
+/**
+ * Teto de duplicatas por estrela devolvido por `avaliacoes_sinais` (`limit 5` na
+ * RPC). Com exatamente esse numero, pode haver mais — a tela mostra "5+".
+ */
+export const LIMITE_DUPLICATAS = 5;
+
+export function rotuloContagemDuplicatas(n: number): string {
+  return n >= LIMITE_DUPLICATAS ? `${LIMITE_DUPLICATAS}+` : String(n);
+}
+
+export type EstadoLista = "carregando" | "erro" | "vazio" | "lista" | "lista_desatualizada";
+
+/**
+ * O que uma lista carregada do banco deve mostrar. Erro vence "vazio" de
+ * proposito: uma consulta que falhou (rede, RLS, bundle novo antes da migracao)
+ * nunca pode aparecer como "nenhuma avaliacao" — isso esconde trabalho real.
+ * Se a falha foi de um REFETCH e ainda ha dados em cache, a lista continua na
+ * tela, mas marcada como possivelmente desatualizada.
+ */
+export function estadoDaLista(q: {
+  isLoading: boolean;
+  isError: boolean;
+  total: number;
+}): EstadoLista {
+  if (q.isLoading) return "carregando";
+  if (q.isError) return q.total === 0 ? "erro" : "lista_desatualizada";
+  return q.total === 0 ? "vazio" : "lista";
+}
+
+/**
+ * Texto do contador da aba "Aprovacoes". `null` = nao mostrar nada. Consulta
+ * que falhou mostra "!", nunca 0 nem sumir como se a fila estivesse vazia.
+ */
+export function rotuloContadorPendentes(q: {
+  isLoading: boolean;
+  isError: boolean;
+  total: number;
+}): string | null {
+  if (q.isError) return "!";
+  if (q.isLoading || q.total === 0) return null;
+  return String(q.total);
+}

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { mesPorExtensoManaus } from "@/lib/dateUtils";
 import {
   rotuloAtendida,
+  rotuloContagemDuplicatas,
   statusPorExtenso,
   type EstadoAtendida,
   type SinalAvaliacao,
@@ -84,7 +85,7 @@ export function SinaisAvaliacao({ sinal }: { sinal?: SinalAvaliacao }) {
         <details className="group rounded-xl border border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <summary className="flex min-h-[44px] cursor-pointer list-none items-center gap-1.5 px-2.5 font-body text-xs font-semibold [&::-webkit-details-marker]:hidden">
             <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            Possível duplicata ({duplicatas.length})
+            Possível duplicata ({rotuloContagemDuplicatas(duplicatas.length)})
             <span className="ml-auto font-normal underline group-open:hidden">ver</span>
           </summary>
           <ul className="space-y-1 px-2.5 pb-2.5 font-body text-xs">

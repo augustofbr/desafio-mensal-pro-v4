@@ -77,8 +77,12 @@ const MinhasAvaliacoes = () => {
   } = useActiveProfessionals();
 
   const [selectedProfId, setSelectedProfId] = useState<number | null>(null);
-  const { avaliacoes, loading: avaliacoesLoading, counts } =
-    useMinhasAvaliacoes(selectedProfId);
+  const {
+    avaliacoes,
+    loading: avaliacoesLoading,
+    isError: avaliacoesFalhou,
+    counts,
+  } = useMinhasAvaliacoes(selectedProfId);
 
   useEffect(() => {
     fetchActiveProfessionals();
@@ -104,6 +108,23 @@ const MinhasAvaliacoes = () => {
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 rounded-xl animate-shimmer" />
           ))}
+        </div>
+      );
+    }
+
+    // Falha nunca vira "Nenhuma avaliação encontrada." — isso seria informação falsa.
+    if (avaliacoesFalhou) {
+      return (
+        <div role="alert" className="text-center py-10">
+          <div className="w-14 h-14 mx-auto rounded-full bg-red-50 flex items-center justify-center mb-3">
+            <AlertCircle className="h-7 w-7 text-red-400" />
+          </div>
+          <p className="text-red-700 font-body text-sm font-semibold">
+            Não foi possível carregar as avaliações.
+          </p>
+          <p className="text-gray-500 font-body text-xs mt-1">
+            Recarregue a página para tentar de novo.
+          </p>
         </div>
       );
     }
@@ -207,16 +228,16 @@ const MinhasAvaliacoes = () => {
                       <Tabs defaultValue="todas" className="mt-1">
                         <TabsList className="grid w-full grid-cols-4 mb-3">
                           <TabsTrigger value="todas" className="font-body text-xs">
-                            Todas ({counts.todas})
+                            Todas {avaliacoesFalhou ? "" : `(${counts.todas})`}
                           </TabsTrigger>
                           <TabsTrigger value="pendentes" className="font-body text-xs">
-                            Pendentes ({counts.pendentes})
+                            Pendentes {avaliacoesFalhou ? "" : `(${counts.pendentes})`}
                           </TabsTrigger>
                           <TabsTrigger value="aprovadas" className="font-body text-xs">
-                            Aprovadas ({counts.aprovadas})
+                            Aprovadas {avaliacoesFalhou ? "" : `(${counts.aprovadas})`}
                           </TabsTrigger>
                           <TabsTrigger value="rejeitadas" className="font-body text-xs">
-                            Rejeitadas ({counts.rejeitadas})
+                            Rejeitadas {avaliacoesFalhou ? "" : `(${counts.rejeitadas})`}
                           </TabsTrigger>
                         </TabsList>
 

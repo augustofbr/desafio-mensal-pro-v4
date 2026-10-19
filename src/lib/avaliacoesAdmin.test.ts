@@ -8,6 +8,10 @@ import {
   normalizarSinal,
   idsParaSinais,
   LIMITE_IDS_SINAIS,
+  LIMITE_DUPLICATAS,
+  rotuloContagemDuplicatas,
+  estadoDaLista,
+  rotuloContadorPendentes,
 } from "./avaliacoesAdmin";
 
 describe("casaBuscaCliente", () => {
@@ -205,5 +209,48 @@ describe("idsParaSinais", () => {
   });
   it("lista pequena passa inteira", () => {
     expect(idsParaSinais(["a", "b"])).toEqual(["a", "b"]);
+  });
+});
+
+describe("rotuloContagemDuplicatas", () => {
+  it("abaixo do teto da RPC mostra o numero", () => {
+    expect(rotuloContagemDuplicatas(1)).toBe("1");
+    expect(rotuloContagemDuplicatas(4)).toBe("4");
+  });
+  it("no teto (5) mostra 5+, porque a RPC corta", () => {
+    expect(LIMITE_DUPLICATAS).toBe(5);
+    expect(rotuloContagemDuplicatas(5)).toBe("5+");
+    expect(rotuloContagemDuplicatas(6)).toBe("5+");
+  });
+});
+
+describe("estadoDaLista", () => {
+  it("carregando vence tudo", () => {
+    expect(estadoDaLista({ isLoading: true, isError: true, total: 0 })).toBe("carregando");
+  });
+  it("erro vence vazio — falha nunca vira lista vazia", () => {
+    expect(estadoDaLista({ isLoading: false, isError: true, total: 0 })).toBe("erro");
+  });
+  it("refetch falhou com dados em cache: lista marcada como desatualizada", () => {
+    expect(estadoDaLista({ isLoading: false, isError: true, total: 3 })).toBe(
+      "lista_desatualizada",
+    );
+  });
+  it("sem erro: vazio ou lista", () => {
+    expect(estadoDaLista({ isLoading: false, isError: false, total: 0 })).toBe("vazio");
+    expect(estadoDaLista({ isLoading: false, isError: false, total: 2 })).toBe("lista");
+  });
+});
+
+describe("rotuloContadorPendentes", () => {
+  it("falha mostra '!', nunca 0", () => {
+    expect(rotuloContadorPendentes({ isLoading: false, isError: true, total: 0 })).toBe("!");
+  });
+  it("carregando ou fila vazia: nada", () => {
+    expect(rotuloContadorPendentes({ isLoading: true, isError: false, total: 0 })).toBeNull();
+    expect(rotuloContadorPendentes({ isLoading: false, isError: false, total: 0 })).toBeNull();
+  });
+  it("com pendentes: o numero", () => {
+    expect(rotuloContadorPendentes({ isLoading: false, isError: false, total: 7 })).toBe("7");
   });
 });

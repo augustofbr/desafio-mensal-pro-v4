@@ -116,11 +116,13 @@ async function buscarHistorico(janela: JanelaHistorico): Promise<AvaliacaoAdmin[
  * `useAdminAvaliacoes`, entao as duas montagens dividem cache e uma requisicao.
  */
 export function useAvaliacoesPendentes() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: CHAVE_PENDENTES,
     queryFn: buscarPendentes,
   });
-  return { pendentes: data ?? [], isLoading };
+  // `isError` e obrigatorio para quem consome: sem ele, uma consulta que falhou
+  // vira `[]` e o contador mostra "fila vazia" sem estar.
+  return { pendentes: data ?? [], isLoading, isError };
 }
 
 /**
@@ -201,6 +203,9 @@ export function useAdminAvaliacoes() {
   return {
     pendentes: pendentesQuery.data ?? [],
     isLoading: pendentesQuery.isLoading,
+    /** A consulta falhou — a tela NAO pode tratar `pendentes` vazio como fila vazia. */
+    isError: pendentesQuery.isError,
+    erro: pendentesQuery.error,
     decidir,
   };
 }
@@ -249,6 +254,9 @@ export function useHistoricoAvaliacoes(janela: JanelaHistorico) {
   return {
     historico,
     isLoading: historicoQuery.isLoading,
+    /** A consulta falhou — `historico` vazio NAO significa "nenhuma decisao". */
+    isError: historicoQuery.isError,
+    erro: historicoQuery.error,
     /** O periodo tem mais decisoes do que coube na resposta. */
     atingiuTeto: historico.length >= HISTORICO_LIMITE,
     reverter,
