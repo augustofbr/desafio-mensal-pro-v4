@@ -51,7 +51,12 @@ values
   (-999001008, to_char((now() at time zone 'America/Manaus')::date - 2, 'DD/MM/YYYY'), null, '999001', 'Escova Fixture',  'Fixture', 'Eva Fixture',   '571', 0),
   -- hoje-3: clienteid nao numerico -> cid NULL, deduplica pelo nome normalizado
   (-999001009, to_char((now() at time zone 'America/Manaus')::date - 3, 'DD/MM/YYYY'), null, '999001', 'Corte Fixture',   'Fixture', 'Fabi Fixture',  'abc', 0),
-  (-999001010, to_char((now() at time zone 'America/Manaus')::date - 3, 'DD/MM/YYYY'), null, '999001', 'Escova Fixture',  'Fixture', 'FABI  fixture', 'x1',  0);
+  (-999001010, to_char((now() at time zone 'America/Manaus')::date - 3, 'DD/MM/YYYY'), null, '999001', 'Escova Fixture',  'Fixture', 'FABI  fixture', 'x1',  0),
+  -- hoje-4: clienteid com 19 digitos acima do teto de bigint (o cast antigo daria
+  --         22003 e derrubaria a lista) -> id NULL, sem erro;
+  --         clienteid com espacos nas pontas -> btrim, id 580
+  (-999001011, to_char((now() at time zone 'America/Manaus')::date - 4, 'DD/MM/YYYY'), null, '999001', 'Corte Fixture',   'Fixture', 'Iris Fixture',  '9999999999999999999', 0),
+  (-999001012, to_char((now() at time zone 'America/Manaus')::date - 4, 'DD/MM/YYYY'), null, '999001', 'Corte Fixture',   'Fixture', 'Julia Fixture', ' 580 ', 0);
 
 insert into public."gerencia-fila-trinks-appointments"
   (trinks_appointment_id, trinks_client_id, client_name, professional_id, service_name, trinks_status, appointment_date)
@@ -198,6 +203,15 @@ begin
   assert r.fonte = 'espelho', 'hoje-3: fonte espelho';
   assert r.servicos @> array['Corte Fixture','Escova Fixture'] and cardinality(r.servicos) = 2,
     format('hoje-3: servicos %s', r.servicos);
+
+  -- clienteid de 19 digitos -> id NULL (sem estourar bigint); com espacos -> btrim
+  select count(*) into n from public.avaliacao_clientes_do_dia(999001, v_hoje - 4);
+  assert n = 2, format('hoje-4: esperado 2 clientes, veio %s', n);
+  select * into r from public.avaliacao_clientes_do_dia(999001, v_hoje - 4) x where x.nome = 'Iris Fixture';
+  assert found, 'hoje-4: Iris (clienteid 19 digitos) deve aparecer';
+  assert r.cliente_trinks_id is null, 'hoje-4: clienteid com 19 digitos vira NULL';
+  select * into r from public.avaliacao_clientes_do_dia(999001, v_hoje - 4) x where x.nome = 'Julia Fixture';
+  assert found and r.cliente_trinks_id = 580, 'hoje-4: clienteid com espacos vira 580 (btrim)';
 
   -- limite inferior da janela (hoje-10) e aceito
   perform * from public.avaliacao_clientes_do_dia(999001, v_hoje - 10);

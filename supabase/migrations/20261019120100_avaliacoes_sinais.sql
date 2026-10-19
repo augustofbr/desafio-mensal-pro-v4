@@ -252,7 +252,7 @@ end
 $$;
 
 comment on function public.avaliacoes_sinais(uuid[]) is
-  'Sinais da fila de aprovacao por estrela (max. 300 ids): atendida (atendida|provavel|aguardando_espelho|nao_encontrada, cruzando com trinks_services da mesma profissional) e duplicatas (ate 5 outras estrelas com nome do Google igual ou similarity >= 0.7). SECURITY INVOKER, search_path vazio. So authenticated.';
+  'Sinais da fila de aprovacao por estrela (max. 300 ids): atendida (atendida|provavel|aguardando_espelho|nao_encontrada, cruzando com trinks_services da mesma profissional) e duplicatas (ate 5 outras estrelas com nome do Google igual ou similarity >= 0.7). SECURITY INVOKER, search_path vazio. EXECUTE: authenticated e service_role (anon e public revogados).';
 
 revoke all on function public.avaliacoes_sinais(uuid[]) from public;
 revoke all on function public.avaliacoes_sinais(uuid[]) from anon;

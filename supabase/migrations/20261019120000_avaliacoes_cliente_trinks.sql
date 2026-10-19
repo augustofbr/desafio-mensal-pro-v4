@@ -134,7 +134,10 @@ begin
 
   return query
   with espelho as (
-    select case when t.clienteid ~ '^\d+$' then t.clienteid::bigint end as cid,
+    -- btrim + teto de 18 digitos (igual a avaliacoes_sinais): um clienteid com
+    -- 19+ digitos estouraria ::bigint e derrubaria a lista inteira; vira NULL.
+    select case when pg_catalog.btrim(t.clienteid) ~ '^[0-9]{1,18}$'
+                then pg_catalog.btrim(t.clienteid)::bigint end           as cid,
            pg_catalog.btrim(t.client_name)                               as cnome,
            t.service_name                                                as servico
     from public.trinks_services t
