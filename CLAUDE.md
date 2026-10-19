@@ -159,7 +159,7 @@ edge function no load da pagina.**
 - **Tables**:
   - `trinks_services` - Stores service data from Trinks system
     - `id`: Primary key (BIGINT)
-    - `service_date`: Date of service (DATE)
+    - `service_date`: Date of service (TEXT `'DD/MM/YYYY'`, NOT DATE) - compare with `to_char(dia, 'DD/MM/YYYY')`
     - `professional`: Professional name (TEXT)
     - `service_name`: Name of service (TEXT)
     - `category`: Service category (TEXT) - used only for specific service detection
@@ -167,6 +167,7 @@ edge function no load da pagina.**
     - `value`: Service value (NUMERIC) - used only for Estética revenue calculation
     - `created_at`: Timestamp
     - `profissionalid`: TEXT (nullable) - matches profissionais_ativos.profissionalId
+    - `clienteid`: TEXT - id da cliente no Trinks (comparado de forma numerica com `avaliacoes_cadastradas.cliente_trinks_id`)
     - Indexes on: service_date, professional, category
 
   - `profissionais_ativos` - Professional registry and categories
@@ -185,7 +186,13 @@ edge function no load da pagina.**
     - `id`: Primary key (UUID)
     - `profissional_id`: Foreign key to profissionais_ativos (INTEGER)
     - `nome_profissional`: Professional name snapshot (TEXT)
-    - `nome_cliente`: Client name (TEXT)
+    - `nome_cliente`: Nome da cliente **no Google** (TEXT, NOT NULL) - chave da deteccao de duplicata
+    - `nome_cliente_trinks`: Nome da cliente no Trinks (TEXT, nullable)
+    - `cliente_trinks_id`: Id da cliente no Trinks (BIGINT, nullable; quando preenchido, > 0; NULL quando `origem_cliente_trinks = 'digitado'`)
+    - `data_atendimento`: Dia do atendimento informado no cadastro (DATE, nullable)
+    - `origem_cliente_trinks`: 'lista' (escolhida na lista do dia) | 'digitado' (TEXT, nullable)
+    - Colunas novas (`nome_cliente_trinks`, `cliente_trinks_id`, `data_atendimento`, `origem_cliente_trinks`) sao todas nullable: legado = NULL. Bundle antigo continua inserindo so `nome_cliente`
+    - Checks: `avaliacoes_origem_cliente_trinks_chk`, `avaliacoes_digitado_sem_cliente_id_chk` (digitado => id NULL), `avaliacoes_cliente_trinks_id_positivo_chk`. Migracao `supabase/migrations/20261019120000_avaliacoes_cliente_trinks.sql`
     - `status`: Review status (TEXT) - 'pendente', 'aprovada', 'rejeitada'
     - `data_hora_cadastro`: Review registration timestamp (TIMESTAMPTZ) - used for date filtering
     - `aprovado_por`: Admin UID who approved (UUID, nullable)
@@ -489,6 +496,15 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
   `useStarsData` acima. Decidir uma pendente atrasada mexe em mes fechado, entao ela nunca
   passa sem confirmacao (individual) e o lote conta quantas sao. Ao testar, use transacao com
   `ROLLBACK` — nunca decida uma pendente real para "ver funcionando".
+
+**Cliente no Trinks no cadastro e nos sinais da fila** (migracoes `20261019120000_avaliacoes_cliente_trinks.sql` e `20261019120100_avaliacoes_sinais.sql`):
+
+- **Cadastro** (`CadastrarAvaliacaoModal`, modal em `/`): profissional → dia → cliente no Trinks, escolhida na lista do dia ou "Nao encontrei" (cai para digitacao). Depois, o nome no Google, com "Mesmo nome do Trinks" desmarcada por padrao. Erro ou lista vazia tambem caem para digitacao. Front: `src/lib/clienteTrinks.ts` (dias permitidos, rotulos, `montarInsertAvaliacao`, `estadoDaLista`), `src/hooks/useClientesDoDia.ts`, `src/components/avaliacoes/ClienteTrinksPicker.tsx`. Historico e `/minhas-avaliacoes` mostram os dois nomes, sem selos.
+- **`avaliacao_clientes_do_dia(p_profissional_id, p_data)`** (`security definer`, `search_path` vazio, execute para `anon`/`authenticated`): clientes atendidas pela profissional, em janela de 10 dias ate hoje (fuso Manaus; data fora = erro 22023). Fontes: espelho `trinks_services` e, so para hoje, `"gerencia-fila-trinks-appointments"` com status Trinks `em atendimento` ou `finalizado`. Cliente que so existe na fila entra com id NULL (o espaco de id de cliente da fila nao foi verificado) e se funde a do espelho pelo nome normalizado (`avaliacao_normalizar_nome`). Retorna `fonte` = `espelho` | `fila`. Nao depende das permissoes das tabelas da fila.
+- **`avaliacoes_sinais(p_ids uuid[])`** (`security invoker`, `search_path` vazio, so `authenticated`, maximo 300 ids = erro 22023): consumido por `useSinaisAvaliacoes` (chave `["admin_avaliacoes","sinais",...]`, fora dos prefixos de remocao otimista `pendentes`/`historico`, invalidada pelas mutacoes) e exibido em `src/components/admin/SinaisAvaliacao.tsx`. Dois sinais por estrela, sem bloquear aprovar nem recusar:
+  - **"Atendida?"** (`atendida` | `provavel` | `aguardando_espelho` | `nao_encontrada`). Com `cliente_trinks_id`: `atendida` se ha linha do espelho com o mesmo `clienteid` (numerico) e `service_date` igual a `data_atendimento`, dentro de [dia do cadastro − 10, min(dia do cadastro, hoje)]. Sem id (digitada ou legado): compara o nome do Trinks (ou o do Google, se legado) normalizado com as clientes da profissional na janela (trava de 30 dias): igual → `atendida`; similaridade ≥ 0,6 → `provavel` (alvo de uma palavra usa so `similarity`). `aguardando_espelho` so quando a data de referencia e entre ontem e hoje (comanda pode nao ter fechado).
+  - **Duplicata**: nome do **Google** normalizado igual ou `similarity` ≥ 0,7 contra TODAS as outras estrelas (qualquer status, mes ou profissional); no maximo 5, mais recentes primeiro. Nunca compara pelo nome do Trinks.
+- **Achado lateral (pendencia do projeto `gerenciador-fila-interna-V2`, nao deste repo)**: `"gerencia-fila-trinks-appointments"` e `"gerencia-fila-attendances"` dao a `anon` SELECT/INSERT/UPDATE/DELETE/TRUNCATE (policy ALL to public).
 
 ### Tabelas do kit e funcoes de gate
 
