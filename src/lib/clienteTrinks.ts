@@ -111,3 +111,12 @@ export function normalizarBusca(texto: string): string {
     .toLowerCase()
     .trim();
 }
+
+/** Cliente da lista do dia que corresponde a uma escolha (mesmo nome e mesmo id); `null` se sumiu da lista. */
+export function clienteDaLista(
+  clientes: ClienteDoDia[],
+  nome: string,
+  id: number | null
+): ClienteDoDia | null {
+  return clientes.find((c) => c.nome === nome && c.cliente_trinks_id === id) ?? null;
+}
