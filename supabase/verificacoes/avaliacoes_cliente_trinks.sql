@@ -108,28 +108,48 @@ begin
     null; -- esperado
   end;
 
-  -- digitado com id -> check
+  -- digitado com id / id 0, como anon: desde a regra 20261019130000 o trigger
+  -- BEFORE INSERT anula o id sem linha no espelho (aqui, sem data_atendimento)
+  -- ANTES dos checks; o cadastro entra com id NULL. Os checks em si sao provados
+  -- como postgres (sem trigger) no bloco 3b.
+  insert into public.avaliacoes_cadastradas
+    (profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro,
+     nome_cliente_trinks, cliente_trinks_id, origem_cliente_trinks)
+  values (999001, 'Fixture Teste Avaliacoes', 'Digitado Com Id', 'pendente', now(), 'Zeca Fixture', 555, 'digitado'),
+         (999001, 'Fixture Teste Avaliacoes', 'Id Zero', 'pendente', now(), 'Maria Fixture', 0, 'lista');
+end $$;
+
+reset role;
+
+do $$
+begin
+  assert (select count(*) from public.avaliacoes_cadastradas
+           where nome_cliente in ('Digitado Com Id', 'Id Zero') and cliente_trinks_id is null) = 2,
+    'anon: trigger deveria anular o id de digitado/id 0';
+
+  -- 3b. checks como postgres (o trigger nao vale para postgres)
   begin
     insert into public.avaliacoes_cadastradas
       (profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro,
        nome_cliente_trinks, cliente_trinks_id, origem_cliente_trinks)
-    values (999001, 'Fixture Teste Avaliacoes', 'Digitado Com Id', 'pendente', now(), 'Zeca Fixture', 555, 'digitado');
+    values (999001, 'Fixture Teste Avaliacoes', 'Digitado Com Id PG', 'pendente', now(), 'Zeca Fixture', 555, 'digitado');
     raise exception 'digitado com cliente_trinks_id deveria violar o check';
   exception when check_violation then
     null; -- esperado
   end;
 
-  -- id 0 -> check
   begin
     insert into public.avaliacoes_cadastradas
       (profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro,
        nome_cliente_trinks, cliente_trinks_id, origem_cliente_trinks)
-    values (999001, 'Fixture Teste Avaliacoes', 'Id Zero', 'pendente', now(), 'Maria Fixture', 0, 'lista');
+    values (999001, 'Fixture Teste Avaliacoes', 'Id Zero PG', 'pendente', now(), 'Maria Fixture', 0, 'lista');
     raise exception 'cliente_trinks_id = 0 deveria violar o check';
   exception when check_violation then
     null; -- esperado
   end;
 end $$;
+
+set local role anon;
 
 -- 4. RPC avaliacao_clientes_do_dia como anon -------------------------------
 do $$
