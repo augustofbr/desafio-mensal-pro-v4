@@ -1,5 +1,6 @@
 -- Verificacao de 20261019120000_avaliacoes_cliente_trinks.sql
 --
+-- Fica em supabase/verificacoes/ (e nao em supabase/tests/, que o CLI trata como pgTAP).
 -- Roda INTEIRO dentro de begin ... rollback: nada persiste (fixtures, linhas de
 -- avaliacao inseridas como anon). Execute com o MCP execute_sql (papel postgres).
 -- Qualquer assert que falhe aborta a transacao com erro; sucesso = sem erro.
@@ -24,6 +25,9 @@ begin
   assert public.avaliacao_normalizar_nome('Jose da Silva') = public.avaliacao_normalizar_nome('JOSÉ  da silva'),
     'normalizar: variantes do mesmo nome devem coincidir';
   assert public.avaliacao_normalizar_nome(null) is null, 'normalizar: null -> null';
+  assert public.avaliacao_normalizar_nome(E'\tAna  Maria\n') = 'ana maria', 'normalizar: tab/quebra de linha';
+  assert public.avaliacao_normalizar_nome('Ana' || chr(160) || 'Maria') = 'ana maria', 'normalizar: NBSP no meio';
+  assert public.avaliacao_normalizar_nome(chr(160) || 'Ana ' || chr(160)) = 'ana', 'normalizar: NBSP nas pontas';
 end $$;
 
 -- 2. Fixtures (papel padrao) ----------------------------------------------
@@ -41,7 +45,13 @@ values
   -- ontem, OUTRA profissional -> fora da lista de 999001
   (-999001005, to_char((now() at time zone 'America/Manaus')::date - 1, 'DD/MM/YYYY'), null, '999002', 'Corte Fixture',   'Fixture', 'Outra Fixture', '557', 0),
   -- hoje: Ana (id 560) ja no espelho; tambem aparece na fila com caixa/espacos diferentes
-  (-999001006, to_char((now() at time zone 'America/Manaus')::date,     'DD/MM/YYYY'), null, '999001', 'Manicure Fixture','Fixture', 'Ana Fixture',   '560', 0);
+  (-999001006, to_char((now() at time zone 'America/Manaus')::date,     'DD/MM/YYYY'), null, '999001', 'Manicure Fixture','Fixture', 'Ana Fixture',   '560', 0),
+  -- hoje-2: dois homonimos com ids distintos -> 2 linhas
+  (-999001007, to_char((now() at time zone 'America/Manaus')::date - 2, 'DD/MM/YYYY'), null, '999001', 'Corte Fixture',   'Fixture', 'Eva Fixture',   '570', 0),
+  (-999001008, to_char((now() at time zone 'America/Manaus')::date - 2, 'DD/MM/YYYY'), null, '999001', 'Escova Fixture',  'Fixture', 'Eva Fixture',   '571', 0),
+  -- hoje-3: clienteid nao numerico -> cid NULL, deduplica pelo nome normalizado
+  (-999001009, to_char((now() at time zone 'America/Manaus')::date - 3, 'DD/MM/YYYY'), null, '999001', 'Corte Fixture',   'Fixture', 'Fabi Fixture',  'abc', 0),
+  (-999001010, to_char((now() at time zone 'America/Manaus')::date - 3, 'DD/MM/YYYY'), null, '999001', 'Escova Fixture',  'Fixture', 'FABI  fixture', 'x1',  0);
 
 insert into public."gerencia-fila-trinks-appointments"
   (trinks_appointment_id, trinks_client_id, client_name, professional_id, service_name, trinks_status, appointment_date)
@@ -53,7 +63,11 @@ values
   -- hoje, mesma cliente do espelho (nome com caixa/espacos diferentes) -> funde com a linha do espelho
   (-999001003, 560, 'ANA   fixture', 999001, 'Esmaltacao Fixture', 'Finalizado',   (now() at time zone 'America/Manaus')::date),
   -- ontem, finalizada -> NAO entra (fila so vale para hoje)
-  (-999001004, 563, 'Dora Fixture',  999001, 'Pedicure Fixture', 'Finalizado',     (now() at time zone 'America/Manaus')::date - 1);
+  (-999001004, 563, 'Dora Fixture',  999001, 'Pedicure Fixture', 'Finalizado',     (now() at time zone 'America/Manaus')::date - 1),
+  -- hoje, sem service_name -> servicos = '{}'
+  (-999001005, 564, 'Gabi Fixture',  999001, null,               'Em atendimento', (now() at time zone 'America/Manaus')::date),
+  -- hoje, status com caixa/espacos -> conta
+  (-999001006, 565, 'Hana Fixture',  999001, 'Pedicure Fixture', ' FINALIZADO ',   (now() at time zone 'America/Manaus')::date);
 
 -- 3. Inserts como anon (bundle antigo e bundle novo) -----------------------
 set local role anon;
@@ -88,6 +102,28 @@ begin
   exception when check_violation then
     null; -- esperado
   end;
+
+  -- digitado com id -> check
+  begin
+    insert into public.avaliacoes_cadastradas
+      (profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro,
+       nome_cliente_trinks, cliente_trinks_id, origem_cliente_trinks)
+    values (999001, 'Fixture Teste Avaliacoes', 'Digitado Com Id', 'pendente', now(), 'Zeca Fixture', 555, 'digitado');
+    raise exception 'digitado com cliente_trinks_id deveria violar o check';
+  exception when check_violation then
+    null; -- esperado
+  end;
+
+  -- id 0 -> check
+  begin
+    insert into public.avaliacoes_cadastradas
+      (profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro,
+       nome_cliente_trinks, cliente_trinks_id, origem_cliente_trinks)
+    values (999001, 'Fixture Teste Avaliacoes', 'Id Zero', 'pendente', now(), 'Maria Fixture', 0, 'lista');
+    raise exception 'cliente_trinks_id = 0 deveria violar o check';
+  exception when check_violation then
+    null; -- esperado
+  end;
 end $$;
 
 -- 4. RPC avaliacao_clientes_do_dia como anon -------------------------------
@@ -112,9 +148,9 @@ begin
   assert not exists (select 1 from public.avaliacao_clientes_do_dia(999001, v_hoje - 1) x where x.nome = 'Dora Fixture'),
     'ontem: fila nao entra fora de hoje';
 
-  -- hoje: Ana (espelho+fila, 1 linha) e Bia (fila); Carla (cancelada) fora
+  -- hoje: Ana (espelho+fila, 1 linha), Bia, Gabi e Hana (fila); Carla (cancelada) fora
   select count(*) into n from public.avaliacao_clientes_do_dia(999001, v_hoje);
-  assert n = 2, format('hoje: esperado 2 clientes, veio %s', n);
+  assert n = 4, format('hoje: esperado 4 clientes, veio %s', n);
 
   select * into r from public.avaliacao_clientes_do_dia(999001, v_hoje) x where x.nome = 'Bia Fixture';
   assert found, 'hoje: Bia da fila deve aparecer';
@@ -138,7 +174,30 @@ begin
   -- ordenado por nome
   assert (select array_agg(x.nome order by x.ord)
             from public.avaliacao_clientes_do_dia(999001, v_hoje) with ordinality as x(cliente_trinks_id, nome, servicos, fonte, ord))
-         = array['Ana Fixture','Bia Fixture'], 'hoje: ordem por nome';
+         = array['Ana Fixture','Bia Fixture','Gabi Fixture','Hana Fixture'], 'hoje: ordem por nome';
+
+  -- fila sem service_name -> servicos vazio, nao {NULL}
+  select * into r from public.avaliacao_clientes_do_dia(999001, v_hoje) x where x.nome = 'Gabi Fixture';
+  assert found and r.fonte = 'fila', 'hoje: Gabi da fila';
+  assert r.servicos = '{}'::text[], format('hoje: servicos da Gabi %s', r.servicos);
+
+  -- status ' FINALIZADO ' conta
+  assert exists (select 1 from public.avaliacao_clientes_do_dia(999001, v_hoje) x where x.nome = 'Hana Fixture'),
+    'hoje: status com caixa/espacos deve contar';
+
+  -- homonimos com ids distintos -> 2 linhas, ordenadas por id
+  assert (select array_agg(x.cliente_trinks_id order by x.ord)
+            from public.avaliacao_clientes_do_dia(999001, v_hoje - 2) with ordinality as x(cliente_trinks_id, nome, servicos, fonte, ord))
+         = array[570, 571]::bigint[], 'hoje-2: homonimos com ids distintos ficam separados';
+
+  -- clienteid nao numerico -> cid NULL, 1 linha por nome normalizado
+  select count(*) into n from public.avaliacao_clientes_do_dia(999001, v_hoje - 3);
+  assert n = 1, format('hoje-3: esperado 1 cliente (dedup por nome), veio %s', n);
+  select * into r from public.avaliacao_clientes_do_dia(999001, v_hoje - 3);
+  assert r.cliente_trinks_id is null, 'hoje-3: id nao numerico vira NULL';
+  assert r.fonte = 'espelho', 'hoje-3: fonte espelho';
+  assert r.servicos @> array['Corte Fixture','Escova Fixture'] and cardinality(r.servicos) = 2,
+    format('hoje-3: servicos %s', r.servicos);
 
   -- limite inferior da janela (hoje-10) e aceito
   perform * from public.avaliacao_clientes_do_dia(999001, v_hoje - 10);
