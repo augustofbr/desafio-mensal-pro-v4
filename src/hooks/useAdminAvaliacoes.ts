@@ -24,10 +24,16 @@ export interface AvaliacaoAdmin {
   data_hora_cadastro: string;
   aprovado_por: string | null;
   data_aprovacao: string | null;
+  /** Cliente no Trinks (colunas de out/2026). NULL em todo cadastro legado. */
+  nome_cliente_trinks: string | null;
+  cliente_trinks_id: number | null;
+  /** 'YYYY-MM-DD' (dia do atendimento, sem hora) — nao passar por `Date`. */
+  data_atendimento: string | null;
+  origem_cliente_trinks: "lista" | "digitado" | null;
 }
 
 const COLUNAS =
-  "id, profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro, aprovado_por, data_aprovacao";
+  "id, profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro, aprovado_por, data_aprovacao, nome_cliente_trinks, cliente_trinks_id, data_atendimento, origem_cliente_trinks";
 
 /**
  * Teto do historico POR PERIODO. O historico deixou de ser "as N ultimas

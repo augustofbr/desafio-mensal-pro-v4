@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { removerDoCache, restaurarCache } from "./avaliacoesCache";
 import type { AvaliacaoAdmin } from "@/hooks/useAdminAvaliacoes";
+import { CHAVE_SINAIS } from "@/hooks/useSinaisAvaliacoes";
 
 const PREFIXO = ["admin_avaliacoes", "historico"] as const;
 
@@ -18,6 +19,10 @@ function avaliacao(id: string): AvaliacaoAdmin {
     data_hora_cadastro: "2026-08-01T18:00:00Z",
     aprovado_por: "admin",
     data_aprovacao: "2026-08-01T19:00:00Z",
+    nome_cliente_trinks: null,
+    cliente_trinks_id: null,
+    data_atendimento: null,
+    origem_cliente_trinks: null,
   };
 }
 
@@ -125,5 +130,61 @@ describe("restaurarCache", () => {
   it("snapshot ausente (mutacao que nunca chegou a mexer no cache) nao quebra", () => {
     const qc = novoClient();
     expect(() => restaurarCache(qc, undefined)).not.toThrow();
+  });
+});
+
+describe("sinais da fila convivem com a remocao otimista", () => {
+  // A entrada de sinais guarda SinalAvaliacao[], nao AvaliacaoAdmin[]: se a
+  // remocao otimista a alcancasse, `filter((a) => !ids.includes(a.id))` leria
+  // `id` de um objeto que so tem `avaliacao_id` e a deixaria intacta por acaso —
+  // ou, pior, apagaria linhas se um dia os campos coincidissem. O que se garante
+  // aqui e que o prefixo das duas listas NAO a seleciona.
+  const sinaisChave = ["admin_avaliacoes", "sinais", "a", "b"];
+  const sinais = [
+    { avaliacao_id: "a", atendida: "atendida", duplicatas: [] },
+    { avaliacao_id: "b", atendida: "nao_encontrada", duplicatas: [] },
+  ];
+
+  it("remover das pendentes nao toca na entrada de sinais", async () => {
+    const qc = novoClient();
+    qc.setQueryData(["admin_avaliacoes", "pendentes"], [avaliacao("a"), avaliacao("b")]);
+    qc.setQueryData(sinaisChave, sinais);
+
+    const snapshot = await removerDoCache(qc, ["admin_avaliacoes", "pendentes"], ["a"]);
+
+    expect(ids(qc.getQueryData(["admin_avaliacoes", "pendentes"]))).toEqual(["b"]);
+    expect(qc.getQueryData(sinaisChave)).toBe(sinais);
+    expect(snapshot.map(([k]) => k)).toEqual([["admin_avaliacoes", "pendentes"]]);
+  });
+
+  it("remover do historico nao toca na entrada de sinais", async () => {
+    const qc = novoClient();
+    const agosto = chave("2026-08-01T04:00:00.000Z", "2026-09-01T04:00:00.000Z");
+    qc.setQueryData(agosto, [avaliacao("a"), avaliacao("z")]);
+    qc.setQueryData(sinaisChave, sinais);
+
+    const snapshot = await removerDoCache(qc, PREFIXO, ["a"]);
+
+    expect(ids(qc.getQueryData(agosto))).toEqual(["z"]);
+    expect(qc.getQueryData(sinaisChave)).toBe(sinais);
+    expect(snapshot.map(([k]) => k)).toEqual([agosto]);
+  });
+
+  it("restaurar so devolve o que foi removido, sem escrever na entrada de sinais", async () => {
+    const qc = novoClient();
+    qc.setQueryData(["admin_avaliacoes", "pendentes"], [avaliacao("a"), avaliacao("b")]);
+    qc.setQueryData(sinaisChave, sinais);
+
+    const snapshot = await removerDoCache(qc, ["admin_avaliacoes", "pendentes"], ["a"]);
+    restaurarCache(qc, snapshot);
+
+    expect(ids(qc.getQueryData(["admin_avaliacoes", "pendentes"]))).toEqual(["a", "b"]);
+    expect(qc.getQueryData(sinaisChave)).toBe(sinais);
+  });
+
+  it("a chave real dos sinais (CHAVE_SINAIS) esta fora dos dois prefixos de remocao", () => {
+    expect(CHAVE_SINAIS.slice(0, 2)).toEqual(["admin_avaliacoes", "sinais"]);
+    expect(CHAVE_SINAIS[1]).not.toBe("pendentes");
+    expect(CHAVE_SINAIS[1]).not.toBe("historico");
   });
 });

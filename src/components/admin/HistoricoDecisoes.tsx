@@ -13,7 +13,9 @@ import {
 import { formatDataHoraManaus, mesPorExtensoManaus } from "@/lib/dateUtils";
 import {
   ORDENACOES_HISTORICO,
+  casaBuscaCliente,
   inicial,
+  linhaTrinks,
   mensagemDoErro,
   ordenar,
   plural,
@@ -25,6 +27,7 @@ import {
   type PeriodoChave,
   type PeriodoPersonalizado,
 } from "@/lib/periodoHistorico";
+import { normalizarBusca } from "@/lib/clienteTrinks";
 import { useToast } from "@/hooks/use-toast";
 import { RequireWrite } from "@/auth/guards";
 import {
@@ -62,7 +65,10 @@ function LinhaHistorico({
             {avaliacao.nome_profissional}
           </p>
           <p className="truncate font-body text-sm text-gray-600">
-            Cliente: {avaliacao.nome_cliente}
+            Google: {avaliacao.nome_cliente}
+          </p>
+          <p className="truncate font-body text-sm text-gray-600">
+            {linhaTrinks(avaliacao)}
           </p>
           <p className="font-mono-num text-xs text-muted-foreground">
             Cadastro {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
@@ -148,13 +154,11 @@ export function HistoricoDecisoes() {
   }, [historico, filtroProfissional]);
 
   const filtradas = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
     const lista = historico.filter((a) => {
       if (filtroProfissional && a.nome_profissional !== filtroProfissional) return false;
       if (
-        termo &&
-        !a.nome_cliente.toLowerCase().includes(termo) &&
-        !a.nome_profissional.toLowerCase().includes(termo)
+        !casaBuscaCliente(a, busca) &&
+        !normalizarBusca(a.nome_profissional).includes(normalizarBusca(busca))
       ) {
         return false;
       }

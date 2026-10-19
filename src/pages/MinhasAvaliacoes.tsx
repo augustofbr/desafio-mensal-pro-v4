@@ -53,6 +53,11 @@ function AvaliacaoCard({ avaliacao }: { avaliacao: Avaliacao }) {
           <p className="font-body font-medium text-sm text-gray-800 truncate">
             {avaliacao.nome_cliente}
           </p>
+          {avaliacao.nome_cliente_trinks?.trim() && (
+            <p className="font-body text-xs text-gray-500 truncate">
+              Trinks: {avaliacao.nome_cliente_trinks.trim()}
+            </p>
+          )}
           <p className="font-body text-xs text-gray-400">
             {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
           </p>

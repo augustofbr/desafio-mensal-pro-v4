@@ -5,6 +5,8 @@ export interface Avaliacao {
   id: string;
   nome_profissional: string;
   nome_cliente: string;
+  /** Nome no Trinks; NULL nos cadastros anteriores a out/2026. */
+  nome_cliente_trinks: string | null;
   status: string;
   data_hora_cadastro: string;
   data_aprovacao: string | null;
@@ -32,7 +34,7 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
 
       const { data, error } = await supabase
         .from("avaliacoes_cadastradas" as any)
-        .select("id, nome_profissional, nome_cliente, status, data_hora_cadastro, data_aprovacao")
+        .select("id, nome_profissional, nome_cliente, nome_cliente_trinks, status, data_hora_cadastro, data_aprovacao")
         .eq("profissional_id", profissionalId)
         .order("data_hora_cadastro", { ascending: false });
 
