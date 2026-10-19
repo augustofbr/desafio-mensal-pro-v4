@@ -89,3 +89,25 @@ export function montarInsertAvaliacao(v: {
     data_hora_cadastro: v.agoraISO,
   };
 }
+
+export type EstadoDaLista = "carregando" | "erro" | "vazia" | "pronta";
+
+/** Estado da lista de clientes do dia: erro vence lista vazia (vazio por falha nao e "sem clientes"). */
+export function estadoDaLista(q: {
+  isLoading: boolean;
+  isError: boolean;
+  clientes: ClienteDoDia[];
+}): EstadoDaLista {
+  if (q.isLoading) return "carregando";
+  if (q.isError) return "erro";
+  return q.clientes.length === 0 ? "vazia" : "pronta";
+}
+
+/** Texto de busca sem acento, minusculo e sem espacos nas pontas. */
+export function normalizarBusca(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+}

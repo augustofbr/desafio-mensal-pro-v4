@@ -6,6 +6,9 @@ import {
   rotuloDia,
   nomeGoogleEfetivo,
   montarInsertAvaliacao,
+  estadoDaLista,
+  normalizarBusca,
+  type ClienteDoDia,
 } from "./clienteTrinks";
 
 describe("JANELA_DIAS_ATENDIMENTO", () => {
@@ -87,5 +90,33 @@ describe("montarInsertAvaliacao", () => {
 
     expect(linha.cliente_trinks_id).toBeNull();
     expect(linha.origem_cliente_trinks).toBe("digitado");
+  });
+});
+
+describe("estadoDaLista", () => {
+  const cliente: ClienteDoDia = {
+    cliente_trinks_id: 1,
+    nome: "Mariana Lima",
+    servicos: ["Escova"],
+    fonte: "espelho",
+  };
+
+  it("carregando vence tudo", () => {
+    expect(estadoDaLista({ isLoading: true, isError: false, clientes: [] })).toBe("carregando");
+  });
+  it("erro vence lista vazia", () => {
+    expect(estadoDaLista({ isLoading: false, isError: true, clientes: [] })).toBe("erro");
+  });
+  it("lista vazia", () => {
+    expect(estadoDaLista({ isLoading: false, isError: false, clientes: [] })).toBe("vazia");
+  });
+  it("com clientes fica pronta", () => {
+    expect(estadoDaLista({ isLoading: false, isError: false, clientes: [cliente] })).toBe("pronta");
+  });
+});
+
+describe("normalizarBusca", () => {
+  it("ignora acento, caixa e espacos nas pontas", () => {
+    expect(normalizarBusca("  JOSÉ Conceição ")).toBe("jose conceicao");
   });
 });
