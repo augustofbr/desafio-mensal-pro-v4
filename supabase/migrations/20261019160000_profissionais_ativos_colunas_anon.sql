@@ -24,9 +24,8 @@
 -- useAniversariosData), gerenciador-fila-interna-V2, comunicacoes-profissionais-parceiros,
 -- emissao-nota-prof-parceiro, financeiro-studiox, site-studiox-next.
 --
--- Rollback:
---   grant select, insert, update, delete, truncate, references, trigger
---     on public.profissionais_ativos to anon;
+-- Rollback (so a leitura; NAO devolva escrita/TRUNCATE a anon):
+--   grant select on public.profissionais_ativos to anon;
 
 revoke all on table public.profissionais_ativos from anon;
 
