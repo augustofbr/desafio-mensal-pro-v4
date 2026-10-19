@@ -17,7 +17,8 @@ export function useActiveProfessionals() {
       // 1. Buscar todos os profissionais ativos
       const { data: profData, error: profError } = await supabase
         .from('profissionais_ativos' as any)
-        .select('*');
+        // Colunas explícitas: cpf, telefone e dados fiscais não são legíveis por anon.
+        .select('profissionalId, nome_profissional, categoria, apelido, ativo, dia_aniversario, mes_aniversario, created_at');
 
       if (profError) {
         console.error("Erro ao buscar profissionais_ativos:", profError);
@@ -30,7 +31,7 @@ export function useActiveProfessionals() {
         return;
       }
 
-      const typedProfData = profData as ProfissionalAtivo[];
+      const typedProfData = profData as unknown as ProfissionalAtivo[];
       console.log(`Profissionais ativos carregados: ${typedProfData.length}`);
 
       // 2. Buscar pares (profissionalid, professional) distintos de trinks_services
