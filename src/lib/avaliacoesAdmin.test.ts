@@ -10,6 +10,7 @@ import {
   LIMITE_IDS_SINAIS,
   LIMITE_DUPLICATAS,
   rotuloContagemDuplicatas,
+  rotuloMotivoDuplicata,
   estadoDaLista,
   rotuloContadorPendentes,
 } from "./avaliacoesAdmin";
@@ -221,6 +222,17 @@ describe("rotuloContagemDuplicatas", () => {
     expect(LIMITE_DUPLICATAS).toBe(5);
     expect(rotuloContagemDuplicatas(5)).toBe("5+");
     expect(rotuloContagemDuplicatas(6)).toBe("5+");
+  });
+});
+
+describe("rotuloMotivoDuplicata", () => {
+  it("so o nome do Trinks bater acrescenta o trecho", () => {
+    expect(rotuloMotivoDuplicata("nome_trinks")).toBe(" · o nome do Google dela bate com o nome do Trinks desta estrela");
+  });
+  it("nome_google, ausente (RPC antiga) ou nulo nao acrescentam nada", () => {
+    expect(rotuloMotivoDuplicata("nome_google")).toBe("");
+    expect(rotuloMotivoDuplicata(undefined)).toBe("");
+    expect(rotuloMotivoDuplicata(null)).toBe("");
   });
 });
 

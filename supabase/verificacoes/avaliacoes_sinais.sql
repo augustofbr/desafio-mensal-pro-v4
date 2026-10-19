@@ -2,7 +2,8 @@
 --
 -- Fica em supabase/verificacoes/ (supabase/tests/ e tratado como pgTAP pelo CLI).
 -- Roda INTEIRO dentro de begin ... rollback: nada persiste. Execute com o MCP
--- execute_sql (papel postgres). Requer 20261019120000 e 20261019120100 aplicadas.
+-- execute_sql (papel postgres). Requer 20261019120000, 20261019120100 e 20261019180000
+-- (duplicata por grafia e pelo nome do Trinks) aplicadas.
 -- Qualquer assert que falhe aborta a transacao com erro; sucesso = sem erro.
 --
 -- Fixtures (ids que nao existem em producao):
@@ -12,12 +13,35 @@
 --   estrelas inseridas como postgres (uma precisa ser 'aprovada'); a RPC roda como
 --   authenticated. Os nomes do Google das fixtures foram escolhidos para nao terem
 --   similarity >= 0.7 com nenhuma estrela real (a duplicata compara com TODAS).
+--   Casos de 20261019180000: palavras inventadas (Xaviera, Qwrtz, Qmaria, Qlimite...) para
+--   que a frequencia no espelho (criterio B) so dependa das fixtures; as clientes
+--   'Qmaria/Qlimite Fixture ...' ficam na profissional 999015 (sem estrelas) e so existem
+--   para dar frequencia 4 (comum) e 3 (rara, o limite) a uma palavra.
 
 begin;
 
 -- 1. Permissoes e forma -----------------------------------------------------
 do $$
 begin
+  -- helpers de 20261019180000
+  assert has_function_privilege('authenticated', 'public.avaliacao_chave_grafia(text)', 'execute')
+     and has_function_privilege('authenticated', 'public.avaliacao_palavras_nome(text)', 'execute'),
+    'authenticated deve executar as helpers de duplicata';
+  assert has_function_privilege('service_role', 'public.avaliacao_chave_grafia(text)', 'execute')
+     and has_function_privilege('service_role', 'public.avaliacao_palavras_nome(text)', 'execute'),
+    'service_role deve executar as helpers de duplicata';
+  assert not has_function_privilege('anon', 'public.avaliacao_chave_grafia(text)', 'execute'),
+    'anon NAO pode executar avaliacao_chave_grafia';
+  assert not has_function_privilege('anon', 'public.avaliacao_palavras_nome(text)', 'execute'),
+    'anon NAO pode executar avaliacao_palavras_nome';
+  assert (select proconfig from pg_proc where oid = 'public.avaliacao_chave_grafia(text)'::regprocedure)
+         = array['search_path=""'], 'avaliacao_chave_grafia: search_path vazio';
+  assert (select proconfig from pg_proc where oid = 'public.avaliacao_palavras_nome(text)'::regprocedure)
+         = array['search_path=""'], 'avaliacao_palavras_nome: search_path vazio';
+  assert (select array_agg(provolatile) from pg_proc
+           where oid in ('public.avaliacao_chave_grafia(text)'::regprocedure,
+                         'public.avaliacao_palavras_nome(text)'::regprocedure)) = array['i','i']::"char"[],
+    'helpers de duplicata: immutable';
   assert has_function_privilege('authenticated', 'public.avaliacoes_sinais(uuid[])', 'execute'),
     'authenticated deve executar avaliacoes_sinais';
   assert not has_function_privilege('anon', 'public.avaliacoes_sinais(uuid[])', 'execute'),
@@ -68,7 +92,15 @@ from _d d, (values
   -- prof C: nome exato em hoje-45 (dentro de data_atendimento-10, fora da trava de 30 dias)
   (-999013002, -45, '999013', 'Corte Fixture', 'Qtrava Fixture Nome', '7202'),
   -- prof D: "Ana Paula Ribeiro" em hoje-1 (alvo de uma palavra "Ana")
-  (-999014003, -1, '999014', 'Corte Fixture', 'Ana Paula Ribeiro', '7303')
+  (-999014003, -1, '999014', 'Corte Fixture', 'Ana Paula Ribeiro', '7303'),
+  -- criterio B (raridade): 'qmaria' em 4 nomes distintos (comum), 'qlimite' em 3 (rara)
+  (-999015001, -1, '999015', 'Corte Fixture', 'Qmaria Fixture Um',     '7401'),
+  (-999015002, -1, '999015', 'Corte Fixture', 'Qmaria Fixture Dois',   '7402'),
+  (-999015003, -1, '999015', 'Corte Fixture', 'Qmaria Fixture Tres',   '7403'),
+  (-999015004, -1, '999015', 'Corte Fixture', 'Qmaria Fixture Quatro', '7404'),
+  (-999015005, -1, '999015', 'Corte Fixture', 'Qlimite Fixture Um',    '7405'),
+  (-999015006, -1, '999015', 'Corte Fixture', 'Qlimite Fixture Dois',  '7406'),
+  (-999015007, -1, '999015', 'Corte Fixture', 'QLIMITE  Fixture Tres', '7407')
 ) as v(id, delta, prof, serv, cli, cid);
 
 -- estrelas: (chave, profissional, nome Google, status, cadastro relativo, nome Trinks, id Trinks,
@@ -87,7 +119,8 @@ select * from (values
     ('fraca_velha',  999014, 'Wvd Outro Sumido',          'pendente', interval '-20 days', null, null::bigint, null, null),
     ('loja_pend',    999011, 'Loja Bella Moda',           'pendente', interval '0', 'Cliente Sete Fixture', 7001::bigint, -2, 'lista'),
     ('loja_aprov',   999012, 'Loja Bella Moda',           'aprovada', interval '-3 days', null, null::bigint, null, null),
-    ('loja_trinks',  999013, 'Qzx Fixture Unica Wyk',     'pendente', interval '0', 'Loja Bella Moda', null::bigint, -1, 'digitado'),
+    ('loja_trinks',  999013, 'Qzx Fixture Unica Wyk',     'pendente', interval '0', 'Qlojab Qbellab Qmodab', null::bigint, -1, 'digitado'),
+    ('loja_gb',      999012, 'Qlojab Qbellab Qmodab',     'pendente', interval '-4 days', null, null::bigint, null, null),
     ('sim_a',        999011, 'Qwfixture Antonieta Zzz',   'pendente', interval '0', null, null::bigint, null, null),
     ('sim_b',        999012, 'Qwfixture Antonietta Zzz',  'rejeitada', interval '-1 day', null, null::bigint, null, null),
     ('fraco_a',      999011, 'Qwfixture Ariane Kkk',      'pendente', interval '0', null, null::bigint, null, null),
@@ -99,7 +132,47 @@ select * from (values
     ('id_sem_data',  999011, 'Fxd Semdata Idw',           'pendente', interval '0', 'Cliente Sete Fixture', 7001::bigint, null, 'lista'),
     ('trava30',      999013, 'Fxe Trava Tdy',             'pendente', interval '0', 'Qtrava Fixture Nome', null::bigint, -40, 'digitado'),
     ('uma_palavra',  999014, 'Ana',                       'pendente', interval '0', null, null::bigint, null, null),
-    ('google_vazio', 999014, '   ',                       'pendente', interval '0', null, null::bigint, null, null)
+    ('google_vazio', 999014, '   ',                       'pendente', interval '0', null, null::bigint, null, null),
+    -- 20261019180000: criterio A (grafia). Raw similarity < 0.7; a chave dos dois e igual
+    ('ga_a',         999011, 'Nivea Xyzqw',               'pendente', interval '0', null, null::bigint, null, null),
+    ('ga_b',         999012, 'Nivia Xyzqw',               'rejeitada', interval '-1 day', null, null::bigint, null, null),
+    -- criterio B (Trinks da alvo x Google das outras). b_alvo tem Trinks real
+    ('b_alvo',       999013, 'Qzrt Alvo Bxv',             'pendente', interval '0', 'Xaviera Qwrtz De Sousa', null::bigint, -1, 'digitado'),
+    ('b_outra',      999014, 'Xaviera Xaviera',           'pendente', interval '-1 day', null, null::bigint, null, null),
+    ('b_outra2',     999011, 'Xaviera Qwrtz',             'pendente', interval '-2 days', null, null::bigint, null, null),
+    ('b_naocont',    999012, 'Xaviera Outrasobrenome',    'pendente', interval '-3 days', null, null::bigint, null, null),
+    -- palavra comum (4 nomes no espelho) nao basta; no limite (3) basta
+    ('c_alvo',       999013, 'Qzrt Comum Bxw',            'pendente', interval '0', 'Qmaria Silvaqx', null::bigint, -1, 'digitado'),
+    ('c_outra',      999014, 'Qmaria',                    'pendente', interval '-1 day', null, null::bigint, null, null),
+    ('l_alvo',       999013, 'Qzrt Limite Bxu',           'pendente', interval '0', 'Qlimite Silvaqx', null::bigint, -1, 'digitado'),
+    ('l_outra',      999014, 'Qlimite',                   'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- sem nome do Trinks real (null / so espacos) o B nao roda, mesmo com o Google contido
+    ('n_alvo',       999013, 'Qnull Alvo Zzpq',           'pendente', interval '0', null, null::bigint, null, null),
+    ('n_outra',      999014, 'Qnull',                     'pendente', interval '-1 day', null, null::bigint, null, null),
+    ('n_alvo_esp',   999013, 'Qesp Alvo Zzpr',            'pendente', interval '0', '   ', null::bigint, null, null),
+    ('e_outra',      999014, 'Qesp',                      'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- Google vazio da alvo desliga so os criterios Google; o B segue
+    ('gv_alvo',      999013, '   ',                       'pendente', interval '0', 'Xaviera Qwrtz De Sousa', null::bigint, -1, 'digitado'),
+    -- os dois criterios: motivo nome_google
+    ('m_alvo',       999011, 'Qmotivo Dupla Zzt',         'pendente', interval '0', 'Qmotivo Dupla Zzt', null::bigint, -1, 'digitado'),
+    ('m_outra',      999012, 'Qmotivo Dupla Zzt',         'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- P contido em Q: Trinks da alvo MENOR que o Google da outra
+    ('pq_alvo',      999013, 'Qpq Alvo Zzw',              'pendente', interval '0', 'Vorzina Qwrtz', null::bigint, -1, 'digitado'),
+    ('pq_outra',     999014, 'Vorzina Qwrtz de Sousa Fixture', 'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- stopword dentro do match do B: "No sistema Zandora" casa com Trinks "Zandora Qwrtz"?
+    -- (Q = {sandura} ja sem 'sistema'; P = {sandura, qvrts}; Q contido em P)
+    ('sw_alvo',      999013, 'Qsw Alvo Zzy',              'pendente', interval '0', 'Zandora Qwrtz', null::bigint, -1, 'digitado'),
+    ('sw_outra',     999014, 'No sistema Zandora',        'pendente', interval '-1 day', null, null::bigint, null, null),
+    -- teto de 5 por forca: 1 candidata de nome do Google (a mais ANTIGA) e 6 so-Trinks
+    -- (mais recentes). A do Google nao pode ser cortada; a ordem de exibicao e por recencia.
+    ('tp_alvo',      999013, 'Qtopo Cinco Zzv',           'pendente', interval '0', 'Wumbria Plkx', null::bigint, -1, 'digitado'),
+    ('tp_goo',       999011, 'Qtopo Cinco Zzv',           'aprovada', interval '-30 days', null, null::bigint, null, null),
+    ('tp_1',         999014, 'Wumbria',                   'pendente', interval '-1 day', null, null::bigint, null, null),
+    ('tp_2',         999014, 'Wumbria',                   'pendente', interval '-2 days', null, null::bigint, null, null),
+    ('tp_3',         999014, 'Wumbria',                   'pendente', interval '-3 days', null, null::bigint, null, null),
+    ('tp_4',         999014, 'Wumbria',                   'pendente', interval '-4 days', null, null::bigint, null, null),
+    ('tp_5',         999014, 'Wumbria',                   'pendente', interval '-5 days', null, null::bigint, null, null),
+    ('tp_6',         999014, 'Wumbria',                   'pendente', interval '-6 days', null, null::bigint, null, null)
   ) as v(k, prof, google, status, cad, trinks, cid, da, origem)
 union all
 -- 7 repetidas (limite de 5 e ordem): rep_1 e a mais recente
@@ -140,6 +213,7 @@ declare
   ids    uuid[] := (select array_agg(id) from _ids);
   n      int;
   dup    jsonb;
+  dup_motivo text;
 begin
   -- precondicoes das fixtures de similaridade
   assert public.similarity('qwfixture antonieta zzz', 'qwfixture antonietta zzz') >= 0.7, 'pre: sim_a/sim_b >= 0.7';
@@ -147,7 +221,7 @@ begin
 
   insert into _r
     select k.k, s.* from public.avaliacoes_sinais(ids) s join _ids k on k.id = s.avaliacao_id;
-  assert (select count(*) from _ids) = 31, format('fixtures: %s estrelas', (select count(*) from _ids));
+  assert (select count(*) from _ids) = 61, format('fixtures: %s estrelas', (select count(*) from _ids));
 
   select count(*) into n from _r;
   assert n = (select count(*) from _ids), format('uma linha por id pedido: %s', n);
@@ -218,9 +292,26 @@ begin
   assert (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_pend'), 'loja_aprov lista loja_pend';
   assert dup->0->>'status' = 'pendente', 'loja_aprov: status pendente';
 
-  -- nome do Trinks igual, Google diferente -> nao e duplicata
-  select duplicatas into dup from _r where k = 'loja_trinks';
-  assert dup = '[]'::jsonb, format('loja_trinks duplicatas: %s', dup);
+  -- nome do Trinks da alvo = Google de outra (criterio B, 20261019180000; palavras inventadas,
+  -- raras no espelho): lista so loja_gb, com motivo nome_trinks (antes da migracao nova era []).
+  -- As duas "Loja Bella Moda" (Google) NAO entram: o Trinks desta alvo e outro nome.
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'loja_trinks' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_gb')
+     and dup->0->>'motivo' = 'nome_trinks',
+    format('loja_trinks duplicatas: %s', dup);
+  -- ... e a direcao inversa nao existe: loja_pend (Trinks = Cliente Sete Fixture) nao lista
+  -- loja_trinks, cujo Google e 'Qzx Fixture Unica Wyk'
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'loja_pend' and (e->>'id')::uuid = (select id from _ids where k = 'loja_trinks');
+  assert dup = '[]'::jsonb, format('loja_pend nao lista loja_trinks: %s', dup);
+  -- motivo das duplicatas pelo Google (criterio antigo): nome_google
+  select e->>'motivo' into dup_motivo
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'loja_pend' and (e->>'id')::uuid = (select id from _ids where k = 'loja_aprov');
+  assert dup_motivo = 'nome_google', format('loja_pend/loja_aprov motivo: %s', dup_motivo);
 
   -- similaridade >= 0.7 lista; < 0.7 nao
   select duplicatas into dup from _r where k = 'sim_a';
@@ -277,6 +368,147 @@ begin
   select * into r from _r where k = 'google_vazio';
   assert r.atendida = 'nao_encontrada', format('google_vazio: %s', r.atendida);
   assert r.duplicatas = '[]'::jsonb, format('google_vazio duplicatas: %s', r.duplicatas);
+
+  -- 20261019180000 ----------------------------------------------------------
+  -- helpers
+  assert public.avaliacao_chave_grafia('nivea') = 'nivia' and public.avaliacao_chave_grafia('nivia') = 'nivia',
+    'chave: nivea/nivia';
+  assert public.avaliacao_chave_grafia('joice') = public.avaliacao_chave_grafia('joyce'), 'chave: joice/joyce';
+  assert public.avaliacao_chave_grafia('suzana') = public.avaliacao_chave_grafia('susana'), 'chave: suzana/susana';
+  assert public.avaliacao_chave_grafia('andressa') = public.avaliacao_chave_grafia('andreza'), 'chave: andressa/andreza';
+  assert public.avaliacao_chave_grafia('') = '' and public.avaliacao_chave_grafia(null) is null, 'chave: vazio/null';
+  assert public.avaliacao_palavras_nome('Nívea Terlucia (Nivia Nivia) de Sousa') = array['nivia','susa','tirlucia'],
+    format('palavras: %s', public.avaliacao_palavras_nome('Nívea Terlucia (Nivia Nivia) de Sousa'));
+  assert public.avaliacao_palavras_nome('Nivia Terlucia De Sousa') = array['nivia','susa','tirlucia'], 'palavras: trinks real';
+  assert public.avaliacao_palavras_nome('No sistema: Ana, no Google: Ana Paula; a filha que fez') = array['ana','paula'],
+    format('palavras sem stopwords: %s', public.avaliacao_palavras_nome('No sistema: Ana, no Google: Ana Paula; a filha que fez'));
+  assert public.avaliacao_palavras_nome('   ') = array[]::text[] and public.avaliacao_palavras_nome(null) = array[]::text[],
+    'palavras: vazio/null -> {}';
+  assert public.avaliacao_palavras_nome('Mae de Ana 12 Sao Joao') = array['ana','juau','sau'],
+    format('palavras: %s', public.avaliacao_palavras_nome('Mae de Ana 12 Sao Joao'));
+  -- stopword e comparada com o token normalizado ANTES da chave: nomes que so DOBRAM para uma
+  -- stopword sobrevivem (Dieylle->dili, May->mai, Nyla->nila, Della->dila), e acento nao salva
+  -- a stopword literal (Irmã, Mãe, Não)
+  assert public.avaliacao_palavras_nome('Dieylle May Nyla Della Nilla Dila Fila') = array['dila','dili','fila','mai','nila'],
+    format('palavras que dobram para stopword sobrevivem: %s', public.avaliacao_palavras_nome('Dieylle May Nyla Della Nilla Dila Fila'));
+  assert public.avaliacao_palavras_nome('Irmã Mãe Não Sistema Google Cliente Nela Dela Del') = array[]::text[],
+    'stopwords literais (com acento) saem';
+  assert public.avaliacao_palavras_nome('Maria da Silva') = array['maria','silva'], 'palavras: Maria da Silva (da < 3 letras)';
+
+  -- criterio A (grafia): raw similarity < 0.7 e chaves iguais; os dois lados se listam
+  assert public.similarity('nivea xyzqw', 'nivia xyzqw') < 0.7, 'pre: ga_a/ga_b raw < 0.7';
+  assert public.similarity(public.avaliacao_chave_grafia('nivea xyzqw'), public.avaliacao_chave_grafia('nivia xyzqw')) >= 0.7,
+    'pre: ga_a/ga_b chave >= 0.7';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'ga_a' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'ga_b')
+     and dup->0->>'motivo' = 'nome_google', format('ga_a: %s', dup);
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'ga_b' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'ga_a')
+     and dup->0->>'motivo' = 'nome_google', format('ga_b: %s', dup);
+
+  -- criterio B: Trinks "Xaviera Qwrtz De Sousa" -> {xaviera, qvrts, susa}
+  assert public.avaliacao_palavras_nome('Xaviera Qwrtz De Sousa') = array['qvrts','susa','xavira'],
+    format('palavras b_alvo: %s', public.avaliacao_palavras_nome('Xaviera Qwrtz De Sousa'));
+  -- pre: nenhum dos nomes do Google passa pelo criterio Google
+  assert public.similarity('qzrt alvo bxv', 'xaviera xaviera') < 0.7
+     and public.similarity('xaviera qwrtz de sousa', 'xaviera xaviera') < 0.7
+     and public.similarity('xaviera qwrtz de sousa', 'xaviera qwrtz') < 0.7
+     and public.similarity('xaviera qwrtz de sousa', 'xaviera outrasobrenome') < 0.7,
+    'pre: B nao e pego pelo Google';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'b_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 2
+     and (select array_agg((e->>'id')::uuid order by e->>'nome_cliente') from jsonb_array_elements(dup) e)
+         = (select array_agg(id order by nome) from (select id, nome_cliente nome from public.avaliacoes_cadastradas
+                                                      where id in (select id from _ids where k in ('b_outra','b_outra2'))) q)
+     and not exists (select 1 from jsonb_array_elements(dup) e where e->>'motivo' <> 'nome_trinks'),
+    format('b_alvo (b_outra e b_outra2 por nome_trinks; b_naocont nao): %s', dup);
+  -- b_naocont ("Xaviera Outrasobrenome") tem 'xaviera' em comum mas o nome mais curto
+  -- (2 palavras) nao esta inteiro no Trinks da alvo (3 palavras)
+  assert not exists (select 1 from jsonb_array_elements(dup) e where (e->>'id')::uuid = (select id from _ids where k = 'b_naocont')),
+    'b_alvo: b_naocont nao e duplicata';
+  -- a direcao inversa nao existe: b_outra (sem Trinks) nao lista b_alvo
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'b_outra' and (e->>'id')::uuid in (select id from _ids);
+  assert dup = '[]'::jsonb, format('b_outra: %s', dup);
+
+  -- palavra comum (4 nomes distintos no espelho) nao basta; 3 basta (LIMIAR_RARA)
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'c_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert dup = '[]'::jsonb, format('c_alvo (Qmaria e comum): %s', dup);
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'l_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'l_outra')
+     and dup->0->>'motivo' = 'nome_trinks', format('l_alvo (Qlimite e rara, freq 3): %s', dup);
+
+  -- sem nome do Trinks real (null ou so espacos) o B nao roda; Google contido nao basta
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k in ('n_alvo', 'n_alvo_esp') and (e->>'id')::uuid in (select id from _ids);
+  assert dup = '[]'::jsonb, format('n_alvo/n_alvo_esp: %s', dup);
+  assert public.similarity('qnull alvo zzpq', 'qnull') < 0.7 and public.similarity('qesp alvo zzpr', 'qesp') < 0.7,
+    'pre: n_alvo/n_alvo_esp nao pegos pelo Google';
+  assert public.avaliacao_palavras_nome('Qnull') <@ public.avaliacao_palavras_nome('Qnull Alvo Zzpq')
+     and public.avaliacao_palavras_nome('Qesp') <@ public.avaliacao_palavras_nome('Qesp Alvo Zzpr'),
+    'pre: com o Google como Trinks, o B pegaria n_alvo/n_alvo_esp';
+
+  -- Google vazio da alvo nao desliga o B
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'gv_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 2
+     and exists (select 1 from jsonb_array_elements(dup) e where (e->>'id')::uuid = (select id from _ids where k = 'b_outra'))
+     and not exists (select 1 from jsonb_array_elements(dup) e where e->>'motivo' <> 'nome_trinks'),
+    format('gv_alvo: %s', dup);
+
+  -- os dois criterios ao mesmo tempo -> nome_google
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'm_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'm_outra')
+     and dup->0->>'motivo' = 'nome_google', format('m_alvo: %s', dup);
+  -- P contido em Q (Trinks da alvo menor que o Google da outra) -> nome_trinks
+  assert public.similarity('qpq alvo zzw', 'vorzina qwrtz de sousa fixture') < 0.7, 'pre: pq nao e Google';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'pq_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'pq_outra')
+     and dup->0->>'motivo' = 'nome_trinks', format('pq_alvo (P contido em Q): %s', dup);
+
+  -- stopword dentro do match: sem remover 'sistema', |Q|=2 e |C|=1 nao fecharia
+  assert public.avaliacao_palavras_nome('No sistema Zandora') = array['sandura']
+     and public.avaliacao_palavras_nome('Zandora Qwrtz') = array['qvrts','sandura'], 'pre: palavras sw';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'sw_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'sw_outra')
+     and dup->0->>'motivo' = 'nome_trinks', format('sw_alvo (stopword no match): %s', dup);
+
+  -- teto de 5 por forca: a de nome do Google (a mais antiga, 30 dias) entra mesmo com 6
+  -- candidatas so-Trinks mais recentes; ficam as 4 so-Trinks mais recentes; exibicao por recencia
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'tp_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 5, format('tp_alvo: teto 5, veio %s', jsonb_array_length(dup));
+  assert (dup->4->>'id')::uuid = (select id from _ids where k = 'tp_goo') and dup->4->>'motivo' = 'nome_google',
+    format('tp_alvo: a de nome do Google (mais antiga) fica por ultimo e nao e cortada: %s', dup);
+  assert (select array_agg((e->>'id')::uuid order by o) from jsonb_array_elements(dup) with ordinality as t(e, o) where o <= 4)
+         = (select array_agg(id order by k) from _ids where k in ('tp_1','tp_2','tp_3','tp_4')),
+    'tp_alvo: as 4 so-Trinks mais recentes, em ordem de recencia';
+  assert (select count(*) from jsonb_array_elements(dup) e where e->>'motivo' = 'nome_trinks') = 4, 'tp_alvo: 4 nome_trinks';
+
+  -- todo item traz motivo valido
+  assert not exists (select 1 from _r, jsonb_array_elements(_r.duplicatas) e
+                      where coalesce(e->>'motivo', '') not in ('nome_google', 'nome_trinks')),
+    'todo item de duplicatas traz motivo nome_google|nome_trinks';
 
   -- limite de 300 ids
   perform * from public.avaliacoes_sinais(array(select gen_random_uuid() from generate_series(1, 300)));
