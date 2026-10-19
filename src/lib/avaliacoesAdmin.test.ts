@@ -227,7 +227,7 @@ describe("rotuloContagemDuplicatas", () => {
 
 describe("rotuloMotivoDuplicata", () => {
   it("so o nome do Trinks bater acrescenta o trecho", () => {
-    expect(rotuloMotivoDuplicata("nome_trinks")).toBe(" · parecido com o nome do Trinks desta estrela");
+    expect(rotuloMotivoDuplicata("nome_trinks")).toBe(" · o nome do Google dela bate com o nome do Trinks desta estrela");
   });
   it("nome_google, ausente (RPC antiga) ou nulo nao acrescentam nada", () => {
     expect(rotuloMotivoDuplicata("nome_google")).toBe("");

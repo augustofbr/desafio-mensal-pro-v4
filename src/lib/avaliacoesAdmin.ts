@@ -236,7 +236,7 @@ export function rotuloContagemDuplicatas(n: number): string {
 
 /** Trecho extra do item de duplicata quando so o nome do Trinks bate; vazio nos demais casos. */
 export function rotuloMotivoDuplicata(motivo?: MotivoDuplicata | null): string {
-  return motivo === "nome_trinks" ? " · parecido com o nome do Trinks desta estrela" : "";
+  return motivo === "nome_trinks" ? " · o nome do Google dela bate com o nome do Trinks desta estrela" : "";
 }
 
 export type EstadoLista = "carregando" | "erro" | "vazio" | "lista" | "lista_desatualizada";
