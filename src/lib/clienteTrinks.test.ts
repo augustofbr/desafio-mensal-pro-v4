@@ -8,6 +8,7 @@ import {
   montarInsertAvaliacao,
   estadoDaLista,
   normalizarBusca,
+  clienteDaLista,
   type ClienteDoDia,
 } from "./clienteTrinks";
 
@@ -118,5 +119,18 @@ describe("estadoDaLista", () => {
 describe("normalizarBusca", () => {
   it("ignora acento, caixa e espacos nas pontas", () => {
     expect(normalizarBusca("  JOSÉ Conceição ")).toBe("jose conceicao");
+  });
+});
+
+describe("clienteDaLista", () => {
+  const a: ClienteDoDia = { cliente_trinks_id: 1, nome: "Ana", servicos: ["Corte"], fonte: "espelho" };
+  const b: ClienteDoDia = { cliente_trinks_id: null, nome: "Ana", servicos: ["Escova"], fonte: "fila" };
+
+  it("casa por nome e id (homonimas distintas)", () => {
+    expect(clienteDaLista([a, b], "Ana", 1)).toBe(a);
+    expect(clienteDaLista([a, b], "Ana", null)).toBe(b);
+  });
+  it("devolve null quando a cliente sumiu da lista", () => {
+    expect(clienteDaLista([a], "Bia", 2)).toBeNull();
   });
 });

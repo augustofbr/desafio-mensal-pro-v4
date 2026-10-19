@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
+  clienteDaLista,
   normalizarBusca,
   type ClienteDoDia,
   type EstadoDaLista,
@@ -39,6 +40,19 @@ export default function ClienteTrinksPicker({
   onSelecionar,
 }: ClienteTrinksPickerProps) {
   const [busca, setBusca] = useState("");
+  const [trocando, setTrocando] = useState(false);
+  const buscaRef = useRef<HTMLInputElement>(null);
+  const trocarRef = useRef<HTMLButtonElement>(null);
+  // Foco so depois de uma acao do usuario (nunca na montagem): "trocar" -> busca, escolher -> cartao.
+  const foco = useRef<"busca" | "cartao" | null>(null);
+
+  const mostrarCartao = selecionado?.origem === "lista" && !trocando;
+
+  useEffect(() => {
+    if (foco.current === "busca") buscaRef.current?.focus();
+    if (foco.current === "cartao") trocarRef.current?.focus();
+    foco.current = null;
+  }, [mostrarCartao]);
 
   const digitando =
     estado === "erro" || estado === "vazia" || selecionado?.origem === "digitado";
@@ -98,6 +112,42 @@ export default function ClienteTrinksPicker({
     );
   }
 
+  if (mostrarCartao && selecionado) {
+    const servicos = clienteDaLista(clientes, selecionado.nome, selecionado.id)?.servicos ?? [];
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+        <div className="min-w-0">
+          <span className="sr-only">Cliente selecionada: </span>
+          <span className="flex items-start gap-1.5 text-sm font-body font-semibold text-violet-800">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" aria-hidden="true" />
+            <span className="break-words min-w-0">{selecionado.nome}</span>
+          </span>
+          {servicos.length > 0 && (
+            <span
+              title={servicos.join(" · ")}
+              className="mt-0.5 block truncate text-xs text-gray-500 font-body"
+            >
+              {servicos.join(" · ")}
+            </span>
+          )}
+        </div>
+        <button
+          ref={trocarRef}
+          type="button"
+          aria-label={`Trocar cliente ${selecionado.nome}`}
+          onClick={() => {
+            foco.current = "busca";
+            setBusca("");
+            setTrocando(true);
+          }}
+          className="min-h-11 min-w-11 shrink-0 rounded-md px-3 text-sm font-body font-medium text-violet-700 hover:bg-violet-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+        >
+          Trocar
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <div className="relative">
@@ -106,6 +156,7 @@ export default function ClienteTrinksPicker({
           aria-hidden="true"
         />
         <Input
+          ref={buscaRef}
           type="search"
           aria-label="Buscar cliente pelo nome"
           placeholder="Buscar pelo nome"
@@ -127,13 +178,15 @@ export default function ClienteTrinksPicker({
               <button
                 type="button"
                 aria-pressed={ativo}
-                onClick={() =>
+                onClick={() => {
+                  foco.current = "cartao";
+                  setTrocando(false);
                   onSelecionar({
                     nome: c.nome,
                     id: c.cliente_trinks_id,
                     origem: "lista",
-                  })
-                }
+                  });
+                }}
                 className={cn(
                   BOTAO_BASE,
                   ativo
