@@ -229,6 +229,9 @@ describe("rotuloMotivoDuplicata", () => {
   it("so o nome do Trinks bater acrescenta o trecho", () => {
     expect(rotuloMotivoDuplicata("nome_trinks")).toBe(" · o nome do Google dela bate com o nome do Trinks desta estrela");
   });
+  it("mesma cliente no Trinks usa o texto do dono, literal", () => {
+    expect(rotuloMotivoDuplicata("mesma_cliente_trinks")).toBe(" · Mesma cliente no Trinks. Possível duplicata.");
+  });
   it("nome_google, ausente (RPC antiga) ou nulo nao acrescentam nada", () => {
     expect(rotuloMotivoDuplicata("nome_google")).toBe("");
     expect(rotuloMotivoDuplicata(undefined)).toBe("");

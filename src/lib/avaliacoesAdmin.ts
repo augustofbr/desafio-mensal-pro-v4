@@ -144,10 +144,12 @@ export type EstadoAtendida =
 /**
  * Por que a RPC apontou a duplicata: 'nome_google' (nome do Google igual, parecido
  * ou de grafia parecida) ou 'nome_trinks' (so o nome do Trinks desta estrela bate
- * com o nome do Google da outra). Opcional: o app pode ir ao ar antes da migracao
- * 20261019180000, e a RPC antiga nao devolve o campo.
+ * com o nome do Google da outra) ou 'mesma_cliente_trinks' (as duas estrelas apontam a
+ * mesma cliente no Trinks, por id ou, sem id, pelo nome). Opcional: o app pode ir ao ar
+ * antes das migracoes 20261019180000 e 20261019190000, e a RPC antiga nao devolve o campo
+ * (nem o motivo novo).
  */
-export type MotivoDuplicata = "nome_google" | "nome_trinks";
+export type MotivoDuplicata = "nome_google" | "nome_trinks" | "mesma_cliente_trinks";
 
 export interface DuplicataAvaliacao {
   id: string;
@@ -234,9 +236,16 @@ export function rotuloContagemDuplicatas(n: number): string {
   return n >= LIMITE_DUPLICATAS ? `${LIMITE_DUPLICATAS}+` : String(n);
 }
 
-/** Trecho extra do item de duplicata quando so o nome do Trinks bate; vazio nos demais casos. */
+/** Trecho extra do item de duplicata para os motivos do Trinks; vazio nos demais casos. */
 export function rotuloMotivoDuplicata(motivo?: MotivoDuplicata | null): string {
-  return motivo === "nome_trinks" ? " · o nome do Google dela bate com o nome do Trinks desta estrela" : "";
+  switch (motivo) {
+    case "nome_trinks":
+      return " · o nome do Google dela bate com o nome do Trinks desta estrela";
+    case "mesma_cliente_trinks":
+      return " · Mesma cliente no Trinks. Possível duplicata.";
+    default:
+      return "";
+  }
 }
 
 export type EstadoLista = "carregando" | "erro" | "vazio" | "lista" | "lista_desatualizada";
