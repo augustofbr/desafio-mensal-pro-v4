@@ -24,10 +24,16 @@ export interface AvaliacaoAdmin {
   data_hora_cadastro: string;
   aprovado_por: string | null;
   data_aprovacao: string | null;
+  /** Cliente no Trinks (colunas de out/2026). NULL em todo cadastro legado. */
+  nome_cliente_trinks: string | null;
+  cliente_trinks_id: number | null;
+  /** 'YYYY-MM-DD' (dia do atendimento, sem hora) — nao passar por `Date`. */
+  data_atendimento: string | null;
+  origem_cliente_trinks: "lista" | "digitado" | null;
 }
 
 const COLUNAS =
-  "id, profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro, aprovado_por, data_aprovacao";
+  "id, profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro, aprovado_por, data_aprovacao, nome_cliente_trinks, cliente_trinks_id, data_atendimento, origem_cliente_trinks";
 
 /**
  * Teto do historico POR PERIODO. O historico deixou de ser "as N ultimas
@@ -110,11 +116,13 @@ async function buscarHistorico(janela: JanelaHistorico): Promise<AvaliacaoAdmin[
  * `useAdminAvaliacoes`, entao as duas montagens dividem cache e uma requisicao.
  */
 export function useAvaliacoesPendentes() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: CHAVE_PENDENTES,
     queryFn: buscarPendentes,
   });
-  return { pendentes: data ?? [], isLoading };
+  // `isError` e obrigatorio para quem consome: sem ele, uma consulta que falhou
+  // vira `[]` e o contador mostra "fila vazia" sem estar.
+  return { pendentes: data ?? [], isLoading, isError };
 }
 
 /**
@@ -195,6 +203,9 @@ export function useAdminAvaliacoes() {
   return {
     pendentes: pendentesQuery.data ?? [],
     isLoading: pendentesQuery.isLoading,
+    /** A consulta falhou — a tela NAO pode tratar `pendentes` vazio como fila vazia. */
+    isError: pendentesQuery.isError,
+    erro: pendentesQuery.error,
     decidir,
   };
 }
@@ -243,6 +254,9 @@ export function useHistoricoAvaliacoes(janela: JanelaHistorico) {
   return {
     historico,
     isLoading: historicoQuery.isLoading,
+    /** A consulta falhou — `historico` vazio NAO significa "nenhuma decisao". */
+    isError: historicoQuery.isError,
+    erro: historicoQuery.error,
     /** O periodo tem mais decisoes do que coube na resposta. */
     atingiuTeto: historico.length >= HISTORICO_LIMITE,
     reverter,

@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Check, X, Loader2, Clock, SlidersHorizontal } from "lucide-react";
 import { useAdminAvaliacoes, type AvaliacaoAdmin } from "@/hooks/useAdminAvaliacoes";
+import { useSinaisAvaliacoes } from "@/hooks/useSinaisAvaliacoes";
 import {
   formatDataHoraManaus,
   mesManaus,
@@ -14,7 +15,10 @@ import {
 } from "@/lib/dateUtils";
 import {
   ORDENACOES_FILA,
+  casaBuscaCliente,
+  estadoDaLista,
   inicial,
+  linhaTrinks,
   mensagemDoErro,
   ordenar,
   plural,
@@ -26,12 +30,15 @@ import { useToast } from "@/hooks/use-toast";
 import { RequireWrite } from "@/auth/guards";
 import { cn } from "@/lib/utils";
 import {
+  AvisoDesatualizada,
   ConfirmacaoDialog,
+  ErroCarregamento,
   SelectFiltro,
   Vazio,
   type Confirmacao,
 } from "./AvaliacoesUI";
 import { HistoricoDecisoes } from "./HistoricoDecisoes";
+import { SinaisAvaliacao } from "./SinaisAvaliacao";
 
 function Estatistica({ rotulo, valor }: { rotulo: string; valor: number }) {
   return (
@@ -53,8 +60,14 @@ function ehDeMesAnterior(avaliacao: AvaliacaoAdmin): boolean {
 }
 
 export function AvaliacoesManager() {
-  const { pendentes, isLoading, decidir } = useAdminAvaliacoes();
+  const { pendentes, isLoading, isError, decidir } = useAdminAvaliacoes();
+  const estadoFila = estadoDaLista({ isLoading, isError, total: pendentes.length });
   const { toast } = useToast();
+
+  // Sinais de TODAS as pendentes (não só as filtradas): filtrar ou ordenar a
+  // fila não pode disparar outra chamada nem tirar selos da tela.
+  const idsPendentes = useMemo(() => pendentes.map((a) => a.id), [pendentes]);
+  const { sinais, isError: sinaisIndisponiveis } = useSinaisAvaliacoes(idsPendentes);
 
   const [filtroProfissional, setFiltroProfissional] = useState("");
   const [buscaCliente, setBuscaCliente] = useState("");
@@ -74,10 +87,9 @@ export function AvaliacoesManager() {
   );
 
   const filtradas = useMemo(() => {
-    const busca = buscaCliente.trim().toLowerCase();
     const lista = pendentes.filter((a) => {
       if (filtroProfissional && a.nome_profissional !== filtroProfissional) return false;
-      if (busca && !a.nome_cliente.toLowerCase().includes(busca)) return false;
+      if (!casaBuscaCliente(a, buscaCliente)) return false;
       return true;
     });
     return ordenar(lista, ordenacao);
@@ -215,14 +227,19 @@ export function AvaliacoesManager() {
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base font-heading">
             <Clock className="h-4 w-4 text-amber-500" />
-            Aguardando decisão ({filtradas.length})
+            {estadoFila === "erro"
+              ? "Aguardando decisão"
+              : `Aguardando decisão (${filtradas.length})`}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {pendentes.length === 0 ? (
+          {estadoFila === "erro" ? (
+            <ErroCarregamento texto="Não foi possível carregar a fila de aprovações." />
+          ) : estadoFila === "vazio" ? (
             <Vazio texto="Nenhuma avaliação aguardando decisão." />
           ) : (
             <>
+              {estadoFila === "lista_desatualizada" && <AvisoDesatualizada />}
               {/* Filtros: uma linha no desktop; no celular ficam atrás de um
                   toque, porque 3 controles empilhados (~230px) empurravam a
                   fila para fora da tela. `sm:grid` vence o `hidden` por ordem
@@ -272,7 +289,7 @@ export function AvaliacoesManager() {
                     aria-label="Buscar cliente"
                     value={buscaCliente}
                     onChange={(e) => setBuscaCliente(e.target.value)}
-                    placeholder="Buscar cliente..."
+                    placeholder="Buscar cliente (Google ou Trinks)..."
                     className="h-11 font-body text-sm"
                   />
 
@@ -381,6 +398,12 @@ export function AvaliacoesManager() {
               {filtradas.length === 0 ? (
                 <Vazio texto="Nenhuma avaliação com os filtros aplicados." />
               ) : (
+                <>
+                {sinaisIndisponiveis && (
+                  <p className="font-body text-xs text-muted-foreground">
+                    Sinais indisponíveis no momento — a fila funciona normalmente.
+                  </p>
+                )}
                 <ul className="space-y-2.5">
                   {filtradas.map((avaliacao) => {
                     const selecionada = selecionadas.has(avaliacao.id);
@@ -389,10 +412,11 @@ export function AvaliacoesManager() {
                       <li
                         key={avaliacao.id}
                         className={cn(
-                          "flex flex-col gap-3 rounded-2xl border p-3 transition-colors sm:flex-row sm:items-center",
+                          "space-y-2 rounded-2xl border p-3 transition-colors",
                           selecionada ? "border-primary/40 bg-primary/5" : "bg-card",
                         )}
                       >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <div className="flex min-w-0 flex-1 items-center gap-3">
                           <RequireWrite chave="admin">
                             <Checkbox
@@ -412,7 +436,10 @@ export function AvaliacoesManager() {
                               {avaliacao.nome_profissional}
                             </p>
                             <p className="truncate font-body text-sm text-gray-600">
-                              Cliente: {avaliacao.nome_cliente}
+                              Google: {avaliacao.nome_cliente}
+                            </p>
+                            <p className="truncate font-body text-sm text-gray-600">
+                              {linhaTrinks(avaliacao)}
                             </p>
                             <p className="font-mono-num text-xs text-muted-foreground">
                               {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
@@ -453,10 +480,13 @@ export function AvaliacoesManager() {
                             </Button>
                           </div>
                         </RequireWrite>
+                        </div>
+                        <SinaisAvaliacao sinal={sinais.get(avaliacao.id)} />
                       </li>
                     );
                   })}
                 </ul>
+                </>
               )}
             </>
           )}
@@ -464,11 +494,14 @@ export function AvaliacoesManager() {
       </Card>
 
       {/* 2. Estatísticas e contexto — abaixo da fila, por serem leitura ocasional */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <Estatistica rotulo="Na fila" valor={pendentes.length} />
-        <Estatistica rotulo="Profissionais" valor={profissionaisNaFila.length} />
-        <Estatistica rotulo="Selecionadas" valor={selecionadasVisiveis.length} />
-      </div>
+      {/* Numa falha, "Na fila 0" seria a mesma mentira do estado vazio. */}
+      {estadoFila !== "erro" && (
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <Estatistica rotulo="Na fila" valor={pendentes.length} />
+          <Estatistica rotulo="Profissionais" valor={profissionaisNaFila.length} />
+          <Estatistica rotulo="Selecionadas" valor={selecionadasVisiveis.length} />
+        </div>
+      )}
 
       <p className="font-body text-xs text-gray-500">
         Estrelas do Google cadastradas pelas clientes. Cada estrela aprovada vale 3

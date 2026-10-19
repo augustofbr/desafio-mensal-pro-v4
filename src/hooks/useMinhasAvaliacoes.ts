@@ -5,6 +5,8 @@ export interface Avaliacao {
   id: string;
   nome_profissional: string;
   nome_cliente: string;
+  /** Nome no Trinks; NULL nos cadastros anteriores a out/2026. */
+  nome_cliente_trinks: string | null;
   status: string;
   data_hora_cadastro: string;
   data_aprovacao: string | null;
@@ -20,25 +22,31 @@ interface AvaliacaoCounts {
 export function useMinhasAvaliacoes(profissionalId: number | null) {
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
   const [loading, setLoading] = useState(false);
+  // Falha na consulta precisa chegar a tela: sem isso a lista ficava vazia e
+  // parecia "nenhuma avaliacao", que e informacao falsa para a profissional.
+  const [isError, setIsError] = useState(false);
 
   const fetchAvaliacoes = useCallback(async () => {
     if (!profissionalId) {
       setAvaliacoes([]);
+      setIsError(false);
       return;
     }
 
     try {
       setLoading(true);
+      setIsError(false);
 
       const { data, error } = await supabase
         .from("avaliacoes_cadastradas" as any)
-        .select("id, nome_profissional, nome_cliente, status, data_hora_cadastro, data_aprovacao")
+        .select("id, nome_profissional, nome_cliente, nome_cliente_trinks, status, data_hora_cadastro, data_aprovacao")
         .eq("profissional_id", profissionalId)
         .order("data_hora_cadastro", { ascending: false });
 
       if (error) {
         console.error("Erro ao buscar avaliações:", error);
         setAvaliacoes([]);
+        setIsError(true);
         return;
       }
 
@@ -46,6 +54,7 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
     } catch (error) {
       console.error("Erro ao buscar avaliações:", error);
       setAvaliacoes([]);
+      setIsError(true);
     } finally {
       setLoading(false);
     }
@@ -64,5 +73,5 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
     };
   }, [avaliacoes]);
 
-  return { avaliacoes, loading, counts };
+  return { avaliacoes, loading, isError, counts };
 }

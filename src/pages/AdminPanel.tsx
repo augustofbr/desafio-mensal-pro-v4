@@ -7,6 +7,7 @@ import { ManufacturerManager } from "@/components/admin/ManufacturerManager";
 import { HolidaysManager } from "@/components/admin/HolidaysManager";
 import { AvaliacoesManager } from "@/components/admin/AvaliacoesManager";
 import { useAvaliacoesPendentes } from "@/hooks/useAdminAvaliacoes";
+import { rotuloContadorPendentes } from "@/lib/avaliacoesAdmin";
 // auth-kit: identidade e nível de acesso vêm do provider do kit (matriz de
 // páginas em destaque_perfis), não mais de uma lista de emails no bundle.
 import { useAcesso } from "@/auth/acesso";
@@ -19,7 +20,14 @@ export default function AdminPanel() {
   // Contador da fila na própria aba: quem abre o painel vê o trabalho pendente
   // sem precisar entrar. Compartilha a queryKey do AvaliacoesManager — uma
   // requisição só para os dois.
-  const { pendentes } = useAvaliacoesPendentes();
+  const { pendentes, isLoading: pendentesCarregando, isError: pendentesFalhou } =
+    useAvaliacoesPendentes();
+  // Consulta que falhou mostra "!", nunca some como se a fila estivesse vazia.
+  const contadorPendentes = rotuloContadorPendentes({
+    isLoading: pendentesCarregando,
+    isError: pendentesFalhou,
+    total: pendentes.length,
+  });
 
   // O link para a tela de usuários só aparece para quem alcança aquela página.
   // Isso é UX: quem forçar a URL bate no RequirePage de dentro de @/pages/Usuarios,
@@ -86,11 +94,19 @@ export default function AdminPanel() {
             <TabsTrigger value="aprovacoes" className="gap-2 font-body">
               <Star className="h-4 w-4" />
               Aprovações
-              {pendentes.length > 0 && (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-mono-num text-xs font-semibold text-amber-700">
-                  {pendentes.length}
+              {contadorPendentes === "!" ? (
+                <span
+                  className="rounded-full bg-red-100 px-1.5 py-0.5 font-mono-num text-xs font-semibold text-red-700"
+                  title="Não foi possível carregar a fila de aprovações"
+                  aria-label="Não foi possível carregar a fila de aprovações"
+                >
+                  !
                 </span>
-              )}
+              ) : contadorPendentes !== null ? (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-mono-num text-xs font-semibold text-amber-700">
+                  {contadorPendentes}
+                </span>
+              ) : null}
             </TabsTrigger>
             <TabsTrigger value="regras" className="gap-2 font-body">
               <Settings className="h-4 w-4" />

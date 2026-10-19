@@ -13,7 +13,10 @@ import {
 import { formatDataHoraManaus, mesPorExtensoManaus } from "@/lib/dateUtils";
 import {
   ORDENACOES_HISTORICO,
+  casaBuscaCliente,
+  estadoDaLista,
   inicial,
+  linhaTrinks,
   mensagemDoErro,
   ordenar,
   plural,
@@ -25,10 +28,13 @@ import {
   type PeriodoChave,
   type PeriodoPersonalizado,
 } from "@/lib/periodoHistorico";
+import { normalizarBusca } from "@/lib/clienteTrinks";
 import { useToast } from "@/hooks/use-toast";
 import { RequireWrite } from "@/auth/guards";
 import {
+  AvisoDesatualizada,
   ConfirmacaoDialog,
+  ErroCarregamento,
   SelectFiltro,
   StatusBadge,
   Vazio,
@@ -62,7 +68,10 @@ function LinhaHistorico({
             {avaliacao.nome_profissional}
           </p>
           <p className="truncate font-body text-sm text-gray-600">
-            Cliente: {avaliacao.nome_cliente}
+            Google: {avaliacao.nome_cliente}
+          </p>
+          <p className="truncate font-body text-sm text-gray-600">
+            {linhaTrinks(avaliacao)}
           </p>
           <p className="font-mono-num text-xs text-muted-foreground">
             Cadastro {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
@@ -127,8 +136,9 @@ export function HistoricoDecisoes() {
     [periodoChave, personalizado],
   );
 
-  const { historico, isLoading, atingiuTeto, reverter } =
+  const { historico, isLoading, isError, atingiuTeto, reverter } =
     useHistoricoAvaliacoes(periodo);
+  const estadoHistorico = estadoDaLista({ isLoading, isError, total: historico.length });
 
   // Derivada do periodo inteiro, ANTES dos demais filtros — se saisse da lista
   // ja filtrada, escolher um profissional esvaziaria as opcoes dos outros.
@@ -148,13 +158,11 @@ export function HistoricoDecisoes() {
   }, [historico, filtroProfissional]);
 
   const filtradas = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
     const lista = historico.filter((a) => {
       if (filtroProfissional && a.nome_profissional !== filtroProfissional) return false;
       if (
-        termo &&
-        !a.nome_cliente.toLowerCase().includes(termo) &&
-        !a.nome_profissional.toLowerCase().includes(termo)
+        !casaBuscaCliente(a, busca) &&
+        !normalizarBusca(a.nome_profissional).includes(normalizarBusca(busca))
       ) {
         return false;
       }
@@ -339,12 +347,19 @@ export function HistoricoDecisoes() {
 
           {(Object.keys(listaDaAba) as Aba[]).map((valor) => (
             <TabsContent key={valor} value={valor} className="mt-3">
+              {estadoHistorico === "lista_desatualizada" && (
+                <div className="mb-2">
+                  <AvisoDesatualizada />
+                </div>
+              )}
               {isLoading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-[78px] rounded-2xl animate-shimmer" />
                   ))}
                 </div>
+              ) : estadoHistorico === "erro" ? (
+                <ErroCarregamento texto="Não foi possível carregar o histórico de decisões." />
               ) : listaDaAba[valor].length === 0 ? (
                 <Vazio
                   texto={
