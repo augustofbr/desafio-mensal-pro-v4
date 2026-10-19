@@ -203,9 +203,15 @@ export default function CadastrarAvaliacaoModal({
       onClose();
     } catch (error: unknown) {
       console.error("Erro ao cadastrar avaliação:", error);
+      // 22023 = regra do banco (trigger avaliacoes_cadastradas_antes_inserir): dia do
+      // atendimento fora de hoje-10..hoje. A mensagem do banco ja e a frase para a usuaria.
+      const erroDb = error as { code?: unknown; message?: unknown } | null;
+      const diaForaDaJanela =
+        erroDb?.code === "22023" && typeof erroDb.message === "string" && erroDb.message;
       toast({
         title: "Erro ao cadastrar",
-        description: "Não foi possível cadastrar a avaliação. Tente novamente.",
+        description:
+          diaForaDaJanela || "Não foi possível cadastrar a avaliação. Tente novamente.",
         variant: "destructive",
       });
     } finally {
