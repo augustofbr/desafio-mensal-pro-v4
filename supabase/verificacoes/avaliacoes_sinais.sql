@@ -60,7 +60,15 @@ from _d d, (values
   -- prof D: nome igual ao alvo, mas fora da janela (hoje-25, cadastro hoje sem data_atendimento)
   (-999014001, -25, '999014', 'Corte Fixture', 'Qwk Fixture Fora Janela', '7301'),
   -- prof D: candidata fraca no dia do cadastro
-  (-999014002, 0, '999014', 'Corte Fixture', 'Totalmente Outra Pessoa', '7302')
+  (-999014002, 0, '999014', 'Corte Fixture', 'Totalmente Outra Pessoa', '7302'),
+  -- prof A: cliente 7003 com linha (improvavel) em data FUTURA hoje+5
+  (-999011007, 5, '999011', 'Corte Fixture', 'Cliente Nove Fixture', '7003'),
+  -- prof A: cliente 7004 realmente atendida 40 dias antes do cadastro
+  (-999011008, -40, '999011', 'Corte Fixture', 'Cliente Dez Fixture', '7004'),
+  -- prof C: nome exato em hoje-45 (dentro de data_atendimento-10, fora da trava de 30 dias)
+  (-999013002, -45, '999013', 'Corte Fixture', 'Qtrava Fixture Nome', '7202'),
+  -- prof D: "Ana Paula Ribeiro" em hoje-1 (alvo de uma palavra "Ana")
+  (-999014003, -1, '999014', 'Corte Fixture', 'Ana Paula Ribeiro', '7303')
 ) as v(id, delta, prof, serv, cli, cid);
 
 -- estrelas: (chave, profissional, nome Google, status, cadastro relativo, nome Trinks, id Trinks,
@@ -83,7 +91,15 @@ select * from (values
     ('sim_a',        999011, 'Qwfixture Antonieta Zzz',   'pendente', interval '0', null, null::bigint, null, null),
     ('sim_b',        999012, 'Qwfixture Antonietta Zzz',  'rejeitada', interval '-1 day', null, null::bigint, null, null),
     ('fraco_a',      999011, 'Qwfixture Ariane Kkk',      'pendente', interval '0', null, null::bigint, null, null),
-    ('fraco_b',      999012, 'Qwfixture Mariane Ppp',     'pendente', interval '0', null, null::bigint, null, null)
+    ('fraco_b',      999012, 'Qwfixture Mariane Ppp',     'pendente', interval '0', null, null::bigint, null, null),
+    -- fix round 1
+    ('id_futura',    999011, 'Fxa Futura Idq',            'pendente', interval '0', 'Cliente Nove Fixture', 7003::bigint,  5,  'lista'),
+    ('dig_futura',   999012, 'Fxb Futura Dgt',            'pendente', interval '0', 'Zeca Fixture Digitado', null::bigint, 5,  'digitado'),
+    ('id_antiga',    999011, 'Fxc Antiga Idz',            'pendente', interval '0', 'Cliente Dez Fixture', 7004::bigint, -40, 'lista'),
+    ('id_sem_data',  999011, 'Fxd Semdata Idw',           'pendente', interval '0', 'Cliente Sete Fixture', 7001::bigint, null, 'lista'),
+    ('trava30',      999013, 'Fxe Trava Tdy',             'pendente', interval '0', 'Qtrava Fixture Nome', null::bigint, -40, 'digitado'),
+    ('uma_palavra',  999014, 'Ana',                       'pendente', interval '0', null, null::bigint, null, null),
+    ('google_vazio', 999014, '   ',                       'pendente', interval '0', null, null::bigint, null, null)
   ) as v(k, prof, google, status, cad, trinks, cid, da, origem)
 union all
 -- 7 repetidas (limite de 5 e ordem): rep_1 e a mais recente
@@ -131,7 +147,7 @@ begin
 
   insert into _r
     select k.k, s.* from public.avaliacoes_sinais(ids) s join _ids k on k.id = s.avaliacao_id;
-  assert (select count(*) from _ids) = 24, format('fixtures: %s estrelas', (select count(*) from _ids));
+  assert (select count(*) from _ids) = 31, format('fixtures: %s estrelas', (select count(*) from _ids));
 
   select count(*) into n from _r;
   assert n = (select count(*) from _ids), format('uma linha por id pedido: %s', n);
@@ -184,7 +200,10 @@ begin
   assert r.atendida = 'nao_encontrada', format('fraca_velha: %s', r.atendida);
 
   -- duplicatas: as duas "Loja Bella Moda" listam uma a outra, com o status certo
-  select duplicatas into dup from _r where k = 'loja_pend';
+  -- (so as duplicatas que sao fixtures: robusto a estrelas reais parecidas)
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'loja_pend' and (e->>'id')::uuid in (select id from _ids);
   assert jsonb_array_length(dup) = 1, format('loja_pend duplicatas: %s', dup);
   assert (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_aprov'), 'loja_pend lista loja_aprov';
   assert dup->0->>'status' = 'aprovada', 'loja_pend: status aprovada';
@@ -192,7 +211,9 @@ begin
   assert dup->0->>'nome_cliente' = 'Loja Bella Moda', 'loja_pend: nome_cliente';
   assert dup->0 ? 'data_hora_cadastro', 'loja_pend: data_hora_cadastro';
 
-  select duplicatas into dup from _r where k = 'loja_aprov';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'loja_aprov' and (e->>'id')::uuid in (select id from _ids);
   assert jsonb_array_length(dup) = 1, format('loja_aprov duplicatas: %s', dup);
   assert (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_pend'), 'loja_aprov lista loja_pend';
   assert dup->0->>'status' = 'pendente', 'loja_aprov: status pendente';
@@ -223,6 +244,48 @@ begin
     'rep_7: nunca lista a si mesma';
 
   -- ids desconhecidos/nulos/duplicados
+  -- fix round 1 -----------------------------------------------------------
+  -- data futura nunca vira atendida/aguardando: id (com linha no espelho na data futura) e digitado
+  select * into r from _r where k = 'id_futura';
+  assert r.atendida = 'nao_encontrada', format('id_futura: %s', r.atendida);
+  assert r.atendida_nome is null, 'id_futura: sem nome';
+  select * into r from _r where k = 'dig_futura';
+  assert r.atendida = 'nao_encontrada', format('dig_futura: %s', r.atendida);
+
+  -- id com data fora de [dia_cadastro-10, dia_cadastro], mesmo atendida nessa data -> nao_encontrada
+  select * into r from _r where k = 'id_antiga';
+  assert r.atendida = 'nao_encontrada', format('id_antiga: %s', r.atendida);
+
+  -- id preenchido e data_atendimento NULL -> caminho por nome (nome do Trinks, janela do cadastro)
+  select * into r from _r where k = 'id_sem_data';
+  assert r.atendida = 'atendida', format('id_sem_data: %s', r.atendida);
+  assert r.atendida_nome = 'Cliente Sete Fixture' and r.atendida_data = v_hoje - 2,
+    format('id_sem_data: %s %s', r.atendida_nome, r.atendida_data);
+
+  -- trava de 30 dias: nome exato em hoje-45 (dentro de data_atendimento-10) nao conta
+  select * into r from _r where k = 'trava30';
+  assert r.atendida = 'nao_encontrada', format('trava30: %s', r.atendida);
+
+  -- alvo de uma palavra: so similarity ("Ana" x "Ana Paula Ribeiro" = 0.22; word_similarity seria 1)
+  assert public.word_similarity('ana', 'ana paula ribeiro') = 1 and public.similarity('ana', 'ana paula ribeiro') < 0.6,
+    'pre: uma_palavra';
+  select * into r from _r where k = 'uma_palavra';
+  assert r.atendida = 'aguardando_espelho', format('uma_palavra: %s', r.atendida);
+  assert r.atendida_nome is null, 'uma_palavra: sem nome';
+
+  -- nome do Google vazio apos normalizar: sem duplicatas, caminho por nome -> nao_encontrada
+  select * into r from _r where k = 'google_vazio';
+  assert r.atendida = 'nao_encontrada', format('google_vazio: %s', r.atendida);
+  assert r.duplicatas = '[]'::jsonb, format('google_vazio duplicatas: %s', r.duplicatas);
+
+  -- limite de 300 ids
+  perform * from public.avaliacoes_sinais(array(select gen_random_uuid() from generate_series(1, 300)));
+  begin
+    perform * from public.avaliacoes_sinais(array(select gen_random_uuid() from generate_series(1, 301)));
+    raise exception '301 ids deveria falhar';
+  exception when invalid_parameter_value then null;
+  end;
+
   select count(*) into n from public.avaliacoes_sinais(array['00000000-0000-0000-0000-000000000000'::uuid]);
   assert n = 0, 'id inexistente -> 0 linhas';
   select count(*) into n from public.avaliacoes_sinais(null);
