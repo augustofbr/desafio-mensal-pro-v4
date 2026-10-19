@@ -116,14 +116,17 @@ export default function ClienteTrinksPicker({
     const servicos = clienteDaLista(clientes, selecionado.nome, selecionado.id)?.servicos ?? [];
     return (
       <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
-        <div className="min-w-0" aria-live="polite">
+        <div className="min-w-0">
           <span className="sr-only">Cliente selecionada: </span>
-          <span className="flex items-center gap-1.5 text-sm font-body font-semibold text-violet-800">
-            <Check className="h-4 w-4 shrink-0 text-violet-600" aria-hidden="true" />
-            <span className="truncate">{selecionado.nome}</span>
+          <span className="flex items-start gap-1.5 text-sm font-body font-semibold text-violet-800">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" aria-hidden="true" />
+            <span className="break-words min-w-0">{selecionado.nome}</span>
           </span>
           {servicos.length > 0 && (
-            <span className="mt-0.5 block truncate text-xs text-gray-500 font-body">
+            <span
+              title={servicos.join(" · ")}
+              className="mt-0.5 block truncate text-xs text-gray-500 font-body"
+            >
               {servicos.join(" · ")}
             </span>
           )}
@@ -131,7 +134,7 @@ export default function ClienteTrinksPicker({
         <button
           ref={trocarRef}
           type="button"
-          aria-label="Trocar cliente"
+          aria-label={`Trocar cliente ${selecionado.nome}`}
           onClick={() => {
             foco.current = "busca";
             setBusca("");
