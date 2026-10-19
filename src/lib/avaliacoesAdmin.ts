@@ -141,12 +141,21 @@ export type EstadoAtendida =
   | "aguardando_espelho"
   | "nao_encontrada";
 
+/**
+ * Por que a RPC apontou a duplicata: 'nome_google' (nome do Google igual, parecido
+ * ou de grafia parecida) ou 'nome_trinks' (so o nome do Trinks desta estrela bate
+ * com o nome do Google da outra). Opcional: o app pode ir ao ar antes da migracao
+ * 20261019180000, e a RPC antiga nao devolve o campo.
+ */
+export type MotivoDuplicata = "nome_google" | "nome_trinks";
+
 export interface DuplicataAvaliacao {
   id: string;
   nome_profissional: string;
   nome_cliente: string;
   status: string;
   data_hora_cadastro: string;
+  motivo?: MotivoDuplicata;
 }
 
 /** Uma linha da RPC, com `duplicatas` ja tipado (nunca null). */
@@ -223,6 +232,11 @@ export const LIMITE_DUPLICATAS = 5;
 
 export function rotuloContagemDuplicatas(n: number): string {
   return n >= LIMITE_DUPLICATAS ? `${LIMITE_DUPLICATAS}+` : String(n);
+}
+
+/** Trecho extra do item de duplicata quando so o nome do Trinks bate; vazio nos demais casos. */
+export function rotuloMotivoDuplicata(motivo?: MotivoDuplicata | null): string {
+  return motivo === "nome_trinks" ? " · parecido com o nome do Trinks desta estrela" : "";
 }
 
 export type EstadoLista = "carregando" | "erro" | "vazio" | "lista" | "lista_desatualizada";

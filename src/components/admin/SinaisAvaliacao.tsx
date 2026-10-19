@@ -5,6 +5,7 @@ import { mesPorExtensoManaus } from "@/lib/dateUtils";
 import {
   rotuloAtendida,
   rotuloContagemDuplicatas,
+  rotuloMotivoDuplicata,
   statusPorExtenso,
   type EstadoAtendida,
   type SinalAvaliacao,
@@ -95,6 +96,7 @@ export function SinaisAvaliacao({ sinal }: { sinal?: SinalAvaliacao }) {
                 {" — "}
                 {d.nome_profissional}, {mesPorExtensoManaus(d.data_hora_cadastro)},{" "}
                 {statusPorExtenso(d.status)}
+                {rotuloMotivoDuplicata(d.motivo)}
               </li>
             ))}
           </ul>
