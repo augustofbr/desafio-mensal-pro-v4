@@ -1,9 +1,11 @@
--- Verificacao de 20261019120100_avaliacoes_sinais.sql (RPC public.avaliacoes_sinais).
+-- Verificacao de 20261019120100_avaliacoes_sinais.sql (RPC public.avaliacoes_sinais) e das
+-- migracoes que a reescreveram (20261019180000 e 20261019190000).
 --
 -- Fica em supabase/verificacoes/ (supabase/tests/ e tratado como pgTAP pelo CLI).
 -- Roda INTEIRO dentro de begin ... rollback: nada persiste. Execute com o MCP
--- execute_sql (papel postgres). Requer 20261019120000, 20261019120100 e 20261019180000
--- (duplicata por grafia e pelo nome do Trinks) aplicadas.
+-- execute_sql (papel postgres). Requer 20261019120000, 20261019120100, 20261019180000
+-- (duplicata por grafia e pelo nome do Trinks) e 20261019190000 (mesma cliente no Trinks)
+-- aplicadas.
 -- Qualquer assert que falhe aborta a transacao com erro; sucesso = sem erro.
 --
 -- Fixtures (ids que nao existem em producao):
@@ -152,7 +154,8 @@ select * from (values
     ('n_alvo_esp',   999013, 'Qesp Alvo Zzpr',            'pendente', interval '0', '   ', null::bigint, null, null),
     ('e_outra',      999014, 'Qesp',                      'pendente', interval '-1 day', null, null::bigint, null, null),
     -- Google vazio da alvo desliga so os criterios Google; o B segue
-    ('gv_alvo',      999013, '   ',                       'pendente', interval '0', 'Xaviera Qwrtz De Sousa', null::bigint, -1, 'digitado'),
+    -- (Trinks 'Souza', nao 'Sousa': mesmas palavras do B, mas nome normalizado diferente de b_alvo -> nao e C)
+    ('gv_alvo',      999013, '   ',                       'pendente', interval '0', 'Xaviera Qwrtz De Souza', null::bigint, -1, 'digitado'),
     -- os dois criterios: motivo nome_google
     ('m_alvo',       999011, 'Qmotivo Dupla Zzt',         'pendente', interval '0', 'Qmotivo Dupla Zzt', null::bigint, -1, 'digitado'),
     ('m_outra',      999012, 'Qmotivo Dupla Zzt',         'pendente', interval '-1 day', null, null::bigint, null, null),
@@ -172,7 +175,37 @@ select * from (values
     ('tp_3',         999014, 'Wumbria',                   'pendente', interval '-3 days', null, null::bigint, null, null),
     ('tp_4',         999014, 'Wumbria',                   'pendente', interval '-4 days', null, null::bigint, null, null),
     ('tp_5',         999014, 'Wumbria',                   'pendente', interval '-5 days', null, null::bigint, null, null),
-    ('tp_6',         999014, 'Wumbria',                   'pendente', interval '-6 days', null, null::bigint, null, null)
+    ('tp_6',         999014, 'Wumbria',                   'pendente', interval '-6 days', null, null::bigint, null, null),
+    -- 20261019190000, criterio C (mesma cliente no Trinks; Googles todos diferentes)
+    -- c1: mesmo id 7501, nomes do Trinks DIFERENTES (com id nos dois, so o id vale)
+    ('c1_a',         999011, 'Qcaa Primeira Zxq',         'pendente', interval '0', 'Cliente Cetavo Qwyz', 7501::bigint, -1, 'lista'),
+    ('c1_b',         999012, 'Wvl Segunda Pkk',           'rejeitada', interval '-1 day', 'Outro Nome Qyx', 7501::bigint, -1, 'lista'),
+    -- c2: ids diferentes, MESMO nome do Trinks -> clientes diferentes, nao e C
+    ('c2_a',         999011, 'Qdd Terceira Mmk',          'pendente', interval '0', 'Zaluma Fixt', 7502::bigint, -1, 'lista'),
+    ('c2_b',         999012, 'Qee Quarta Nnk',            'pendente', interval '-1 day', 'Zaluma Fixt', 7503::bigint, -1, 'lista'),
+    -- c3: uma tem id e a outra nao -> vale o nome do Trinks normalizado (caixa, acento, espacos)
+    ('c3_a',         999011, 'Qff Quinta Ppk',            'pendente', interval '0', E'  Maria   JOS\u00c9  Xqvz ', null::bigint, -1, 'digitado'),
+    ('c3_b',         999012, 'Qgg Sexta Rrk',             'pendente', interval '-1 day', 'maria jose xqvz', 7504::bigint, -1, 'lista'),
+    -- c4: sem id, nomes do Trinks diferentes -> nao e C
+    ('c4_a',         999011, 'Qhh Setima Ttk',            'pendente', interval '0', 'Xqvz Primo', null::bigint, -1, 'digitado'),
+    ('c4_b',         999012, 'Qii Oitava Uuk',            'pendente', interval '-1 day', 'Xqvz Segundo', null::bigint, -1, 'digitado'),
+    -- c5: legado sem Trinks (null ou so espacos): nada a comparar, '' nao casa com ''
+    ('c5_a',         999011, 'Qjj Nona Vvk',              'pendente', interval '0', null, null::bigint, null, null),
+    ('c5_b',         999012, 'Qkk Decima Wwk',            'pendente', interval '-1 day', '   ', null::bigint, null, null),
+    ('c5_c',         999013, 'Qll Undecima Xxk',          'pendente', interval '-1 day', '   ', null::bigint, null, null),
+    -- precedencia: mesmo id 7505 E mesmo Google -> mesma_cliente_trinks
+    ('p_a',          999011, 'Qlmn Mesmo Nomex',          'pendente', interval '0', 'Qpreced Fixt', 7505::bigint, -1, 'lista'),
+    ('p_b',          999012, 'Qlmn Mesmo Nomex',          'pendente', interval '-1 day', 'Outro Qpreced', 7505::bigint, -1, 'lista'),
+    -- teto de 5: C (a mais antiga) + 5 nome_google + 2 nome_trinks, todas mais novas
+    ('cp_alvo',      999013, 'Qcap Alvo Zzr',             'pendente', interval '0', 'Qcapcli Fixt', 7506::bigint, -1, 'lista'),
+    ('cp_c',         999012, 'Qcap Outra Yyr',            'pendente', interval '-30 days', 'Qx Outro Nome', 7506::bigint, -1, 'lista'),
+    ('cp_g1',        999011, 'Qcap Alvo Zzr',             'pendente', interval '-1 day', null, null::bigint, null, null),
+    ('cp_g2',        999014, 'Qcap Alvo Zzr',             'pendente', interval '-2 days', null, null::bigint, null, null),
+    ('cp_g3',        999012, 'Qcap Alvo Zzr',             'pendente', interval '-3 days', null, null::bigint, null, null),
+    ('cp_g4',        999011, 'Qcap Alvo Zzr',             'pendente', interval '-4 days', null, null::bigint, null, null),
+    ('cp_g5',        999014, 'Qcap Alvo Zzr',             'pendente', interval '-5 days', null, null::bigint, null, null),
+    ('cp_t1',        999014, 'Qcapcli',                   'pendente', interval '-6 days', null, null::bigint, null, null),
+    ('cp_t2',        999011, 'Qcapcli',                   'pendente', interval '-7 days', null, null::bigint, null, null)
   ) as v(k, prof, google, status, cad, trinks, cid, da, origem)
 union all
 -- 7 repetidas (limite de 5 e ordem): rep_1 e a mais recente
@@ -221,7 +254,7 @@ begin
 
   insert into _r
     select k.k, s.* from public.avaliacoes_sinais(ids) s join _ids k on k.id = s.avaliacao_id;
-  assert (select count(*) from _ids) = 61, format('fixtures: %s estrelas', (select count(*) from _ids));
+  assert (select count(*) from _ids) = 83, format('fixtures: %s estrelas', (select count(*) from _ids));
 
   select count(*) into n from _r;
   assert n = (select count(*) from _ids), format('uma linha por id pedido: %s', n);
@@ -277,7 +310,8 @@ begin
   -- (so as duplicatas que sao fixtures: robusto a estrelas reais parecidas)
   select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
     from _r, jsonb_array_elements(_r.duplicatas) e
-   where _r.k = 'loja_pend' and (e->>'id')::uuid in (select id from _ids);
+   where _r.k = 'loja_pend' and (e->>'id')::uuid in (select id from _ids)
+     and e->>'motivo' = 'nome_google';   -- (loja_pend tem o id 7001 de outras fixtures: ver mesma_cliente_trinks)
   assert jsonb_array_length(dup) = 1, format('loja_pend duplicatas: %s', dup);
   assert (dup->0->>'id')::uuid = (select id from _ids where k = 'loja_aprov'), 'loja_pend lista loja_aprov';
   assert dup->0->>'status' = 'aprovada', 'loja_pend: status aprovada';
@@ -319,9 +353,20 @@ begin
   select duplicatas into dup from _r where k = 'fraco_a';
   assert dup = '[]'::jsonb, format('fraco_a duplicatas: %s', dup);
 
-  -- sem duplicata -> [] (nunca null)
-  select duplicatas into dup from _r where k = 'id_atendida';
-  assert dup = '[]'::jsonb, format('id_atendida duplicatas: %s', dup);
+  -- sem duplicata -> [] (nunca null): rep_ nao tem Trinks nem id; o resultado e sempre array
+  assert not exists (select 1 from _r where duplicatas is null or jsonb_typeof(duplicatas) <> 'array'),
+    'duplicatas nunca e null nem nao-array';
+  -- id_atendida (cliente 7001) e duplicata por mesma cliente das outras estrelas com o id 7001
+  -- (loja_pend e id_sem_data), nao por nome; so as fixtures
+  select coalesce(jsonb_agg(e order by e->>'nome_cliente'), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'id_atendida' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 2
+     and (select array_agg((e->>'id')::uuid order by e->>'nome_cliente') from jsonb_array_elements(dup) e)
+         = (select array_agg(id order by nome) from (select id, nome_cliente nome from public.avaliacoes_cadastradas
+                                                      where id in (select id from _ids where k in ('loja_pend','id_sem_data'))) q)
+     and not exists (select 1 from jsonb_array_elements(dup) e where e->>'motivo' <> 'mesma_cliente_trinks'),
+    format('id_atendida duplicatas (7001): %s', dup);
 
   -- limite 5, mais recentes primeiro (rep_1 e a mais nova; rep_1 ve rep_2..rep_6)
   select duplicatas into dup from _r where k = 'rep_1';
@@ -505,10 +550,70 @@ begin
     'tp_alvo: as 4 so-Trinks mais recentes, em ordem de recencia';
   assert (select count(*) from jsonb_array_elements(dup) e where e->>'motivo' = 'nome_trinks') = 4, 'tp_alvo: 4 nome_trinks';
 
+  -- 20261019190000: criterio C (mesma cliente no Trinks) ----------------------
+  -- c1: mesmo id, Googles e nomes do Trinks diferentes -> C nos dois sentidos
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'c1_a' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'c1_b')
+     and dup->0->>'motivo' = 'mesma_cliente_trinks' and dup->0->>'status' = 'rejeitada', format('c1_a: %s', dup);
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'c1_b' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'c1_a')
+     and dup->0->>'motivo' = 'mesma_cliente_trinks', format('c1_b: %s', dup);
+
+  -- c2: ids diferentes + mesmo nome do Trinks -> NAO e C (nem por outro criterio)
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k in ('c2_a', 'c2_b') and (e->>'id')::uuid in (select id from _ids);
+  assert dup = '[]'::jsonb, format('c2 (ids diferentes): %s', dup);
+
+  -- c3: id so de um lado + nome do Trinks igual apos normalizar -> C nos dois sentidos
+  assert public.avaliacao_normalizar_nome(E'  Maria   JOS\u00c9  Xqvz ') = 'maria jose xqvz', 'pre: c3 normaliza igual';
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'c3_a' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'c3_b')
+     and dup->0->>'motivo' = 'mesma_cliente_trinks', format('c3_a: %s', dup);
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'c3_b' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'c3_a')
+     and dup->0->>'motivo' = 'mesma_cliente_trinks', format('c3_b: %s', dup);
+
+  -- c4: sem id, nomes do Trinks diferentes -> nao; c5: legado/branco -> nao
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k in ('c4_a', 'c4_b', 'c5_a', 'c5_b', 'c5_c') and (e->>'id')::uuid in (select id from _ids);
+  assert dup = '[]'::jsonb, format('c4/c5 (sem C): %s', dup);
+
+  -- precedencia: C e Google batem juntos -> mesma_cliente_trinks
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'p_a' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 1 and (dup->0->>'id')::uuid = (select id from _ids where k = 'p_b')
+     and dup->0->>'motivo' = 'mesma_cliente_trinks', format('p_a (C vence nome_google): %s', dup);
+
+  -- teto de 5 por forca: a C mais antiga (30 dias) nao e cortada por 7 candidatas mais novas
+  -- (5 nome_google, 2 nome_trinks); ficam a C + as 4 nome_google mais recentes (as nome_trinks
+  -- saem); a exibicao e por recencia
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into dup
+    from _r, jsonb_array_elements(_r.duplicatas) e
+   where _r.k = 'cp_alvo' and (e->>'id')::uuid in (select id from _ids);
+  assert jsonb_array_length(dup) = 5, format('cp_alvo: teto 5, veio %s', jsonb_array_length(dup));
+  assert (dup->4->>'id')::uuid = (select id from _ids where k = 'cp_c') and dup->4->>'motivo' = 'mesma_cliente_trinks',
+    format('cp_alvo: a C (mais antiga) fica por ultimo e nao e cortada: %s', dup);
+  assert (select array_agg((e->>'id')::uuid order by o) from jsonb_array_elements(dup) with ordinality as t(e, o) where o <= 4)
+         = (select array_agg(id order by k) from _ids where k in ('cp_g1','cp_g2','cp_g3','cp_g4')),
+    'cp_alvo: as 4 nome_google mais recentes, por recencia';
+  assert (select array_agg(e->>'motivo' order by o) from jsonb_array_elements(dup) with ordinality as t(e, o))
+         = array['nome_google','nome_google','nome_google','nome_google','mesma_cliente_trinks'], 'cp_alvo: motivos';
+
   -- todo item traz motivo valido
   assert not exists (select 1 from _r, jsonb_array_elements(_r.duplicatas) e
-                      where coalesce(e->>'motivo', '') not in ('nome_google', 'nome_trinks')),
-    'todo item de duplicatas traz motivo nome_google|nome_trinks';
+                      where coalesce(e->>'motivo', '') not in ('nome_google', 'nome_trinks', 'mesma_cliente_trinks')),
+    'todo item de duplicatas traz motivo nome_google|nome_trinks|mesma_cliente_trinks';
 
   -- limite de 300 ids
   perform * from public.avaliacoes_sinais(array(select gen_random_uuid() from generate_series(1, 300)));
