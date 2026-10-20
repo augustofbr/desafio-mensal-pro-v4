@@ -24,7 +24,8 @@
 --
 -- O que muda, nesta ordem:
 --   0) Asserts do estado de partida: o trigger avaliacoes_cadastradas_antes_inserir é a versão
---      da A (md5 do prosrc a58702fd76f0ee6c5ac53c8cb7e01a2f) e avaliacao_clientes_do_dia é a
+--      da A (md5 do prosrc a58702fd76f0ee6c5ac53c8cb7e01a2f), o helper do espelho é a versão da
+--      A (md5 do prosrc 2a5896c97ead08f705902ded2221bc45) e avaliacao_clientes_do_dia é a
 --      versão de 2026-10-19 (md5 do pg_get_functiondef b41650748de4c78723e617f475e1e384, lido em
 --      2026-10-20). Se alguém mudou um dos dois depois, a migração aborta antes de tudo.
 --      Consequência: NÃO é reaplicável (na segunda vez o assert do trigger aborta, sem efeito).
@@ -67,7 +68,16 @@
 --      service_role, n8n) passa a receber 42501: no código só o modal de cadastro chama.
 --   5) Helper avaliacao_espelho_tem_cliente: perde o EXECUTE de anon (a A deu só até aqui).
 --      authenticated mantém (o trigger de INSERT, invoker, chama o helper com o papel de quem
---      insere).
+--      insere), mas o helper ganha o MESMO gate de avaliacao_clientes_do_dia (achado do security
+--      review: sem ele, qualquer logada perguntava "a profissional Y atendeu a cliente X no dia
+--      D?" para qualquer Y). Sem permissão devolve FALSE, sem exceção: o trigger só usa o
+--      resultado para anular cliente_trinks_id, e quem não tem permissão já é barrado pela
+--      policy avaliacoes_insert_logado. Para quem pode inserir, o gate é o mesmo da policy,
+--      então o trigger continua confirmando o id da profissional ligada (a própria estrela) e
+--      da Recepção/Admin (write em estrelas). postgres/service_role não chegam ao helper (o
+--      trigger retorna antes). O trigger continua INVOKER de propósito: como SECURITY DEFINER,
+--      current_user viraria o dono e a regra inteira do trigger desligaria. O resto do corpo
+--      do helper é o da A (md5 do prosrc 2a5896c97ead08f705902ded2221bc45).
 --   6) Trigger avaliacoes_cadastradas_antes_inserir: a regra (b), dia do atendimento fora de
 --      hoje-10..hoje, troca o errcode 22023 por P0D01 (código próprio), com a MESMA mensagem. O
 --      front (CadastrarAvaliacaoModal) já aceita os dois códigos. Corpo = o da A, com só a linha
@@ -97,10 +107,33 @@ BEGIN
   IF md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
      <> 'dae9e7fae36651181cc60fa9d742664d'
      OR md5(pg_get_functiondef('public.avaliacao_clientes_do_dia(integer, date)'::regprocedure))
-     <> '067fcc9513ebfa0a9014478c63988716' THEN
-    RAISE EXCEPTION 'trigger de avaliacoes ou avaliacao_clientes_do_dia mudou depois da migracao C: rollback abortado';
+     <> '067fcc9513ebfa0a9014478c63988716'
+     OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure))
+     <> '62ca6957199d076ff2eea1e0769e85a6' THEN
+    RAISE EXCEPTION 'trigger de avaliacoes, avaliacao_clientes_do_dia ou o helper do espelho mudou depois da migracao C: rollback abortado';
   END IF;
 END $$;
+
+-- 0b) helper do espelho: volta a versão da A (sem gate)
+CREATE OR REPLACE FUNCTION public.avaliacao_espelho_tem_cliente(
+  p_profissional_id integer, p_dia date, p_cliente_id bigint)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  select coalesce(
+    p_profissional_id is not null
+    and p_dia is not null
+    and p_cliente_id is not null
+    and exists (
+      select 1
+      from public.trinks_services t
+      where t.profissionalid = p_profissional_id::text
+        and t.service_date   = pg_catalog.to_char(p_dia, 'DD/MM/YYYY')
+        and case when pg_catalog.btrim(t.clienteid) ~ '^[0-9]{1,18}$'
+                 then pg_catalog.btrim(t.clienteid)::bigint
+            end = p_cliente_id
+    ),
+    false)
+$$;
 
 -- 1) trigger: volta a versão da A (errcode 22023)
 CREATE OR REPLACE FUNCTION public.avaliacoes_cadastradas_antes_inserir()
@@ -213,7 +246,9 @@ BEGIN
   IF md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
      <> 'a58702fd76f0ee6c5ac53c8cb7e01a2f'
      OR md5(pg_get_functiondef('public.avaliacao_clientes_do_dia(integer, date)'::regprocedure))
-     <> 'b41650748de4c78723e617f475e1e384' THEN
+     <> 'b41650748de4c78723e617f475e1e384'
+     OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure))
+     <> '2a5896c97ead08f705902ded2221bc45' THEN
     RAISE EXCEPTION 'funcoes nao voltaram ao estado anterior a C';
   END IF;
 END $$;
@@ -304,6 +339,10 @@ BEGIN
   IF md5(pg_get_functiondef('public.avaliacao_clientes_do_dia(integer, date)'::regprocedure))
      <> 'b41650748de4c78723e617f475e1e384' THEN
     RAISE EXCEPTION 'avaliacao_clientes_do_dia mudou desde 2026-10-20: o corpo abaixo nao e mais o vigente - abortando';
+  END IF;
+  IF md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure))
+     <> '2a5896c97ead08f705902ded2221bc45' THEN
+    RAISE EXCEPTION 'avaliacao_espelho_tem_cliente nao e a versao da migracao A: abortando';
   END IF;
 END $$;
 
@@ -416,8 +455,33 @@ REVOKE ALL ON FUNCTION public.avaliacao_clientes_do_dia(integer, date) FROM PUBL
 GRANT EXECUTE ON FUNCTION public.avaliacao_clientes_do_dia(integer, date) TO authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5) Helper do espelho: sem EXECUTE para anon
+-- 5) Helper do espelho: gate de estrelas (sem permissão = false); sem EXECUTE para anon
 -- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.avaliacao_espelho_tem_cliente(
+  p_profissional_id integer, p_dia date, p_cliente_id bigint)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  -- gate (migracao C): so responde quem pode ver as clientes desta profissional (o mesmo
+  -- predicado de avaliacao_clientes_do_dia); sem permissao = false, sem excecao
+  select coalesce(
+    p_profissional_id is not null
+    and p_dia is not null
+    and p_cliente_id is not null
+    and (public.destaque_can_write_page('estrelas')
+         or (public.destaque_can_read_page('estrelas')
+             and p_profissional_id = public.destaque_minha_profissional()))
+    and exists (
+      select 1
+      from public.trinks_services t
+      where t.profissionalid = p_profissional_id::text
+        and t.service_date   = pg_catalog.to_char(p_dia, 'DD/MM/YYYY')
+        and case when pg_catalog.btrim(t.clienteid) ~ '^[0-9]{1,18}$'
+                 then pg_catalog.btrim(t.clienteid)::bigint
+            end = p_cliente_id
+    ),
+    false)
+$$;
+
 REVOKE ALL ON FUNCTION public.avaliacao_espelho_tem_cliente(integer, date, bigint) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.avaliacao_espelho_tem_cliente(integer, date, bigint) TO authenticated;
 
@@ -426,6 +490,8 @@ COMMENT ON FUNCTION public.avaliacao_espelho_tem_cliente(integer, date, bigint) 
   'clienteid numerico igual. Usado pelo trigger avaliacoes_cadastradas_antes_inserir (invoker) '
   'para nao depender da leitura de trinks_services de quem insere. EXECUTE so para authenticated '
   '(o trigger roda com o papel do INSERT; anon perdeu o INSERT e o EXECUTE na migracao C). '
+  'Gate (migracao C): write em estrelas, ou read em estrelas e p_profissional_id = '
+  'destaque_minha_profissional(); sem permissao devolve false (nao e oraculo). '
   'Migracoes 20261021100000 e 20261021110000.';
 
 -- ---------------------------------------------------------------------------
@@ -531,6 +597,15 @@ BEGIN
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacao_clientes_do_dia(integer, date)'::regprocedure)
        NOT LIKE '%public.destaque_can_write_page(''estrelas'')%' THEN
     v_falhas := v_falhas || 'avaliacao_clientes_do_dia sem o gate de estrelas'::text;
+  END IF;
+  IF (SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure)
+       NOT LIKE '%public.destaque_can_write_page(''estrelas'')%public.destaque_minha_profissional()%'
+     OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure) THEN
+    v_falhas := v_falhas || 'helper do espelho sem o gate de estrelas (ou deixou de ser SECURITY DEFINER)'::text;
+  END IF;
+  -- o trigger tem de continuar INVOKER: como definer, current_user viraria o dono e a regra desligaria
+  IF (SELECT prosecdef FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure) THEN
+    v_falhas := v_falhas || 'trigger avaliacoes_cadastradas_antes_inserir virou SECURITY DEFINER'::text;
   END IF;
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure)
        !~ 'errcode = ''P0D01'''

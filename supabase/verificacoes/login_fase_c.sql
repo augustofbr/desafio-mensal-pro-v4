@@ -15,7 +15,8 @@
 -- Papéis (ordem das listas de esperado):
 --   1 anon
 --   2 prof_ligada        perfil Profissional, ligada à profissional P (ativa, com e-mail e com
---                        atendimento no espelho na janela hoje-10..hoje; a de mais estrelas)
+--                        atendimento no espelho na janela hoje-10..hoje; a de mais estrelas).
+--                        "outra" = a segunda com esses critérios (tem um atendimento real o_dia/o_cli)
 --   3 prof_sem_vinculo   Profissional sem vínculo
 --   4 recepcao   5 admin
 --   6 inativo            perfil Admin, users_app.ativo = false, ligado à profissional "outra"
@@ -29,8 +30,8 @@
 -- INSERTs/UPDATEs de teste se desfazem num sub-bloco (errcode LFC01): contagens não mudam.
 -- Saída: _resultado (papel, verificacao, esperado, obtido, ok); aborta se ok=false.
 -- Opcional: set_config('lfc.so', '<regex>', true) antes do passo 3 roda só as verificações de
--- papel que casam (as de catálogo, c01-c12, rodam sempre).
--- Linhas esperadas: 12 de catálogo (postgres) + 23 verificações x 8 papéis = 196.
+-- papel que casam (as de catálogo, c01-c13, rodam sempre).
+-- Linhas esperadas: 13 de catálogo (postgres) + 25 verificações x 8 papéis = 213.
 
 begin;
 
@@ -69,27 +70,29 @@ with e as (  -- atendimentos com id numérico, na janela do trigger, de profissi
      and to_date(t.service_date, 'DD/MM/YYYY') <= (now() at time zone 'America/Manaus')::date),
 cand as (
   select c.pid, max(c.dia) dia from e c group by c.pid),
-escolha as (
-  select c.pid, c.dia, (select min(e2.cli) from e e2 where e2.pid = c.pid and e2.dia = c.dia) cli
+-- P = a de mais estrelas; "outra" = a seguinte (também com atendimento na janela e com estrelas),
+-- para o helper do espelho ter um caso real dela (11b, 10b)
+rank as (
+  select c.pid, c.dia, (select min(e2.cli) from e e2 where e2.pid = c.pid and e2.dia = c.dia) cli,
+         row_number() over (order by (select count(*) from public.avaliacoes_cadastradas a
+                                       where a.profissional_id = c.pid) desc, c.pid) n
     from cand c
-   order by (select count(*) from public.avaliacoes_cadastradas a where a.profissional_id = c.pid) desc, c.pid
-   limit 1)
+   where exists (select 1 from public.avaliacoes_cadastradas a where a.profissional_id = c.pid))
 select s.pid, s.dia, s.cli,
        (select email from public.profissionais_ativos where "profissionalId" = s.pid) p_email,
-       (select a.profissional_id from public.avaliacoes_cadastradas a
-          join public.profissionais_ativos p on p."profissionalId" = a.profissional_id
-         where a.profissional_id <> s.pid and p.ativo is not false
-         group by 1 order by count(*) desc, 1 limit 1) outra,
+       o.pid outra, o.dia o_dia, o.cli o_cli,
        date_trunc('month', now() at time zone 'America/Manaus') at time zone 'America/Manaus' ini,
        (date_trunc('month', now() at time zone 'America/Manaus') + interval '1 month') at time zone 'America/Manaus' fim,
        (now() at time zone 'America/Manaus')::date hoje,
        0 desligados
-  from escolha s;
+  from rank s left join rank o on o.n = 2
+ where s.n = 1;
 
 do $$
 begin
   if not exists (select 1 from _fx where pid is not null and dia is not null and cli is not null
-                                     and p_email is not null and outra is not null) then
+                                     and p_email is not null and outra is not null
+                                     and o_dia is not null and o_cli is not null) then
     raise exception 'fixtures: sem profissional ativa com e-mail e atendimento na janela, ou sem "outra": %',
       (select row_to_json(f) from _fx f);
   end if;
@@ -215,7 +218,15 @@ select 0, 'postgres', v.k, v.esp, v.obt from (values
       and policyname = 'Permitir leitura pública de profissionais' and cmd = 'SELECT')),
   ('c12 trigger antes_inserir: errcode da janela', 'P0D01',
    (select case when prosrc ~ 'errcode = ''P0D01''' and prosrc !~ '''22023''' then 'P0D01' else 'outro' end
-      from pg_proc where oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
+      from pg_proc where oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure)),
+  ('c13 helper com gate e definer / trigger invoker', 'gate/definer/invoker',
+   (select case when h.prosrc like '%public.destaque_can_write_page(''estrelas'')%public.destaque_minha_profissional()%'
+                then 'gate' else 'sem gate' end
+           || '/' || case when h.prosecdef then 'definer' else 'invoker' end
+           || '/' || case when t.prosecdef then 'definer' else 'invoker' end
+      from pg_proc h, pg_proc t
+     where h.oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure
+       and t.oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
 ) v(k, esp, obt);
 
 grant select on _fx, _p, _tok to anon, authenticated;
@@ -294,9 +305,19 @@ begin
        returning 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL')$q$,
     x.outra, x.hoje),
     '42501|42501|42501|ok id=NULL|ok id=NULL|42501|42501|42501', true);
-  perform pg_temp.r('11 espelho_tem_cliente(real)/(falso)', format(
+  -- Recepção/Admin inserem para a outra com o id real do espelho dela: o helper (gate write) mantém
+  perform pg_temp.r('10b insert estrela de outra profissional (id real do espelho dela)', ins || format(
+    $q$values (%s, 'LoginFxC outra', 'LoginFxC outra id', 'LoginFxC Trinks', %s, %L, 'lista', 'pendente', now())
+       returning case cliente_trinks_id when %s then 'ok id=retido' else 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL') end$q$,
+    x.outra, x.o_cli, x.o_dia, x.o_cli),
+    '42501|42501|42501|ok id=retido|ok id=retido|42501|42501|42501', true);
+  -- helper do espelho com gate: sem permissão = false (não é oráculo); anon nem executa
+  perform pg_temp.r('11 espelho_tem_cliente(P, real)/(P, falso)', format(
     $q$select public.avaliacao_espelho_tem_cliente(%1$s, %2$L, %3$s) || '/' || public.avaliacao_espelho_tem_cliente(%1$s, %2$L, -1)$q$,
-    x.pid, x.dia, x.cli), '42501|true/false|true/false|true/false|true/false|true/false|true/false|true/false');
+    x.pid, x.dia, x.cli), '42501|true/false|false/false|true/false|true/false|false/false|false/false|true/false');
+  perform pg_temp.r('11b espelho_tem_cliente(outra, real dela)', format(
+    $q$select public.avaliacao_espelho_tem_cliente(%s, %L, %s)::text$q$, x.outra, x.o_dia, x.o_cli),
+    '42501|false|false|true|true|false|false|false');
   perform pg_temp.r('12 update profissionais_ativos.email', format(
     $q$with u as (update public.profissionais_ativos set email = email where "profissionalId" = %s returning 1)
        select 'ok:' || count(*) from u$q$, x.pid), '42501', true);
