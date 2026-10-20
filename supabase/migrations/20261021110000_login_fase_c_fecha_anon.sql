@@ -406,10 +406,11 @@ BEGIN
   END IF;
 END $$;
 
--- todos os locks de uma vez (sob o lock_timeout de 5s), em vez de um DROP POLICY por vez
-LOCK TABLE public.trinks_services, public.regras_desafio, public.feriados,
-           public.tratamento_fabricante, public.profissional_fabricante,
-           public.avaliacoes_cadastradas
+-- todos os locks de uma vez (sob o lock_timeout de 5s), em vez de um DROP POLICY por vez.
+-- avaliacoes_cadastradas PRIMEIRO: o INSERT de estrela pega avaliacoes e depois le
+-- trinks_services (trigger -> helper); a mesma ordem aqui evita deadlock com ele.
+LOCK TABLE public.avaliacoes_cadastradas, public.trinks_services, public.regras_desafio,
+           public.feriados, public.tratamento_fabricante, public.profissional_fabricante
   IN ACCESS EXCLUSIVE MODE;
 
 -- ---------------------------------------------------------------------------
