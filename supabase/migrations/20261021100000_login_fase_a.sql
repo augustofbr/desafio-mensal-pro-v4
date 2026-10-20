@@ -1,5 +1,6 @@
--- Login em todas as rotas — migracao A (ADITIVA): perfis, vinculo e-mail -> profissional,
--- RPCs novas, policies novas para authenticated e fechamento de escrita de authenticated.
+-- Login em todas as rotas — migracao A (ADITIVA): perfis, vinculo explicito usuario ->
+-- profissional, RPCs novas, policies novas para authenticated e fechamento de escrita de
+-- authenticated.
 --
 -- Spec: docs/superpowers/specs/2026-10-20-login-todas-as-rotas-design.md (§2, §3, §5 item 3).
 -- Plano: docs/superpowers/plans/2026-10-20-login-todas-as-rotas.md (Task 1).
@@ -24,10 +25,40 @@
 --        Somente Leitura  painel read  estrelas none   admin read   usuarios none
 --      Perfil que ja exista com o mesmo nome NAO e sobrescrito (on conflict do nothing); a
 --      guarda do fim aborta se a matriz final nao for exatamente a de cima.
---   2) Funcoes (todas SECURITY DEFINER, search_path vazio, nomes qualificados; EXECUTE so para
---      authenticated — revogado de public e anon):
---        destaque_minha_profissional() -> integer: "profissionalId" com email = lower(auth.email())
---          e ativo is not false, so se auth.uid() esta ATIVO em destaque_users_app; senao NULL.
+--   1b) Vinculo EXPLICITO usuario -> profissional (fix round 1 do review de seguranca):
+--      destaque_users_app.profissional_id integer null, FK para profissionais_ativos
+--      ("profissionalId") on delete set null, UNICO (indice parcial where not null).
+--      Por que nao o e-mail do JWT: o projeto tem autoconfirm, entao um usuario logado pode
+--      chamar supabase.auth.updateUser({email}) e trocar o proprio e-mail para o de uma colega
+--      SEM conta; com o vinculo derivado de auth.email() ele "viraria" ela. Agora o e-mail e lido
+--      UMA vez, no INSERT da linha em destaque_users_app (feito pela edge function
+--      destaque-auth-admin, com service_role, quando o admin cria/liga a conta) e nunca mais e
+--      re-derivado. Trocar o e-mail do Auth depois nao muda o vinculo.
+--      Trigger BEFORE INSERT destaque_users_app_vincular_profissional (funcao
+--      public.vincular_profissional_usuario_destaque, SECURITY DEFINER, search_path vazio): com
+--      new.profissional_id NULL, preenche com o "profissionalId" cujo email = lower(email do
+--      auth.users de new.id) e ativo is not false. Sem casamento, ou se esse id ja estiver ligado
+--      a outra linha, fica NULL e nao da erro. pg_advisory_xact_lock serializa dois INSERTs
+--      concorrentes (o segundo enxerga o commit do primeiro e cai em NULL em vez de violar o
+--      UNIQUE). profissional_id passado explicitamente e respeitado (o UNIQUE vale). Sem trigger
+--      de UPDATE: religar/desligar e ato manual (SQL do dono) ate existir tela.
+--      Nome sem o prefixo destaque_ de proposito: o canario do kit avisaria (search_path vazio).
+--      Backfill das linhas existentes pelo mesmo criterio (2026-10-20: Augusto -> 593837; a
+--      conta "Augusto teste leitura" nao casa e fica NULL).
+--      Compatibilidade conferida: a edge function destaque-auth-admin so faz INSERT com colunas
+--      explicitas (id, nome, perfil_id, ativo) — tanto no convite quanto ao ligar um auth user
+--      que ja existe (nao ha upsert; se ja for membro, ela recusa) — e UPDATE so de
+--      nome/perfil_id/ativo/updated_at; os SELECTs (edge e src/auth/acesso.ts) listam colunas.
+--      O canario checa tabelas/policies/triggers do kit por NOME (trigger novo nao interfere),
+--      destaque_matriz_valida so olha destaque_perfis.paginas, e o guard anti-lockout continua
+--      constraint trigger deferido (a coluna nova nao entra na regra dele). authenticated segue
+--      so com SELECT em destaque_users_app (a guarda do fim ASSERTA).
+--   2) Funcoes (todas SECURITY DEFINER, `search_path = public, pg_temp` — o formato que o canario
+--      do kit exige —, nomes todos qualificados; EXECUTE so para authenticated, revogado de
+--      public e anon):
+--        destaque_minha_profissional() -> integer: destaque_users_app.profissional_id da linha
+--          de auth.uid(), so se essa linha esta ATIVA e a profissional ligada tem ativo is not
+--          false; senao NULL. NAO usa auth.email().
 --        destaque_estrelas_periodo(p_inicio, p_fim): profissional_id, status, data_hora_cadastro,
 --          data_aprovacao das aprovadas e pendentes com p_inicio <= data_hora_cadastro < p_fim.
 --          Gate destaque_can_read_page('painel'); sem permissao = 0 linhas. Sem nome de cliente.
@@ -35,7 +66,8 @@
 --          motivo_recusa. Permitido com write em `estrelas`, ou read em `estrelas` E o id pedido
 --          = destaque_minha_profissional(); senao 0 linhas. Ordem data_hora_cadastro desc.
 --        destaque_profissionais_sem_conta(): ativas com email nao nulo cujo email nao esta em
---          auth.users ligado a destaque_users_app (ativo ou nao). Gate write em `usuarios`.
+--          auth.users ligado a destaque_users_app (ativo ou nao) E cujo id nao esta em nenhum
+--          destaque_users_app.profissional_id. Gate write em `usuarios`.
 --   3) Policies novas, permissivas, `to authenticated`, predicado em (select ...) (InitPlan):
 --        <tabela>_select_painel em trinks_services, regras_desafio, feriados,
 --          tratamento_fabricante, profissional_fabricante: read em `painel`;
@@ -77,11 +109,11 @@
 -- authenticated le em profissionais_ativos (migracao B, depois do fix do NFS-e), gate em
 -- avaliacao_clientes_do_dia e troca do errcode 22023 (migracao C / Task 6).
 --
--- Aviso do canario do auth-kit: destaque_canario_rls() emite o AVISO (nao falha)
--- `aviso_security_definer_sem_pg_temp_app` para funcoes destaque_* SECURITY DEFINER cujo
--- search_path nao termina em pg_temp. As 4 funcoes destaque_* daqui usam search_path vazio
--- (regra do plano), tudo qualificado — mais restrito que `public, pg_temp`. O aviso e esperado
--- (ensaio de 2026-10-20: canario ok=true, falhas=[], esse unico aviso listando as 4).
+-- Canario do auth-kit: destaque_canario_rls() avisa funcoes destaque_* SECURITY DEFINER cujo
+-- search_path nao termina em pg_temp. Por isso as 4 funcoes destaque_* usam
+-- `public, pg_temp` (corpos todos qualificados, entao o schema no path nao muda a resolucao);
+-- o helper do espelho e a funcao do trigger de vinculo (sem o prefixo) seguem com search_path
+-- vazio.
 --
 -- Transacao e lock: o corpo roda numa transacao (apply_migration manda o arquivo como um lote).
 -- CREATE POLICY / REVOKE pegam lock em tabelas compartilhadas (trinks_services e escrita pelo
@@ -174,6 +206,14 @@ drop function if exists public.destaque_estrelas_periodo(timestamptz, timestampt
 drop function if exists public.destaque_profissionais_sem_conta();
 drop function if exists public.destaque_minha_profissional();
 
+-- 5b) vinculo usuario -> profissional (trigger, funcao, indice e coluna; o drop apaga os
+--     vinculos gravados — exporte antes se o login ja estiver no ar:
+--     select id, profissional_id from public.destaque_users_app where profissional_id is not null)
+drop trigger if exists destaque_users_app_vincular_profissional on public.destaque_users_app;
+drop function if exists public.vincular_profissional_usuario_destaque();
+drop index if exists public.destaque_users_app_profissional_id_uniq;
+alter table public.destaque_users_app drop column if exists profissional_id;
+
 -- 6) perfis. Usuario com perfil Recepcao/Profissional bloqueia o delete (FK): mova-o antes
 --    (ex.: para 'Somente Leitura') pela tela de usuarios. O delete abaixo aborta se houver.
 delete from public.destaque_perfis where nome in ('Recepção', 'Profissional');
@@ -218,29 +258,99 @@ INSERT INTO public.destaque_perfis (nome, descricao, paginas, is_system) VALUES
 ON CONFLICT (nome) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- 1b) Vinculo explicito usuario -> profissional
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.destaque_users_app
+  ADD COLUMN IF NOT EXISTS profissional_id integer
+    REFERENCES public.profissionais_ativos ("profissionalId") ON DELETE SET NULL;
+
+-- tabela pequena: indice comum, sem CONCURRENTLY (que nao roda em transacao)
+CREATE UNIQUE INDEX IF NOT EXISTS destaque_users_app_profissional_id_uniq
+  ON public.destaque_users_app (profissional_id)
+  WHERE profissional_id IS NOT NULL;
+
+COMMENT ON COLUMN public.destaque_users_app.profissional_id IS
+  'Profissional ligada a esta conta (profissionais_ativos."profissionalId"), UNICA. Preenchida no '
+  'INSERT pelo trigger destaque_users_app_vincular_profissional (email do auth.users no ato da '
+  'criacao da conta pelo admin) e nunca re-derivada: trocar o e-mail do Auth nao muda o vinculo. '
+  'Fonte de destaque_minha_profissional(). Migracao 20261021100000.';
+
+CREATE OR REPLACE FUNCTION public.vincular_profissional_usuario_destaque()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+declare
+  v_id integer;
+begin
+  if new.profissional_id is not null then
+    return new;
+  end if;
+
+  -- dois INSERTs concorrentes para o mesmo e-mail: o segundo espera o commit do primeiro e,
+  -- como cada comando abaixo tira snapshot novo (read committed), cai em NULL em vez de
+  -- violar o indice UNIQUE
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('destaque_users_app_vinculo'));
+
+  select pa."profissionalId" into v_id
+    from auth.users au
+    join public.profissionais_ativos pa on pa.email = pg_catalog.lower(au.email)
+   where au.id = new.id
+     and pa.ativo is not false
+     and not exists (select 1 from public.destaque_users_app o
+                      where o.profissional_id = pa."profissionalId")
+   limit 1;
+
+  new.profissional_id := v_id;  -- sem casamento ou ja ligado: NULL, sem erro
+  return new;
+end
+$$;
+
+COMMENT ON FUNCTION public.vincular_profissional_usuario_destaque() IS
+  'BEFORE INSERT em destaque_users_app: com profissional_id NULL, liga a conta a profissional ativa '
+  'cujo email = lower(auth.users.email) de new.id, se ela ainda nao estiver ligada; senao NULL. '
+  'Migracao 20261021100000.';
+
+-- funcao de trigger: o EXECUTE so e checado na criacao do trigger; ninguem chama direto
+REVOKE ALL ON FUNCTION public.vincular_profissional_usuario_destaque() FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE TRIGGER destaque_users_app_vincular_profissional
+  BEFORE INSERT ON public.destaque_users_app
+  FOR EACH ROW
+  EXECUTE FUNCTION public.vincular_profissional_usuario_destaque();
+
+-- backfill das contas existentes, mesmo criterio do trigger (dispara o guard anti-lockout
+-- deferido no commit; nenhum admin muda de estado)
+UPDATE public.destaque_users_app u
+   SET profissional_id = pa."profissionalId"
+  FROM auth.users au, public.profissionais_ativos pa
+ WHERE au.id = u.id
+   AND pa.email = lower(au.email)
+   AND pa.ativo IS NOT false
+   AND u.profissional_id IS NULL
+   AND NOT EXISTS (SELECT 1 FROM public.destaque_users_app o
+                    WHERE o.profissional_id = pa."profissionalId");
+
+-- ---------------------------------------------------------------------------
 -- 2) Funcoes
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.destaque_minha_profissional()
 RETURNS integer
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
-  select pa."profissionalId"
-  from public.profissionais_ativos pa
-  where pa.email = pg_catalog.lower(auth.email())
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  select u.profissional_id
+  from public.destaque_users_app u
+  join public.profissionais_ativos pa on pa."profissionalId" = u.profissional_id
+  where u.id = auth.uid()
+    and u.ativo
     and pa.ativo is not false
-    and exists (
-      select 1 from public.destaque_users_app u
-      where u.id = auth.uid() and u.ativo
-    )
 $$;
 
 COMMENT ON FUNCTION public.destaque_minha_profissional() IS
-  'Login -> profissional: "profissionalId" de profissionais_ativos com email = lower(auth.email()) e '
-  'ativo is not false, so se auth.uid() esta ativo em destaque_users_app; senao NULL. '
-  'auth.email() vem do JWT (claim email). Migracao 20261021100000.';
+  'Login -> profissional: destaque_users_app.profissional_id da conta auth.uid(), so com a conta '
+  'ativa e a profissional com ativo is not false; senao NULL. NAO usa auth.email() (o e-mail do '
+  'Auth e trocavel pelo proprio usuario com autoconfirm). Migracao 20261021100000.';
 
 CREATE OR REPLACE FUNCTION public.destaque_estrelas_periodo(p_inicio timestamptz, p_fim timestamptz)
 RETURNS TABLE (profissional_id integer, status text, data_hora_cadastro timestamptz, data_aprovacao timestamptz)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   select a.profissional_id, a.status, a.data_hora_cadastro, a.data_aprovacao
   from public.avaliacoes_cadastradas a
   where (select public.destaque_can_read_page('painel'))
@@ -259,7 +369,7 @@ CREATE OR REPLACE FUNCTION public.destaque_minhas_avaliacoes(p_profissional_id i
 RETURNS TABLE (id uuid, nome_profissional text, nome_cliente text, nome_cliente_trinks text,
                status text, data_hora_cadastro timestamptz, data_aprovacao timestamptz,
                motivo_recusa text)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   select a.id, a.nome_profissional, a.nome_cliente, a.nome_cliente_trinks,
          a.status, a.data_hora_cadastro, a.data_aprovacao, a.motivo_recusa
   from public.avaliacoes_cadastradas a
@@ -281,7 +391,7 @@ COMMENT ON FUNCTION public.destaque_minhas_avaliacoes(integer) IS
 
 CREATE OR REPLACE FUNCTION public.destaque_profissionais_sem_conta()
 RETURNS TABLE ("profissionalId" integer, nome_profissional text, apelido text, categoria text, email text)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   select pa."profissionalId", pa.nome_profissional, pa.apelido, pa.categoria, pa.email
   from public.profissionais_ativos pa
   where (select public.destaque_can_write_page('usuarios'))
@@ -293,12 +403,17 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
       join public.destaque_users_app u on u.id = au.id
       where pg_catalog.lower(au.email) = pa.email
     )
+    and not exists (
+      select 1 from public.destaque_users_app l
+      where l.profissional_id = pa."profissionalId"
+    )
   order by pa.nome_profissional
 $$;
 
 COMMENT ON FUNCTION public.destaque_profissionais_sem_conta() IS
   'Tela de usuarios ("Criar contas das profissionais"): ativas com email cujo email nao esta em '
-  'auth.users ligado a destaque_users_app (ativo ou nao). Gate write em usuarios; senao 0 linhas. '
+  'auth.users ligado a destaque_users_app (ativo ou nao) e cujo id nao esta ligado a nenhuma conta '
+  '(destaque_users_app.profissional_id). Gate write em usuarios; senao 0 linhas. '
   'O email vem do webhook Trinks SEM autenticacao: a lista e conferida pelo dono antes de criar. '
   'Migracao 20261021100000.';
 
@@ -535,6 +650,34 @@ BEGIN
                             'Permitir leitura pública de avaliações',
                             'Permitir inserção pública com status pendente')) <> 7 THEN
     v_falhas := v_falhas || 'alguma policy publica antiga sumiu'::text;
+  END IF;
+
+  -- vinculo explicito
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+                  WHERE attrelid = 'public.destaque_users_app'::regclass
+                    AND attname = 'profissional_id' AND NOT attisdropped) THEN
+    v_falhas := v_falhas || 'coluna destaque_users_app.profissional_id ausente'::text;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
+                  WHERE tgrelid = 'public.destaque_users_app'::regclass
+                    AND tgname = 'destaque_users_app_vincular_profissional'
+                    AND tgenabled IN ('O', 'A')
+                    AND tgfoid = 'public.vincular_profissional_usuario_destaque()'::regprocedure) THEN
+    v_falhas := v_falhas || 'trigger destaque_users_app_vincular_profissional ausente/desligado'::text;
+  END IF;
+  IF has_table_privilege('authenticated', 'public.destaque_users_app', 'insert')
+     OR has_table_privilege('authenticated', 'public.destaque_users_app', 'update')
+     OR has_column_privilege('authenticated', 'public.destaque_users_app', 'profissional_id', 'update') THEN
+    v_falhas := v_falhas || 'authenticated consegue INSERT/UPDATE em destaque_users_app'::text;
+  END IF;
+  -- backfill completo: nenhuma conta sem vinculo cujo e-mail casa com profissional ativa livre
+  IF EXISTS (SELECT 1 FROM public.destaque_users_app u
+               JOIN auth.users au ON au.id = u.id
+               JOIN public.profissionais_ativos pa ON pa.email = lower(au.email)
+              WHERE u.profissional_id IS NULL AND pa.ativo IS NOT false
+                AND NOT EXISTS (SELECT 1 FROM public.destaque_users_app o
+                                 WHERE o.profissional_id = pa."profissionalId")) THEN
+    v_falhas := v_falhas || 'backfill de destaque_users_app.profissional_id incompleto'::text;
   END IF;
 
   IF array_length(v_falhas, 1) > 0 THEN

@@ -1,28 +1,37 @@
 -- Verificacao de 20261021100000_login_fase_a.sql (login em todas as rotas, migracao A).
 -- Roda INTEIRO em begin ... rollback (nada persiste), como postgres (MCP execute_sql), DEPOIS
 -- de aplicar a migracao. Sem ela, o passo 0 aborta ("funcoes da migracao A inexistentes").
--- O MCP recusa lotes grandes (~16 KB): mande o arquivo sem as linhas de comentario.
+-- O MCP recusa lotes grandes/sensiveis: mande o arquivo sem as linhas de comentario.
 --
 -- Fases: A = estado real pos-migracao (policies publicas antigas ainda valem);
 -- pos_C_simulado = DROP, so nesta transacao, das policies publicas de SELECT de trinks_services,
 -- regras_desafio, avaliacoes_cadastradas e do INSERT publico de avaliacoes (o que a migracao C
 -- fara): prova o recorte das policies novas por papel. Essa fase pega ACCESS EXCLUSIVE nessas
 -- tabelas ate o rollback (~1 s; lock_timeout 3s).
--- Papeis: anon; prof_ligada (perfil Profissional, email da Aline 885975); prof_sem_vinculo
--- (Profissional, email de fixture); recepcao; admin; inativo (perfil Admin, users_app.ativo =
--- false, email de OUTRA profissional ativa: o vinculo tambem tem de cair). Claims via
--- set_config('request.jwt.claims') antes de `set local role`. auth.users dispara
+-- Papeis (ordem das listas de esperado):
+--   1 anon
+--   2 prof_ligada        perfil Profissional; email do Auth = email da Aline (885975); o vinculo
+--                        vem do TRIGGER de destaque_users_app (verificacao 00a)
+--   3 prof_sem_vinculo   Profissional, email de fixture (trigger deixa NULL, 00b)
+--   4 recepcao   5 admin
+--   6 inativo            perfil Admin, users_app.ativo = false, ligado (pelo trigger) a OUTRA
+--                        profissional ativa: o vinculo tem de cair por estar desativado
+--   7 spoof              Profissional ativo SEM vinculo, mas com claim email = email da Aline
+--                        (simula updateUser({email}) com autoconfirm): nao pode virar a Aline
+--   8 ligada_email_trocado  a MESMA conta da prof_ligada com claim email diferente: continua 885975
+-- Fixtures so do trigger: "ocupante" ligada explicitamente a uma 3a profissional X e
+-- "duplicado" com o email de X no Auth: o trigger deixa NULL (00c, id ja ligado).
+-- Claims via set_config('request.jwt.claims') antes de `set local role`. auth.users dispara
 -- handle_new_user (public.profiles): some no rollback.
--- Esperados: "a|b|c|d|e|f" = anon|prof_ligada|prof_sem_vinculo|recepcao|admin|inativo (valor
--- unico = todos); 1a lista = fase A, 2a = pos_C (ausente = igual). Tokens (contagem direta como
--- postgres): N estrelas aprovadas+pendentes do mes (Manaus), T linhas de avaliacoes, L linhas da
--- Aline, A/O "linhas=.. motivos=.." da Aline/da outra profissional, Z "linhas=0 motivos=0",
--- S profissionais sem conta. Na fase A, se o esperado pos_C difere, a linha ganha
--- nota "esperado_apos_C: <valor>". INSERTs de teste (nome_cliente 'LoginFx ...') se desfazem
--- num sub-bloco (errcode LFA01), entao as contagens nao mudam entre papeis.
+-- Esperados: "a|b|...|h" na ordem dos papeis (valor unico = todos); 1a lista = fase A,
+-- 2a = pos_C (ausente = igual). Tokens (contagem direta como postgres): N estrelas
+-- aprovadas+pendentes do mes (Manaus), T linhas de avaliacoes, L linhas da Aline, A/O
+-- "linhas=.. motivos=.." da Aline/da outra profissional, Z "linhas=0 motivos=0", S profissionais
+-- sem conta. Na fase A, se o esperado pos_C difere, a linha ganha nota "esperado_apos_C: <valor>".
+-- INSERTs/UPDATEs de teste se desfazem num sub-bloco (errcode LFA01): contagens nao mudam.
 -- Saida: _resultado (fase, papel, verificacao, esperado, obtido, ok, nota); aborta se ok=false.
 -- Opcional: set_config('lfa.so', '<regex>', true) antes do passo 3 roda so as verificacoes que
--- casam (usado no ensaio, que precisou dividir o lote).
+-- casam (usado no ensaio dividido).
 
 begin;
 
@@ -37,7 +46,8 @@ begin
      or to_regprocedure('public.destaque_estrelas_periodo(timestamptz, timestamptz)') is null
      or to_regprocedure('public.destaque_minhas_avaliacoes(integer)') is null
      or to_regprocedure('public.destaque_profissionais_sem_conta()') is null
-     or to_regprocedure('public.avaliacao_espelho_tem_cliente(integer, date, bigint)') is null then
+     or to_regprocedure('public.avaliacao_espelho_tem_cliente(integer, date, bigint)') is null
+     or to_regprocedure('public.vincular_profissional_usuario_destaque()') is null then
     raise exception 'funcoes da migracao A inexistentes: aplique 20261021100000_login_fase_a.sql antes';
   end if;
   if current_user <> 'postgres'
@@ -47,8 +57,9 @@ begin
      or not exists (select 1 from public.profissionais_ativos
                      where "profissionalId" = 885975 and ativo is not false and email is not null)
      or exists (select 1 from auth.users a join public.profissionais_ativos p on p.email = lower(a.email)
-                 where p."profissionalId" = 885975) then
-    raise exception 'pre-condicao: postgres, 4 perfis, uuids de fixture livres, Aline ativa com email e sem usuario de Auth';
+                 where p."profissionalId" = 885975)
+     or exists (select 1 from public.destaque_users_app where profissional_id = 885975) then
+    raise exception 'pre-condicao: postgres, 4 perfis, uuids de fixture livres, Aline ativa com email, sem usuario de Auth e sem vinculo';
   end if;
 end $$;
 
@@ -61,32 +72,58 @@ with e as (  -- atendimento real da Aline no espelho, na janela do trigger (hoje
      and service_date ~ '^\d\d/\d\d/\d{4}$'
      and to_date(service_date, 'DD/MM/YYYY') >= (now() at time zone 'America/Manaus')::date - 10
      and to_date(service_date, 'DD/MM/YYYY') <= (now() at time zone 'America/Manaus')::date
-   order by 1 desc, 2 limit 1)
+   order by 1 desc, 2 limit 1),
+livres as (  -- ativas com email, sem usuario de Auth e sem vinculo (para inativo e X)
+  select "profissionalId" id, email from public.profissionais_ativos p
+   where ativo is not false and email is not null and "profissionalId" <> 885975
+     and not exists (select 1 from auth.users a where lower(a.email) = p.email)
+     and not exists (select 1 from public.destaque_users_app u where u.profissional_id = p."profissionalId")
+   order by 1 limit 2)
 select (select email from public.profissionais_ativos where "profissionalId" = 885975) aline,
-       (select email from public.profissionais_ativos p
-         where ativo is not false and email is not null and "profissionalId" <> 885975
-           and not exists (select 1 from auth.users a where lower(a.email) = p.email)
-         order by "profissionalId" limit 1) inativo,
+       (select id from livres order by id limit 1) inativo_id,
+       (select email from livres order by id limit 1) inativo_email,
+       (select id from livres order by id desc limit 1) x_id,
+       (select email from livres order by id desc limit 1) x_email,
        (select profissional_id from public.avaliacoes_cadastradas where profissional_id <> 885975
          group by 1 order by count(*) desc, 1 limit 1) outra,
+       (select count(*) from public.destaque_profissionais_sem_conta()) s_real_rpc_postgres,
+       (select count(*) from public.profissionais_ativos p
+         where ativo is not false and email is not null
+           and not exists (select 1 from auth.users au join public.destaque_users_app u on u.id = au.id
+                            where lower(au.email) = p.email)
+           and not exists (select 1 from public.destaque_users_app l where l.profissional_id = p."profissionalId")) s_real,
        date_trunc('month', now() at time zone 'America/Manaus') at time zone 'America/Manaus' ini,
        (date_trunc('month', now() at time zone 'America/Manaus') + interval '1 month') at time zone 'America/Manaus' fim,
        (select dia from e) dia, (select cli from e) cli;
 
 create temp table _p on commit drop as
 select * from (values
-  (1, 'anon',             null::uuid, null::text, null::text, null::boolean),
-  (2, 'prof_ligada',      '00000000-0000-4000-8000-0000106a0001', (select aline from _fx), 'Profissional', true),
-  (3, 'prof_sem_vinculo', '00000000-0000-4000-8000-0000106a0002', 'fx-login-semvinculo@invalid.local', 'Profissional', true),
-  (4, 'recepcao',         '00000000-0000-4000-8000-0000106a0003', 'fx-login-recepcao@invalid.local', 'Recepção', true),
-  (5, 'admin',            '00000000-0000-4000-8000-0000106a0004', 'fx-login-admin@invalid.local', 'Admin', true),
-  (6, 'inativo',          '00000000-0000-4000-8000-0000106a0005', (select inativo from _fx), 'Admin', false)
-) x(o, papel, uid, email, perfil, ativo);
+  (1, 'anon',                 null::uuid, null::text, null::text, null::text, null::boolean),
+  (2, 'prof_ligada',          '00000000-0000-4000-8000-0000106a0001', (select aline from _fx), (select aline from _fx), 'Profissional', true),
+  (3, 'prof_sem_vinculo',     '00000000-0000-4000-8000-0000106a0002', 'fx-login-semvinculo@invalid.local', 'fx-login-semvinculo@invalid.local', 'Profissional', true),
+  (4, 'recepcao',             '00000000-0000-4000-8000-0000106a0003', 'fx-login-recepcao@invalid.local', 'fx-login-recepcao@invalid.local', 'Recepção', true),
+  (5, 'admin',                '00000000-0000-4000-8000-0000106a0004', 'fx-login-admin@invalid.local', 'fx-login-admin@invalid.local', 'Admin', true),
+  (6, 'inativo',              '00000000-0000-4000-8000-0000106a0005', (select inativo_email from _fx), (select inativo_email from _fx), 'Admin', false),
+  (7, 'spoof',                '00000000-0000-4000-8000-0000106a0006', 'fx-login-spoof@invalid.local', (select aline from _fx), 'Profissional', true),
+  (8, 'ligada_email_trocado', '00000000-0000-4000-8000-0000106a0001', null, 'fx-login-outro@invalid.local', null, null)
+) x(o, papel, uid, auth_email, claim_email, perfil, ativo);
 
 insert into auth.users (id, aud, role, email)
-select uid, 'authenticated', 'authenticated', email from _p where uid is not null;
+select uid, 'authenticated', 'authenticated', auth_email from _p where auth_email is not null
+union all select '00000000-0000-4000-8000-0000106a0007', 'authenticated', 'authenticated', 'fx-login-ocupante@invalid.local'
+union all select '00000000-0000-4000-8000-0000106a0008', 'authenticated', 'authenticated', (select x_email from _fx);
+
+-- vinculos pelo TRIGGER (profissional_id omitido), exceto o ocupante (explicito, ANTES do duplicado)
 insert into public.destaque_users_app (id, nome, perfil_id, ativo)
-select x.uid, 'LoginFx ' || x.papel, p.id, x.ativo from _p x join public.destaque_perfis p on p.nome = x.perfil;
+select x.uid, 'LoginFx ' || x.papel, p.id, x.ativo
+  from _p x join public.destaque_perfis p on p.nome = x.perfil;
+insert into public.destaque_users_app (id, nome, perfil_id, ativo, profissional_id)
+select '00000000-0000-4000-8000-0000106a0007', 'LoginFx ocupante', id, true, (select x_id from _fx)
+  from public.destaque_perfis where nome = 'Somente Leitura';
+insert into public.destaque_users_app (id, nome, perfil_id, ativo)
+select '00000000-0000-4000-8000-0000106a0008', 'LoginFx duplicado', id, true
+  from public.destaque_perfis where nome = 'Somente Leitura';
+
 -- recusa da Aline com motivo (postgres nao passa pelo trigger de INSERT)
 insert into public.avaliacoes_cadastradas (profissional_id, nome_profissional, nome_cliente, status, motivo_recusa)
 values (885975, 'Aline', 'LoginFx motivo', 'rejeitada', 'LoginFx: motivo de teste');
@@ -103,20 +140,42 @@ select (select count(*) from public.avaliacoes_cadastradas
        (select count(*) from public.profissionais_ativos p
          where ativo is not false and email is not null
            and not exists (select 1 from auth.users au join public.destaque_users_app u on u.id = au.id
-                            where lower(au.email) = p.email))::text s
+                            where lower(au.email) = p.email)
+           and not exists (select 1 from public.destaque_users_app l where l.profissional_id = p."profissionalId"))::text s
   from _fx f;
 
 do $$
 begin
-  if exists (select 1 from _fx where aline is null or inativo is null or outra is null or dia is null)
-     or exists (select 1 from _tok where n = '0' or a like '% motivos=0' or o like 'linhas=0 %' or s::int < 19) then
+  if exists (select 1 from _fx where aline is null or inativo_id is null or x_id is null or inativo_id = x_id
+                                   or outra is null or dia is null or s_real < 19 or s_real_rpc_postgres <> 0)
+     or exists (select 1 from _tok where n = '0' or a like '% motivos=0' or o like 'linhas=0 %' or s = '0') then
     raise exception 'fixtures nao provam nada: % %', (select row_to_json(f) from _fx f), (select row_to_json(t) from _tok t);
   end if;
 end $$;
 
--- 2. Checagem: r(verificacao, sql, esperado A, esperado pos_C, desfaz)
+-- 2. Checagem
 create temp table _r (fase text, o int, papel text, verificacao text, esperado text, obtido text, nota text)
   on commit drop;
+
+-- trigger de vinculo e backfill (postgres)
+insert into _r
+select 'A', 0, 'postgres', v.k, v.esp, v.obt, null from (values
+  ('00a trigger: email casa -> id', '885975',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a0001')),
+  ('00b trigger: sem casamento -> NULL', 'NULL',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a0002')),
+  ('00c trigger: id ja ligado -> NULL', 'NULL',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a0008')),
+  ('00d trigger: liga mesmo com a conta inativa', 'ligado',
+   (select case when profissional_id = f.inativo_id then 'ligado' else coalesce(profissional_id::text, 'NULL') end
+      from public.destaque_users_app, _fx f where id = '00000000-0000-4000-8000-0000106a0005')),
+  ('00e backfill: contas reais com email casavel e sem vinculo', '0',
+   (select count(*)::text from public.destaque_users_app u join auth.users au on au.id = u.id
+      join public.profissionais_ativos pa on pa.email = lower(au.email)
+     where u.nome not like 'LoginFx %' and u.profissional_id is null and pa.ativo is not false
+       and not exists (select 1 from public.destaque_users_app o where o.profissional_id = pa."profissionalId")))
+) v(k, esp, obt);
+
 grant select on _fx, _p, _tok to anon, authenticated;
 grant insert, select on _r to anon, authenticated;
 
@@ -128,6 +187,7 @@ create function pg_temp.esp(p_lista text) returns text language sql as $$
                               then split_part(p_lista, '|', current_setting('lfa.o')::int) else p_lista end v) x
 $$;
 
+-- r(verificacao, sql, esperado A, esperado pos_C, desfaz)
 create function pg_temp.r(p_k text, p_q text, p_a text, p_c text default null, p_desfaz boolean default false)
 returns void language plpgsql as $f$
 declare
@@ -153,32 +213,37 @@ declare
 begin
   select * into x from pg_temp._fx;
   perform pg_temp.r('01 minha_profissional()',
-    $q$select coalesce(public.destaque_minha_profissional()::text, 'NULL')$q$, '42501|885975|NULL|NULL|NULL|NULL');
+    $q$select coalesce(public.destaque_minha_profissional()::text, 'NULL')$q$,
+    '42501|885975|NULL|NULL|NULL|NULL|NULL|885975');
   perform pg_temp.r('02 estrelas_periodo(mes atual) linhas', format(
-    $q$select count(*)::text from public.destaque_estrelas_periodo(%L, %L)$q$, x.ini, x.fim), '42501|N|N|N|N|0');
+    $q$select count(*)::text from public.destaque_estrelas_periodo(%L, %L)$q$, x.ini, x.fim), '42501|N|N|N|N|0|N|N');
   perform pg_temp.r('03 minhas_avaliacoes(885975)',
     $q$select format('linhas=%s motivos=%s', count(*), count(motivo_recusa)) from public.destaque_minhas_avaliacoes(885975)$q$,
-    '42501|A|Z|A|A|Z');
+    '42501|A|Z|A|A|Z|Z|A');
   perform pg_temp.r('04 minhas_avaliacoes(outra)', format(
     $q$select format('linhas=%%s motivos=%%s', count(*), count(motivo_recusa)) from public.destaque_minhas_avaliacoes(%s)$q$, x.outra),
-    '42501|Z|Z|O|O|Z');
+    '42501|Z|Z|O|O|Z|Z|Z');
   perform pg_temp.r('05 profissionais_sem_conta() linhas',
-    $q$select count(*)::text from public.destaque_profissionais_sem_conta()$q$, '42501|0|0|0|S|0');
+    $q$select count(*)::text from public.destaque_profissionais_sem_conta()$q$, '42501|0|0|0|S|0|0|0');
   perform pg_temp.r('06 select trinks_services',
-    $q$select case when exists (select 1 from public.trinks_services) then '>0' else '0' end$q$, '>0', '0|>0|>0|>0|>0|0');
+    $q$select case when exists (select 1 from public.trinks_services) then '>0' else '0' end$q$,
+    '>0', '0|>0|>0|>0|>0|0|>0|>0');
   perform pg_temp.r('07 select regras_desafio',
-    $q$select case when exists (select 1 from public.regras_desafio) then '>0' else '0' end$q$, '>0', '0|>0|>0|>0|>0|0');
+    $q$select case when exists (select 1 from public.regras_desafio) then '>0' else '0' end$q$,
+    '>0', '0|>0|>0|>0|>0|0|>0|>0');
   perform pg_temp.r('08 select avaliacoes_cadastradas linhas',
-    $q$select count(id)::text from public.avaliacoes_cadastradas$q$, 'T', '0|L|0|T|T|0');
+    $q$select count(id)::text from public.avaliacoes_cadastradas$q$, 'T', '0|L|0|T|T|0|0|L');
   -- INSERT como o modal; o RETURNING mostra se o helper do trigger manteve o id confirmado pelo espelho
   perform pg_temp.r('09 insert estrela propria (885975, id do espelho)', ins || format(
     $q$values (885975, 'Aline', 'LoginFx propria', 'LoginFx Trinks', %s, %L, 'lista', 'pendente', now())
        returning case cliente_trinks_id when %s then 'ok id=retido' else 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL') end$q$,
-    x.cli, x.dia, x.cli), 'ok id=retido', '42501|ok id=retido|42501|ok id=retido|ok id=retido|42501', true);
+    x.cli, x.dia, x.cli), 'ok id=retido',
+    '42501|ok id=retido|42501|ok id=retido|ok id=retido|42501|42501|ok id=retido', true);
   perform pg_temp.r('10 insert estrela de outra profissional', ins || format(
     $q$values (%s, 'LoginFx outra', 'LoginFx outra', 'LoginFx Trinks', null, %L, 'digitado', 'pendente', now())
        returning 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL')$q$,
-    x.outra, (now() at time zone 'America/Manaus')::date), 'ok id=NULL', '42501|42501|42501|ok id=NULL|ok id=NULL|42501', true);
+    x.outra, (now() at time zone 'America/Manaus')::date), 'ok id=NULL',
+    '42501|42501|42501|ok id=NULL|ok id=NULL|42501|42501|42501', true);
   perform pg_temp.r('11 espelho_tem_cliente(real)/(falso)', format(
     $q$select public.avaliacao_espelho_tem_cliente(885975, %1$L, %2$s) || '/' || public.avaliacao_espelho_tem_cliente(885975, %1$L, -1)$q$,
     x.dia, x.cli), 'true/false');
@@ -188,6 +253,9 @@ begin
   perform pg_temp.r('13 delete avaliacoes_cadastradas',
     $q$with d as (delete from public.avaliacoes_cadastradas where nome_cliente = 'LoginFx motivo' returning 1)
        select 'ok:' || count(*) from d$q$, '42501', null, true);
+  perform pg_temp.r('14 update destaque_users_app.profissional_id (auto-vinculo)',
+    $q$with u as (update public.destaque_users_app set profissional_id = 885975 where id = auth.uid() returning 1)
+       select 'ok:' || count(*) from u$q$, '42501', null, true);
 end $f$;
 
 -- 3. Rodadas por papel: fase A, depois pos_C_simulado
@@ -204,7 +272,7 @@ begin
     end if;
     for x in select * from _p order by o loop
       perform set_config('request.jwt.claims', case when x.uid is null then '{"role":"anon"}'
-        else json_build_object('sub', x.uid, 'email', x.email, 'role', 'authenticated')::text end, true);
+        else json_build_object('sub', x.uid, 'email', x.claim_email, 'role', 'authenticated')::text end, true);
       perform set_config('lfa.fase', f, true), set_config('lfa.o', x.o::text, true), set_config('lfa.papel', x.papel, true);
       execute format('set local role %I', case when x.uid is null then 'anon' else 'authenticated' end);
       perform pg_temp.checar();
