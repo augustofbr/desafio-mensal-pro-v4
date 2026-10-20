@@ -107,8 +107,8 @@ export function mensagemDecisaoParcial(
 /**
  * Lancado por `decidir` quando o UPDATE gravou ALGUMAS das linhas (nao todas, nem
  * nenhuma). Diferente de erro de banco/rede: parte do lote ja foi gravada, entao
- * repetir com os mesmos ids so erra de novo — quem captura fecha o dialogo, tira os
- * `gravadas` da selecao e avisa as contagens.
+ * repetir com os mesmos ids so erra de novo — quem captura fecha o dialogo, tira TODOS os
+ * ids do lote da selecao (nenhum segue pendente) e avisa as contagens.
  */
 export class DecisaoParcialError extends Error {
   constructor(
