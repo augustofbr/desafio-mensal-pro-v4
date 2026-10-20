@@ -178,6 +178,9 @@ edge function no load da pagina.**
     - `ativo`: Active flag (BOOLEAN, default true)
     - `dia_aniversario`: Birthday day 1-31 (SMALLINT, nullable)
     - `mes_aniversario`: Birthday month 1-12 (SMALLINT, nullable) - birth year is NOT stored, for privacy
+    - `email`: TEXT, nullable, UNICO (indice parcial em `lower(email)`), CHECK normalizado (`lower(btrim)`) e so ASCII imprimivel com um `@`. Sera a chave do vinculo login -> profissional. Preenchido pelo webhook Trinks (eventos 5/6, campo `Email`; abrir e fechar o cadastro no Trinks dispara o evento 6) **so quando NULL**: divergente ou ja de outra profissional vira alerta em `automation_logs`, nunca sobrescrita. `GET /v1/profissionais` NAO traz e-mail
+    - `trinks_id_profissional`: BIGINT, nullable, UNICO. Id na REDE Trinks (espaco P) = `IdDoProfissional` do webhook = `idProfissional` da API = `id_pessoa` de `trinks_profissional_id_map`. NAO e `IdPessoaDoProfissional`. A PK `profissionalId` e o espaco E. Backfill do mapa + webhook (so quando NULL, fora de quarentena)
+    - As duas colunas: migracao `20261020120000_profissionais_ativos_email_id_rede.sql` (rollback autossuficiente no cabecalho); `anon` nao le nenhuma
     - `created_at`: Timestamp
     - **IMPORTANT**: Professional category comes from THIS table, NOT from trinks_services.category
     - **IMPORTANT**: Birthdays live HERE. The legacy `aniversarios` table was dropped (see below)
@@ -526,7 +529,7 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
 | `regras_desafio`, `feriados`, `tratamento_fabricante`, `profissional_fabricante` | publica (`anon`) — o dashboard le sem sessao | `<tabela>_write_admin`: `for all to authenticated using ((select public.destaque_can_write_page('admin')))` |
 | `avaliacoes_cadastradas` | publica | INSERT publico com `status='pendente'` (por design); UPDATE so com `destaque_can_write_page('admin')` |
 | `trinks_services` | publica | fechada para `anon` (escrita revogada) |
-| `profissionais_ativos` | `anon`: so as colunas `profissionalId`, `nome_profissional`, `categoria`, `apelido`, `ativo`, `dia_aniversario`, `mes_aniversario`, `created_at`, `updated_at` (privilegio de coluna, migracao `20261019160000_profissionais_ativos_colunas_anon.sql`); cpf, telefone, documento, cnpj, endereco e dados fiscais NAO. `select('*')` como anon da erro: liste colunas. `authenticated` ainda le tudo (pendencia do login) | fechada para `anon` (todos os grants de escrita revogados); NFS-e escreve via `service_role` |
+| `profissionais_ativos` | `anon`: so as colunas `profissionalId`, `nome_profissional`, `categoria`, `apelido`, `ativo`, `dia_aniversario`, `mes_aniversario`, `created_at`, `updated_at` (privilegio de coluna, migracao `20261019160000_profissionais_ativos_colunas_anon.sql`); cpf, telefone, documento, cnpj, endereco e dados fiscais NAO. `select('*')` como anon da erro: liste colunas. `email` e `trinks_id_profissional` tambem NAO. `authenticated` ainda le tudo, inclusive `email` (pendencia do login) | fechada para `anon` (todos os grants de escrita revogados); NFS-e escreve via `service_role` |
 | `automation_logs` | nenhuma (interna) | so `service_role`/`postgres` (n8n) |
 
 Ao criar tabela nova: `enable` + `force row level security`, `revoke all ... from anon`, e
