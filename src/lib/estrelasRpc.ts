@@ -19,8 +19,36 @@ export interface LinhaEstrelaPeriodo {
  */
 export const LIMITE_LINHAS_RPC = 1000;
 
-export const ERRO_PERIODO_LONGO =
-  "Período longo demais para carregar as estrelas. Escolha um intervalo menor.";
+export const ERRO_PERIODO_LONGO = "Há estrelas demais para carregar neste período.";
+
+/**
+ * Erro do teto de linhas. Tipo próprio para a tela distinguir "período longo
+ * demais" das demais falhas sem comparar texto.
+ */
+export class PeriodoLongoError extends Error {
+  readonly codigo = "periodo_longo" as const;
+  constructor() {
+    super(ERRO_PERIODO_LONGO);
+    this.name = "PeriodoLongoError";
+  }
+}
+
+/** Tipo da falha de leitura das estrelas: o teto de linhas ou qualquer outra. */
+export type TipoErroEstrelas = "periodo_longo" | "generico";
+
+export function tipoDoErroEstrelas(erro: unknown): TipoErroEstrelas {
+  return erro instanceof PeriodoLongoError ? "periodo_longo" : "generico";
+}
+
+/** Aviso da home quando as estrelas não carregaram (a pontuação aparece sem elas). */
+export const AVISO_ESTRELAS_PERIODO_LONGO =
+  "O período escolhido é longo demais para carregar as estrelas; a pontuação está sem elas. Escolha um intervalo menor.";
+export const AVISO_ESTRELAS_GENERICO =
+  "Não foi possível carregar as estrelas; a pontuação pode estar incompleta. Recarregue a página.";
+
+export function avisoDoErroEstrelas(tipo: TipoErroEstrelas): string {
+  return tipo === "periodo_longo" ? AVISO_ESTRELAS_PERIODO_LONGO : AVISO_ESTRELAS_GENERICO;
+}
 
 /**
  * Valida o retorno cru da RPC. `null` (sem linhas) vira lista vazia. Lança (e o
@@ -34,7 +62,7 @@ export function linhasDaRpcEstrelas(bruto: unknown): LinhaEstrelaPeriodo[] {
     throw new Error("Resposta inesperada de destaque_estrelas_periodo");
   }
   if (bruto.length >= LIMITE_LINHAS_RPC) {
-    throw new Error(ERRO_PERIODO_LONGO);
+    throw new PeriodoLongoError();
   }
   for (const l of bruto) {
     if (

@@ -117,8 +117,11 @@ edge function no load da pagina.**
     nao mais pela tabela; guarda so as `aprovada` com `data_aprovacao`. A RPC devolve aprovadas e
     pendentes do periodo [inicio, fim) por `data_hora_cadastro` (Manaus). Sem permissao ela devolve
     0 linhas SEM erro (o `RequirePage` barra antes). Resposta com 1000 linhas ou mais (teto do
-    PostgREST) conta como falha ("Periodo longo demais...") e linha fora do formato tambem: viram
-    `error`, nunca "0 estrelas" (`src/lib/estrelasRpc.ts`)
+    PostgREST, `PeriodoLongoError`) conta como falha e linha fora do formato tambem: viram `error`
+    (com `errorKind` `periodo_longo` | `generico` e `errorMessage`), nunca "0 estrelas"
+    (`src/lib/estrelasRpc.ts`). Em QUALQUER filtro a home (`Index`) mostra um aviso acima do
+    `DataRankings` ("... a pontuacao esta sem elas" no teto; "... pode estar incompleta. Recarregue
+    a pagina." nos demais), alem do aviso proprio do `BonusEstrelas`
   - Returns stars count per professional per category
   - Estrela de `ativo === false` nao entra em mapa nenhum (`agruparEstrelasPorCategoria` em
     `src/lib/estrelasPorCategoria.ts`, ver "Inativos fora do ranking")

@@ -9,7 +9,12 @@ import {
   estrelasVazias,
   type StarsByCategory,
 } from "@/lib/estrelasPorCategoria";
-import { aprovadasDoPeriodo, linhasDaRpcEstrelas } from "@/lib/estrelasRpc";
+import {
+  aprovadasDoPeriodo,
+  linhasDaRpcEstrelas,
+  tipoDoErroEstrelas,
+  type TipoErroEstrelas,
+} from "@/lib/estrelasRpc";
 
 const STAR_POINTS_VALUE = 3;
 
@@ -22,12 +27,23 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
   // zerados (scoring inalterado); o flag so permite a quem exibe valores em R$
   // (Bonus Estrelas) nao confundir "falhou" com "nenhuma estrela".
   const [falhou, setFalhou] = useState(false);
+  // Por que falhou, para a tela avisar com o texto certo (teto de linhas x o resto).
+  const [tipoErro, setTipoErro] = useState<TipoErroEstrelas | null>(null);
+  const [mensagemErro, setMensagemErro] = useState<string | null>(null);
+  const registrarFalha = useCallback((erro: unknown) => {
+    setFalhou(true);
+    setTipoErro(tipoDoErroEstrelas(erro));
+    const mensagem = (erro as { message?: unknown } | null)?.message;
+    setMensagemErro(typeof mensagem === "string" ? mensagem : null);
+  }, []);
   const { getFilteredDateRange } = useDateFilter();
 
   const fetchStars = useCallback(async () => {
     try {
       setLoading(true);
       setFalhou(false);
+      setTipoErro(null);
+      setMensagemErro(null);
 
       // Periodo do dashboard (YYYY-MM-DD, dias em fuso Manaus)
       const { startDate, endDate } = getFilteredDateRange();
@@ -53,7 +69,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
 
       if (error) {
         console.error("Erro ao buscar destaque_estrelas_periodo:", error);
-        setFalhou(true);
+        registrarFalha(error);
         setStarsData(estrelasVazias());
         return;
       }
@@ -86,12 +102,12 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
       setStarsData(result);
     } catch (error) {
       console.error("Erro ao processar estrelas:", error);
-      setFalhou(true);
+      registrarFalha(error);
       setStarsData(estrelasVazias());
     } finally {
       setLoading(false);
     }
-  }, [activeProfessionals, getFilteredDateRange]);
+  }, [activeProfessionals, getFilteredDateRange, registrarFalha]);
 
   useEffect(() => {
     if (activeProfessionals.length > 0) {
@@ -101,7 +117,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
     }
   }, [activeProfessionals, fetchStars]);
 
-  return { starsData, loading, error: falhou };
+  return { starsData, loading, error: falhou, errorKind: tipoErro, errorMessage: mensagemErro };
 }
 
 export { STAR_POINTS_VALUE };

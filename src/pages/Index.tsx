@@ -20,6 +20,7 @@ import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoM
 import QrCodeOverlay from "@/components/QrCodeOverlay";
 import { ContaLogada } from "@/components/ContaLogada";
 import { useAcesso } from "@/auth/acesso";
+import { avisoDoErroEstrelas } from "@/lib/estrelasRpc";
 
 function DashboardContent() {
   const navigate = useNavigate();
@@ -40,6 +41,7 @@ function DashboardContent() {
     rules,
     starsData,
     starsError,
+    starsErrorKind,
     selectProfessional,
     professionalDetails,
     activeProfessionals
@@ -267,6 +269,15 @@ function DashboardContent() {
           </div>
 
           <div className="animate-fade-slide-up stagger-6 mt-5">
+            {/* Estrelas nao carregaram (qualquer filtro): a pontuacao abaixo esta SEM elas. */}
+            {!loading && starsError && (
+              <p
+                role="alert"
+                className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 font-body text-sm text-amber-800"
+              >
+                {avisoDoErroEstrelas(starsErrorKind ?? "generico")}
+              </p>
+            )}
             <DataRankings
               hairData={hairData}
               manicureData={manicureData}
