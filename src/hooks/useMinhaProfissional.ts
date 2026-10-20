@@ -14,12 +14,18 @@ export const CHAVE_MINHA_PROFISSIONAL = ["destaque", "minha_profissional"] as co
  *
  * - `carregando`: ainda sem resposta. A tela não deve mostrar o seletor livre
  *   nem "Trocar" enquanto isso, para a identidade errada não piscar.
- * - Erro da RPC vale como "sem vínculo" (`id` null, `carregando` false): a tela
- *   não quebra e o cadastro de quem só tem `read` fica bloqueado. O banco barra
- *   de qualquer forma. Sem retry automático para o erro não segurar o
- *   "carregando"; uma nova montagem tenta de novo.
+ * - Erro da RPC (`erro` true, `id` null, `carregando` false): o vínculo é
+ *   desconhecido, e a tela NÃO pode culpar a conta ("e-mail não ligado"). Quem
+ *   só tem `read` fica sem cadastrar, com a mensagem de falha; a home não mostra
+ *   seletor livre nem "Trocar". O banco barra de qualquer forma. Uma nova
+ *   tentativa automática antes de desistir; uma nova montagem tenta de novo.
  */
-export function useMinhaProfissional(): { id: number | null; carregando: boolean } {
+export function useMinhaProfissional(): {
+  id: number | null;
+  carregando: boolean;
+  /** A RPC falhou (depois de uma nova tentativa): o vínculo é DESCONHECIDO, não ausente. */
+  erro: boolean;
+} {
   const { acesso } = useAcesso();
   const logada = Boolean(acesso?.userId);
 
@@ -32,12 +38,13 @@ export function useMinhaProfissional(): { id: number | null; carregando: boolean
     },
     enabled: logada,
     staleTime: Infinity,
-    retry: false,
+    retry: 1,
     refetchOnWindowFocus: false,
   });
 
   return {
     id: query.data ?? null,
     carregando: logada && query.isPending,
+    erro: query.isError,
   };
 }

@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  MOTIVO_ERRO_VINCULO,
+  MOTIVO_FORA_DO_DESAFIO,
   MOTIVO_SEM_VINCULO,
+  escolherPerfilId,
   normalizarVinculo,
   resolverIdentidade,
 } from "./identidade";
@@ -79,6 +82,113 @@ describe("resolverIdentidade", () => {
     expect(MOTIVO_SEM_VINCULO).toBe(
       "Seu e-mail não está ligado a nenhum cadastro. Fale com a recepção."
     );
+  });
+});
+
+describe("resolverIdentidade com erro ao verificar o vínculo", () => {
+  it("erro + read: não culpa a conta; bloqueia com o motivo do erro", () => {
+    expect(
+      resolverIdentidade({
+        vinculoId: null,
+        vinculoErro: true,
+        nivelEstrelas: "read",
+        perfilLocalId: null,
+      })
+    ).toEqual({
+      perfilId: null,
+      fixo: false,
+      podeEscolherProfissionalNoCadastro: false,
+      podeCadastrar: false,
+      motivoBloqueio: "Não foi possível verificar seu cadastro. Recarregue a página.",
+    });
+    expect(MOTIVO_ERRO_VINCULO).toBe(
+      "Não foi possível verificar seu cadastro. Recarregue a página."
+    );
+  });
+
+  it("erro + write (recepção ou aparelho): continua cadastrando, escolhendo", () => {
+    const r = resolverIdentidade({
+      vinculoId: null,
+      vinculoErro: true,
+      nivelEstrelas: "write",
+      perfilLocalId: null,
+    });
+    expect(r.podeCadastrar).toBe(true);
+    expect(r.podeEscolherProfissionalNoCadastro).toBe(true);
+    expect(r.motivoBloqueio).toBeNull();
+  });
+
+  it("erro + none: sem cadastro e sem mensagem", () => {
+    const r = resolverIdentidade({
+      vinculoId: null,
+      vinculoErro: true,
+      nivelEstrelas: "none",
+      perfilLocalId: null,
+    });
+    expect(r.podeCadastrar).toBe(false);
+    expect(r.motivoBloqueio).toBeNull();
+  });
+
+  it("vinculoErro ausente ou false mantém o comportamento de sem vínculo", () => {
+    for (const vinculoErro of [undefined, false]) {
+      expect(
+        resolverIdentidade({
+          vinculoId: null,
+          vinculoErro,
+          nivelEstrelas: "read",
+          perfilLocalId: null,
+        }).motivoBloqueio
+      ).toBe(MOTIVO_SEM_VINCULO);
+    }
+  });
+});
+
+describe("resolverIdentidade com a ligada fora do desafio e do Bônus no mês", () => {
+  const base = { vinculoId: 885975, perfilLocalId: null };
+
+  it("read + ligada fora das listas do mês: bloqueia com o motivo", () => {
+    const r = resolverIdentidade({ ...base, nivelEstrelas: "read", vinculoSelecionavel: false });
+    expect(r.podeCadastrar).toBe(false);
+    expect(r.motivoBloqueio).toBe("Você não participa do desafio nem do Bônus Estrelas neste mês.");
+    expect(MOTIVO_FORA_DO_DESAFIO).toBe(r.motivoBloqueio);
+    // A identidade continua sendo a da conta.
+    expect(r.fixo).toBe(true);
+    expect(r.perfilId).toBe("885975");
+  });
+
+  it("read + ligada que aparece na lista (ou ainda desconhecido): cadastra", () => {
+    for (const vinculoSelecionavel of [true, undefined]) {
+      const r = resolverIdentidade({ ...base, nivelEstrelas: "read", vinculoSelecionavel });
+      expect(r.podeCadastrar).toBe(true);
+      expect(r.motivoBloqueio).toBeNull();
+    }
+  });
+
+  it("write + ligada fora da lista: segue a lista normal, sem bloqueio", () => {
+    const r = resolverIdentidade({ ...base, nivelEstrelas: "write", vinculoSelecionavel: false });
+    expect(r.podeCadastrar).toBe(true);
+    expect(r.motivoBloqueio).toBeNull();
+  });
+
+  it("none + ligada fora da lista: sem cadastro e sem mensagem", () => {
+    const r = resolverIdentidade({ ...base, nivelEstrelas: "none", vinculoSelecionavel: false });
+    expect(r.podeCadastrar).toBe(false);
+    expect(r.motivoBloqueio).toBeNull();
+  });
+});
+
+describe("escolherPerfilId (regra única do perfil exibido)", () => {
+  it("o vínculo vence o perfil local e torna a identidade fixa", () => {
+    expect(escolherPerfilId(885975, "648177")).toEqual({ perfilId: "885975", fixo: true });
+  });
+
+  it("sem vínculo vale o perfil local (normalizado)", () => {
+    expect(escolherPerfilId(null, " 648177 ")).toEqual({ perfilId: "648177", fixo: false });
+  });
+
+  it("sem vínculo e sem local: nada", () => {
+    expect(escolherPerfilId(null, null)).toEqual({ perfilId: null, fixo: false });
+    expect(escolherPerfilId(null, "  ")).toEqual({ perfilId: null, fixo: false });
   });
 });
 

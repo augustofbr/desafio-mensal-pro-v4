@@ -26,6 +26,8 @@ function DashboardContent() {
   // Perfil sem acesso a "estrelas" nao ve o passo de cadastrar (o gate real e a RLS).
   const { acesso } = useAcesso();
   const veCadastroDeEstrela = (acesso?.paginas.estrelas ?? "none") !== "none";
+  // Sem o passo de cadastrar, "ver minhas avaliacoes" vira o 3 (e nao um 4 apos o 2).
+  const numeroDoPassoMinhasAvaliacoes = veCadastroDeEstrela ? 4 : 3;
   const {
     hairData,
     cabeloIndisponivel,
@@ -183,16 +185,16 @@ function DashboardContent() {
                   </>
                 )}
 
-                {/* Passo 4 */}
+                {/* Passo 4 (3 quando o passo de cadastrar esta oculto) */}
                 <button
                   onClick={() => navigate('/minhas-avaliacoes')}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
                 >
                   <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
-                    4
+                    {numeroDoPassoMinhasAvaliacoes}
                   </div>
                   <div className="flex-1 text-left">
-                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 4</span>
+                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo {numeroDoPassoMinhasAvaliacoes}</span>
                     <p className="text-sm font-body text-gray-700 leading-tight">Veja suas avaliações cadastradas</p>
                   </div>
                   <ClipboardList className="h-5 w-5 text-violet-400 flex-shrink-0" />
@@ -247,7 +249,7 @@ function DashboardContent() {
                 maquiagemData={maquiagemData}
                 rules={rules}
                 activeProfessionals={activeProfessionals}
-                renderAbaixo={({ perfilId, perfil, abrirSeletor, identidadeCarregando }) => (
+                renderAbaixo={({ perfilId, perfil, abrirSeletor, identidadeCarregando, identidadeErro }) => (
                   <BonusEstrelas
                     starsData={starsData}
                     starsError={starsError}
@@ -257,6 +259,7 @@ function DashboardContent() {
                     perfil={perfil}
                     onAbrirSeletor={abrirSeletor}
                     identidadeCarregando={identidadeCarregando}
+                    identidadeErro={identidadeErro}
                   />
                 )}
               />

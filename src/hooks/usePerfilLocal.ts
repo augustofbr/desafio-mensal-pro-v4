@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { escolherPerfilId } from "@/lib/identidade";
 import { gravarPerfil, lerPerfil, validarPerfil } from "@/lib/perfilLocal";
 import { normalizeProfessionalId } from "@/lib/scoring";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
@@ -37,6 +38,11 @@ export interface PerfilLocal {
   fixo: boolean;
   /** O vinculo ainda carrega: nem seletor livre nem "Trocar" por enquanto. */
   carregando: boolean;
+  /**
+   * A leitura do vinculo falhou: identidade indefinida. Tambem sem seletor livre
+   * nem "Trocar" (o vinculo pode existir), e a tela explica a falha.
+   */
+  erro: boolean;
 }
 
 export interface OpcoesPerfilLocal {
@@ -46,6 +52,8 @@ export interface OpcoesPerfilLocal {
   vinculoId: number | null;
   /** O vinculo ainda esta sendo consultado. */
   vinculoCarregando: boolean;
+  /** A consulta do vinculo falhou (nao e o mesmo que "sem vinculo"). */
+  vinculoErro: boolean;
 }
 
 /** Le o perfil do aparelho para a conta; storage que falha vale como vazio. */
@@ -71,7 +79,7 @@ function lerDoAparelho(storage: Storage | null, userId: string | null): string |
  */
 export function usePerfilLocal(
   ativos: ProfissionalAtivo[],
-  { userId, vinculoId, vinculoCarregando }: OpcoesPerfilLocal
+  { userId, vinculoId, vinculoCarregando, vinculoErro }: OpcoesPerfilLocal
 ): PerfilLocal {
   const storage = useMemo(obterStorageLocal, []);
   // `dono` acompanha o estado: se a conta mudar com o componente montado, o id
@@ -87,8 +95,11 @@ export function usePerfilLocal(
   }
   const perfilLocalId = estado.dono === userId ? estado.id : null;
 
-  const fixo = vinculoId !== null;
+  const { perfilId: perfilDaRegra, fixo } = escolherPerfilId(vinculoId, perfilLocalId);
   const carregando = vinculoCarregando && !fixo;
+  const erro = vinculoErro && !fixo;
+  // Sem saber se a conta e ligada, o perfil local nao esta em uso.
+  const indefinido = carregando || erro;
 
   const persistir = useCallback(
     (id: string | null) => {
@@ -108,7 +119,7 @@ export function usePerfilLocal(
   // carregada — durante o fetch `ativos` vem vazio e apagaria todo perfil. Com
   // vinculo (ou ainda carregando) o perfil local nao esta em uso: nao mexe nele.
   useEffect(() => {
-    if (fixo || carregando) return;
+    if (fixo || indefinido) return;
     if (ativos.length === 0) return;
     const valido = validarPerfil(perfilLocalId, ativos);
     if (valido !== perfilLocalId) {
@@ -118,7 +129,7 @@ export function usePerfilLocal(
       // avisar e reabrir o seletor.
       setAutoLimpou(true);
     }
-  }, [ativos, perfilLocalId, persistir, fixo, carregando, userId]);
+  }, [ativos, perfilLocalId, persistir, fixo, indefinido, userId]);
 
   const escolher = useCallback(
     (id: string) => {
@@ -138,8 +149,8 @@ export function usePerfilLocal(
 
   const reconhecerAutoLimpeza = useCallback(() => setAutoLimpou(false), []);
 
-  // Vinculo vence o local; carregando nao mostra nenhum dos dois.
-  const perfilId = fixo ? String(vinculoId) : carregando ? null : perfilLocalId;
+  // Vinculo vence o local (regra em `escolherPerfilId`); indefinido nao mostra nenhum.
+  const perfilId = indefinido ? null : perfilDaRegra;
 
   const perfil = useMemo(() => {
     if (!perfilId) return null;
@@ -157,5 +168,6 @@ export function usePerfilLocal(
     reconhecerAutoLimpeza,
     fixo,
     carregando,
+    erro,
   };
 }

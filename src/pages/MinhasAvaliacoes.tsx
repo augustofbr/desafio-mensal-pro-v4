@@ -214,7 +214,9 @@ const MinhasAvaliacoes = () => {
                       Avaliações Google
                     </CardTitle>
                     <p className="text-xs text-gray-500 font-body">
-                      Selecione um profissional para ver suas avaliações
+                      {semSeletor
+                        ? "Suas avaliações cadastradas"
+                        : "Selecione um profissional para ver suas avaliações"}
                     </p>
                   </div>
                 </div>

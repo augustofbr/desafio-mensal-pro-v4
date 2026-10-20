@@ -115,13 +115,29 @@ export default function CadastrarAvaliacaoModal({
 
   const schema = useMemo(() => criarSchema(hoje), [hoje]);
 
+  // Estrela cadastrada AGORA: so quem aparece no desafio do mes atual (Manaus)
+  // ou participa so do Bonus Estrelas (regras do mes atual; sem elas, o fallback
+  // estatico de `profissionaisSelecionaveis`). O `find` do submit segue no cadastro todo.
+  const { profissionais: selecionaveis, regrasCarregando } =
+    useProfissionaisSelecionaveis(activeProfessionals);
+
   // Quem a conta e e o que ela pode: a tela decide so a UX; o gate real e a RLS.
   // O perfil local do aparelho nao entra aqui (nada neste modal depende dele).
   const { acesso } = useAcesso();
   const vinculo = useMinhaProfissional();
+  const nivelEstrelas = acesso?.paginas.estrelas ?? "none";
+  // So barra quem tem `read` e profissional ligada: a ligada tem de estar nas listas
+  // do mes. Ate as regras/cadastro chegarem nao se sabe (undefined) e o botao espera.
+  const listasProntas = !regrasCarregando && activeProfessionals.length > 0;
+  const vinculoSelecionavel =
+    vinculo.id !== null && listasProntas
+      ? selecionaveis.some((p) => p.profissionalId === vinculo.id)
+      : undefined;
   const identidade = resolverIdentidade({
     vinculoId: vinculo.id,
-    nivelEstrelas: acesso?.paginas.estrelas ?? "none",
+    vinculoErro: vinculo.erro,
+    vinculoSelecionavel,
+    nivelEstrelas,
     perfilLocalId: null,
   });
   // Profissional ligada que nao pode escolher outra: o cadastro e sempre dela.
@@ -129,8 +145,10 @@ export default function CadastrarAvaliacaoModal({
     vinculo.id !== null && !identidade.podeEscolherProfissionalNoCadastro
       ? String(vinculo.id)
       : null;
-  // Enquanto o vinculo carrega nao da para saber se pode cadastrar: botao parado, sem aviso.
-  const bloqueado = vinculo.carregando || !identidade.podeCadastrar;
+  // Enquanto o vinculo (ou, para quem so le, a lista do mes) carrega nao da para saber
+  // se pode cadastrar: botao parado, sem aviso.
+  const aguardandoLista = nivelEstrelas === "read" && vinculo.id !== null && !listasProntas;
+  const bloqueado = vinculo.carregando || aguardandoLista || !identidade.podeCadastrar;
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -173,11 +191,6 @@ export default function CadastrarAvaliacaoModal({
     if (dia !== form.getValues("dataAtendimento")) limparCliente();
     form.setValue("dataAtendimento", dia, { shouldValidate: true });
   };
-
-  // Estrela cadastrada AGORA: so quem aparece no desafio do mes atual (Manaus)
-  // ou participa so do Bonus Estrelas. O `find` do submit segue no cadastro todo.
-  const { profissionais: selecionaveis, regrasCarregando } =
-    useProfissionaisSelecionaveis(activeProfessionals);
 
   const sortedProfessionals = [...selecionaveis]
     .filter((p) => p.nome_profissional)

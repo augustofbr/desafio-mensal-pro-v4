@@ -20,6 +20,7 @@ import {
   type LinhaBonus,
 } from "@/lib/bonusEstrelas";
 import { getCategoryDisplayName } from "@/lib/categoryDisplayNames";
+import { MOTIVO_ERRO_VINCULO } from "@/lib/identidade";
 import { diaEmManaus } from "@/lib/periodoHistorico";
 import { calcularPosicoes } from "@/lib/posicoes";
 import type { RulesVersion } from "@/lib/rulesConfig";
@@ -40,6 +41,8 @@ interface BonusEstrelasProps {
   onAbrirSeletor?: () => void;
   /** O vínculo da conta ainda carrega: nem convite nem identidade por enquanto. */
   identidadeCarregando?: boolean;
+  /** A leitura do vínculo falhou: não convida a escolher nem culpa o cadastro. */
+  identidadeErro?: boolean;
 }
 
 /** Cores de texto por categoria (contraste AA sobre branco). */
@@ -291,10 +294,22 @@ function MeuBonus({
 function SemPerfil({
   onAbrirSeletor,
   carregando,
+  erro,
 }: {
   onAbrirSeletor?: () => void;
   carregando: boolean;
+  erro: boolean;
 }) {
+  if (erro) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 text-center">
+        <p role="alert" className="font-body text-sm text-gray-700">
+          {MOTIVO_ERRO_VINCULO}
+        </p>
+      </div>
+    );
+  }
+
   // Vínculo da conta ainda carregando: nada de convite que logo depois some.
   if (carregando) {
     return <div className="h-24 animate-shimmer rounded-xl" aria-busy="true" />;
@@ -449,6 +464,7 @@ function BonusEstrelasConteudo({
   perfil,
   onAbrirSeletor,
   identidadeCarregando = false,
+  identidadeErro = false,
 }: BonusEstrelasProps) {
   const { getFilteredDateRange } = useDateFilter();
   const { startDate, endDate } = getFilteredDateRange();
@@ -494,7 +510,11 @@ function BonusEstrelasConteudo({
               onTrocar={onAbrirSeletor}
             />
           ) : (
-            <SemPerfil onAbrirSeletor={onAbrirSeletor} carregando={identidadeCarregando} />
+            <SemPerfil
+              onAbrirSeletor={onAbrirSeletor}
+              carregando={identidadeCarregando}
+              erro={identidadeErro}
+            />
           )}
         </div>
 

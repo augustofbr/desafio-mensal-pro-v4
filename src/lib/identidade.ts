@@ -5,12 +5,30 @@ import { normalizeProfessionalId } from "./scoring";
 export const MOTIVO_SEM_VINCULO =
   "Seu e-mail não está ligado a nenhum cadastro. Fale com a recepção.";
 
+/** A RPC do vínculo falhou: não dá para saber se a conta está ligada. Não é culpa da conta. */
+export const MOTIVO_ERRO_VINCULO = "Não foi possível verificar seu cadastro. Recarregue a página.";
+
+/** Conta ligada a uma profissional que não aparece no desafio nem no Bônus Estrelas do mês. */
+export const MOTIVO_FORA_DO_DESAFIO =
+  "Você não participa do desafio nem do Bônus Estrelas neste mês.";
+
 export interface EntradaIdentidade {
   /**
    * `profissional_id` gravado na conta (RPC `destaque_minha_profissional`), ou
    * null quando a conta não está ligada a ninguém (ou a RPC falhou).
    */
   vinculoId: number | null;
+  /**
+   * A leitura do vínculo falhou (a RPC deu erro). Opcional: ausente = false.
+   * Diferente de "sem vínculo": a tela não pode dizer que o e-mail não está ligado.
+   */
+  vinculoErro?: boolean;
+  /**
+   * A profissional ligada aparece nas listas do mês (`profissionaisSelecionaveis`
+   * com as regras do mês atual). Opcional: undefined = ainda não se sabe, não bloqueia.
+   * Só barra quem tem `read`; `write` segue a lista normal.
+   */
+  vinculoSelecionavel?: boolean;
   /** Nível da página "estrelas" no perfil da conta. */
   nivelEstrelas: PageAccess;
   /** Id salvo no aparelho (`destaque.perfil.v1`) e já validado para esta conta. */
@@ -30,26 +48,44 @@ export interface Identidade {
 }
 
 /**
+ * Regra única do perfil exibido: o vínculo da conta vence o perfil local do
+ * aparelho e torna a identidade fixa.
+ */
+export function escolherPerfilId(
+  vinculoId: number | null,
+  perfilLocalId: string | null
+): { perfilId: string | null; fixo: boolean } {
+  if (vinculoId !== null) return { perfilId: String(vinculoId), fixo: true };
+  return { perfilId: normalizeProfessionalId(perfilLocalId), fixo: false };
+}
+
+/**
  * Quem a conta é e o que ela pode fazer no cadastro de estrelas. Só decide a
  * TELA: quem cadastra para quem, de verdade, é barrado pela RLS e pelas RPCs.
  */
 export function resolverIdentidade(i: EntradaIdentidade): Identidade {
-  const fixo = i.vinculoId !== null;
-  const local = normalizeProfessionalId(i.perfilLocalId);
-  const perfilId = fixo ? String(i.vinculoId) : local;
+  const { perfilId, fixo } = escolherPerfilId(i.vinculoId, i.perfilLocalId);
 
   const temAcesso = i.nivelEstrelas !== "none";
   const recepcao = i.nivelEstrelas === "write";
+  const soLeitura = i.nivelEstrelas === "read";
 
-  // `read` sem vínculo: a conta existe, mas não sabemos por quem cadastrar.
-  const semVinculo = i.nivelEstrelas === "read" && !fixo;
+  // `read` depende do vínculo para saber por quem cadastrar; `write` não.
+  let motivoBloqueio: string | null = null;
+  if (soLeitura) {
+    if (!fixo) {
+      motivoBloqueio = i.vinculoErro ? MOTIVO_ERRO_VINCULO : MOTIVO_SEM_VINCULO;
+    } else if (i.vinculoSelecionavel === false) {
+      motivoBloqueio = MOTIVO_FORA_DO_DESAFIO;
+    }
+  }
 
   return {
     perfilId,
     fixo,
     podeEscolherProfissionalNoCadastro: recepcao,
-    podeCadastrar: temAcesso && !semVinculo,
-    motivoBloqueio: semVinculo ? MOTIVO_SEM_VINCULO : null,
+    podeCadastrar: temAcesso && motivoBloqueio === null,
+    motivoBloqueio,
   };
 }
 

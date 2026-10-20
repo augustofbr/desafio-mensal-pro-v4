@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { useAcesso } from "@/auth/acesso";
+import { MOTIVO_ERRO_VINCULO } from "@/lib/identidade";
 import { Card, CardContent } from "@/components/ui/card";
 import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
 import { usePerfilLocal } from "@/hooks/usePerfilLocal";
@@ -39,6 +40,8 @@ interface ResultadosSectionProps {
     abrirSeletor: (() => void) | undefined;
     /** O vinculo da conta ainda carrega: nao mostrar a identidade ainda. */
     identidadeCarregando: boolean;
+    /** A leitura do vinculo falhou: a identidade e indefinida. */
+    identidadeErro: boolean;
   }) => ReactNode;
 }
 
@@ -76,14 +79,17 @@ export default function ResultadosSection({
     reconhecerAutoLimpeza,
     fixo,
     carregando,
+    erro,
   } = usePerfilLocal(activeProfessionals, {
     userId: acesso?.userId ?? null,
     vinculoId: vinculo.id,
     vinculoCarregando: vinculo.carregando,
+    vinculoErro: vinculo.erro,
   });
   const [seletorAberto, setSeletorAberto] = useState(false);
-  // Seletor e "Trocar" so existem quando a identidade e escolhida no aparelho.
-  const podeTrocar = !fixo && !carregando;
+  // Seletor e "Trocar" so existem quando a identidade e escolhida no aparelho
+  // (nem com o vinculo carregando, nem com a leitura dele falhando).
+  const podeTrocar = !fixo && !carregando && !erro;
   const abrirSeletor = podeTrocar ? () => setSeletorAberto(true) : undefined;
 
   const dadosPorCategoria = useMemo<Record<string, Record<string, unknown>[]>>(
@@ -171,6 +177,14 @@ export default function ResultadosSection({
           onTrocar={abrirSeletor}
           soBonusEstrelas={participaSoDoBonus(perfil, rules)}
         />
+      ) : erro ? (
+        <Card>
+          <CardContent className="p-4 sm:p-6">
+            <p role="alert" className="text-base text-muted-foreground">
+              {MOTIVO_ERRO_VINCULO}
+            </p>
+          </CardContent>
+        </Card>
       ) : carregando ? (
         <Card aria-busy="true">
           <CardContent className="p-4 sm:p-6">
@@ -238,6 +252,7 @@ export default function ResultadosSection({
         perfil,
         abrirSeletor,
         identidadeCarregando: carregando,
+        identidadeErro: erro,
       })}
 
       <ProfileSelector

@@ -215,6 +215,18 @@ describe("perfil de aparelho compartilhado (dono da conta)", () => {
     expect(storage.dados.has(PERFIL_KEY)).toBe(false);
   });
 
+  it("sem conta atual (userId null): gravar não mexe no perfil já guardado de outra conta", () => {
+    const storage = criarStorage();
+    gravarPerfil(storage, "103", CONTA_A);
+    const antes = storage.dados.get(PERFIL_KEY);
+
+    gravarPerfil(storage, "104", null);
+    gravarPerfil(storage, null, null);
+
+    expect(storage.dados.get(PERFIL_KEY)).toBe(antes);
+    expect(lerPerfil(storage, CONTA_A)).toBe("103");
+  });
+
   it("troca de conta no mesmo aparelho: a segunda grava o seu e a primeira não vê", () => {
     const storage = criarStorage();
     gravarPerfil(storage, "103", CONTA_A);

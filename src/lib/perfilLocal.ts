@@ -67,16 +67,19 @@ export function lerPerfil(
 /**
  * Grava o id do perfil para a conta `userId`. `null` (ou id vazio) REMOVE a
  * chave — e assim que a identidade se desfaz por completo, sem deixar residuo
- * no aparelho. Sem conta nao se grava nada: o perfil nao teria dono.
+ * no aparelho. Sem conta (`userId` null) NAO FAZ NADA: o perfil nao teria dono,
+ * e apagar mexeria no perfil guardado por outra conta.
  */
 export function gravarPerfil(
   storage: Pick<Storage, "setItem" | "removeItem">,
   id: string | null,
   userId: string | null
 ): void {
-  const normalizado = normalizeProfessionalId(id);
   const dono = normalizeProfessionalId(userId);
-  if (normalizado === null || dono === null) {
+  if (dono === null) return;
+
+  const normalizado = normalizeProfessionalId(id);
+  if (normalizado === null) {
     storage.removeItem(PERFIL_KEY);
     return;
   }
