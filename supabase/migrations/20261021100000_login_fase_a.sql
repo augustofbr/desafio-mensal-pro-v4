@@ -24,7 +24,8 @@
 --        Profissional     painel read  estrelas read   admin none   usuarios none
 --        Somente Leitura  painel read  estrelas none   admin read   usuarios none
 --      Perfil que ja exista com o mesmo nome NAO e sobrescrito (on conflict do nothing); a
---      guarda do fim aborta se a matriz final nao for exatamente a de cima.
+--      guarda do fim aborta se algum perfil nao CONTIVER (@>) a matriz de cima (chaves extras
+--      passam, para a migracao poder ser reaplicada depois de entrar pagina nova).
 --   1b) Vinculo EXPLICITO usuario -> profissional (fix round 1 do review de seguranca):
 --      destaque_users_app.profissional_id integer null, FK para profissionais_ativos
 --      ("profissionalId") on delete set null, UNICO (indice parcial where not null).
@@ -145,6 +146,10 @@
 --
 -- Idempotente: create or replace function; drop policy if exists + create policy; revoke;
 -- insert ... on conflict do nothing; merge || de jsonb.
+-- NAO reaplicar depois da Task 5 (criacao das contas): o backfill de profissional_id nao tem o
+-- corte de 2026-10-20 16:02 do trigger e ligaria conta confirmada antes do corte que a T5 criou
+-- de proposito sem vinculo. Aplicar BYTE A BYTE (com os comentarios): os asserts de md5 do
+-- ROLLBACK comparam o prosrc do trigger de avaliacoes, e aplicar sem comentarios muda o hash.
 --
 -- Rollback autossuficiente (nao depende de outro arquivo). So faz sentido ANTES do deploy do
 -- front com login (Tasks 2-4 chamam as RPCs e usam `painel`/`estrelas`). Rodar inteiro, nesta
