@@ -68,8 +68,57 @@ export function inicial(nome: string): string {
   return (Array.from(String(nome ?? "").trim())[0] ?? "?").toUpperCase();
 }
 
+/**
+ * Texto do erro para o toast. O postgrest-js entrega `error` como objeto simples
+ * (`{ message, code, details, hint }`), NAO como `Error` — com `String(erro)` o toast
+ * mostrava "[object Object]" e escondia, por exemplo, o 23514 "Informe o motivo da
+ * recusa.". Vale qualquer objeto com `message` em texto.
+ */
 export function mensagemDoErro(erro: unknown): string {
-  return erro instanceof Error ? erro.message : String(erro);
+  if (erro instanceof Error) return erro.message;
+  if (typeof erro === "object" && erro !== null) {
+    const { message } = erro as { message?: unknown };
+    if (typeof message === "string" && message.trim() !== "") return message;
+  }
+  return String(erro);
+}
+
+/**
+ * Mensagem de uma decisao em lote que gravou so parte das linhas: as demais ja
+ * tinham sido decididas por outra pessoa (o UPDATE so atinge `pendente`).
+ */
+export function mensagemDecisaoParcial(
+  status: "aprovada" | "rejeitada",
+  gravadas: number,
+  pedidas: number,
+): string {
+  const feitas = status === "aprovada" ? "aprovadas" : "recusadas";
+  const restantes = pedidas - gravadas;
+  return (
+    `${gravadas} de ${pedidas} avaliações foram ${feitas}. ` +
+    `${plural(
+      restantes,
+      "avaliação já tinha sido decidida",
+      "avaliações já tinham sido decididas",
+    )} por outra pessoa e ${restantes === 1 ? "não foi alterada" : "não foram alteradas"}.`
+  );
+}
+
+/**
+ * Lancado por `decidir` quando o UPDATE gravou ALGUMAS das linhas (nao todas, nem
+ * nenhuma). Diferente de erro de banco/rede: parte do lote ja foi gravada, entao
+ * repetir com os mesmos ids so erra de novo — quem captura fecha o dialogo, tira TODOS os
+ * ids do lote da selecao (nenhum segue pendente) e avisa as contagens.
+ */
+export class DecisaoParcialError extends Error {
+  constructor(
+    readonly status: "aprovada" | "rejeitada",
+    readonly gravadas: string[],
+    readonly pedidas: number,
+  ) {
+    super(mensagemDecisaoParcial(status, gravadas.length, pedidas));
+    this.name = "DecisaoParcialError";
+  }
 }
 
 /** "1 avaliação" / "3 avaliações" — o caso de 1 é o comum aqui (fila pequena),
@@ -92,6 +141,29 @@ export function casaBuscaCliente(
   return (
     normalizarBusca(a.nome_cliente ?? "").includes(alvo) ||
     normalizarBusca(a.nome_cliente_trinks ?? "").includes(alvo)
+  );
+}
+
+/**
+ * Busca do HISTORICO: cliente (Google ou Trinks), profissional OU o texto do
+ * motivo da recusa. `motivo` e `undefined`/`null` quando a avaliacao foi aprovada,
+ * e a recusa legada ou ainda sem motivo carregado — nesses casos so os outros dois
+ * campos contam. Termo vazio casa tudo.
+ */
+export function casaBuscaHistorico(
+  a: Pick<
+    AvaliacaoAdmin,
+    "nome_cliente" | "nome_cliente_trinks" | "nome_profissional"
+  >,
+  termo: string,
+  motivo?: string | null,
+): boolean {
+  const alvo = normalizarBusca(termo);
+  if (!alvo) return true;
+  return (
+    casaBuscaCliente(a, termo) ||
+    normalizarBusca(a.nome_profissional ?? "").includes(alvo) ||
+    normalizarBusca(motivo ?? "").includes(alvo)
   );
 }
 

@@ -12,6 +12,8 @@ import { supabase } from "@/lib/supabase";
 // auth-kit: `aprovado_por` tem de ser o auth.uid() de quem decidiu — quem esta
 // logado agora, nunca um UID fixo no bundle (era assim no app de origem).
 import { useAcesso } from "@/auth/acesso";
+import { erroDoMotivo, normalizarMotivo } from "@/lib/motivoRecusa";
+import { DecisaoParcialError } from "@/lib/avaliacoesAdmin";
 
 export type StatusAvaliacao = "pendente" | "aprovada" | "rejeitada";
 
@@ -32,6 +34,9 @@ export interface AvaliacaoAdmin {
   origem_cliente_trinks: "lista" | "digitado" | null;
 }
 
+// `motivo_recusa` fica FORA de proposito: a coluna nao e legivel por SELECT (nem para
+// `authenticated`) — pedir a coluna, ou usar `select("*")`, da 42501 e derruba a fila
+// inteira. O motivo e lido so pela RPC (`useMotivosRecusa`).
 const COLUNAS =
   "id, profissional_id, nome_profissional, nome_cliente, status, data_hora_cadastro, aprovado_por, data_aprovacao, nome_cliente_trinks, cliente_trinks_id, data_atendimento, origem_cliente_trinks";
 
@@ -65,13 +70,15 @@ const chaveHistorico = (janela: JanelaHistorico) =>
  * "admin") daria "salvo com sucesso" sem ter salvado nada. O `.select("id")`
  * devolve as linhas efetivamente escritas — se faltar alguma, isso e um erro.
  */
-function conferirLinhasEscritas(escritas: { id: string }[] | null, ids: string[]) {
+function conferirLinhasEscritas(
+  escritas: { id: string }[] | null,
+  ids: string[],
+  mensagem = "O banco recusou a alteração (permissão de escrita em Administração). " +
+    "Saia e entre de novo; se continuar, fale com quem administra os acessos.",
+) {
   const total = escritas?.length ?? 0;
   if (total === ids.length) return;
-  throw new Error(
-    "O banco recusou a alteração (permissão de escrita em Administração). " +
-      "Saia e entre de novo; se continuar, fale com quem administra os acessos.",
-  );
+  throw new Error(mensagem);
 }
 
 async function buscarPendentes(): Promise<AvaliacaoAdmin[]> {
@@ -163,36 +170,76 @@ export function useAdminAvaliacoes() {
    * so conta ponto quem tem `status = 'aprovada'` E `data_aprovacao NOT NULL`,
    * e `aprovado_por` responde "quem decidiu". Rejeitar nunca apaga a linha —
    * a tabela nao tem policy de DELETE e o historico e a prova da decisao.
+   *
+   * Recusar exige `motivo` (um texto so, gravado em todas as `ids` do lote): o
+   * banco recusa `rejeitada` sem motivo com 23514, e a checagem aqui so poupa a
+   * ida e volta. Aprovar nao manda motivo — o banco zera `motivo_recusa` sozinho.
    */
   const decidir = useMutation({
     mutationFn: async ({
       ids,
       status,
+      motivo,
     }: {
       ids: string[];
       status: "aprovada" | "rejeitada";
+      motivo?: string;
     }) => {
       if (ids.length === 0) return;
       const adminId = acesso?.userId;
       if (!adminId) {
         throw new Error("Sessão expirada. Entre novamente para decidir avaliações.");
       }
+      if (status === "rejeitada") {
+        const erroMotivo = erroDoMotivo(motivo);
+        if (erroMotivo) throw new Error(erroMotivo);
+      }
+      const recusa =
+        status === "rejeitada" ? { motivo_recusa: normalizarMotivo(motivo) } : {};
       const { data, error } = await supabase
         .from("avaliacoes_cadastradas")
         .update({
           status,
           aprovado_por: adminId,
           data_aprovacao: new Date().toISOString(),
+          ...recusa,
         })
         .in("id", ids)
+        // So decide quem ainda esta pendente: outro admin pode ter decidido a mesma
+        // estrela com o dialogo aberto, e sem isto esta decisao a sobrescreveria
+        // (inclusive trocando o motivo de uma recusa alheia).
+        .eq("status", "pendente")
         .select("id");
       if (error) throw error;
-      conferirLinhasEscritas(data as { id: string }[] | null, ids);
+      // Gravou umas e outras nao: as que faltam ja estavam decididas por outra pessoa
+      // (a RLS barraria todas, nao so algumas). Erro tipado, para a tela fechar o
+      // dialogo e dizer as contagens em vez de "nada foi salvo".
+      const gravadas = (data as { id: string }[] | null) ?? [];
+      if (gravadas.length > 0 && gravadas.length < ids.length) {
+        throw new DecisaoParcialError(
+          status,
+          gravadas.map((l) => l.id),
+          ids.length,
+        );
+      }
+      // Zero linhas tem duas causas indistinguiveis daqui (RLS devolve sem erro):
+      // alguem decidiu antes, ou a sessao perdeu o write — a mensagem cobre as duas.
+      conferirLinhasEscritas(
+        data as { id: string }[] | null,
+        ids,
+        "Alguma avaliação já tinha sido decidida por outra pessoa (a fila foi atualizada) " +
+          "ou o banco recusou a alteração (permissão de escrita em Administração). " +
+          "Confira a fila; se continuar, saia e entre de novo.",
+      );
     },
     onMutate: async ({ ids }) => ({
       anterior: await remover(CHAVE_PENDENTES, ids),
     }),
-    onError: (_erro, _variaveis, contexto) => {
+    onError: (erro, _variaveis, contexto) => {
+      // No parcial nenhuma das linhas do lote segue pendente (umas gravadas aqui,
+      // as outras decididas por outra pessoa): restaurar o snapshot as traria de
+      // volta a fila ate o refetch, ou de vez se o refetch falhasse.
+      if (erro instanceof DecisaoParcialError) return;
       restaurar(contexto?.anterior);
     },
     // `onSettled` e nao `onSuccess`: no erro tambem queremos o refetch, para a
@@ -249,6 +296,35 @@ export function useHistoricoAvaliacoes(janela: JanelaHistorico) {
     onSettled: invalidar,
   });
 
+  /**
+   * Editar o motivo de uma recusa que ja esta no historico. So mexe em linha
+   * `rejeitada` (`.eq("status")`): se outro admin devolveu a estrela para a fila
+   * nesse meio tempo, o UPDATE volta com zero linhas e a tela avisa, em vez de
+   * gravar motivo numa pendente. Sem remocao otimista — a linha nao sai da lista.
+   * A promessa so resolve depois do refetch (`onSettled` devolve a Promise): ate la
+   * a linha fica marcada como ocupada, entao nao mostra o texto velho como definitivo.
+   */
+  const editarMotivo = useMutation({
+    mutationFn: async ({ id, motivo }: { id: string; motivo: string }) => {
+      const erroMotivo = erroDoMotivo(motivo);
+      if (erroMotivo) throw new Error(erroMotivo);
+      const { data, error } = await supabase
+        .from("avaliacoes_cadastradas")
+        .update({ motivo_recusa: normalizarMotivo(motivo) })
+        .in("id", [id])
+        .eq("status", "rejeitada")
+        .select("id");
+      if (error) throw error;
+      conferirLinhasEscritas(
+        data as { id: string }[] | null,
+        [id],
+        "Não foi possível editar o motivo: a avaliação não está mais recusada " +
+          "ou o banco recusou a alteração (permissão de escrita em Administração).",
+      );
+    },
+    onSettled: invalidar,
+  });
+
   const historico = historicoQuery.data ?? [];
 
   return {
@@ -260,5 +336,6 @@ export function useHistoricoAvaliacoes(janela: JanelaHistorico) {
     /** O periodo tem mais decisoes do que coube na resposta. */
     atingiuTeto: historico.length >= HISTORICO_LIMITE,
     reverter,
+    editarMotivo,
   };
 }

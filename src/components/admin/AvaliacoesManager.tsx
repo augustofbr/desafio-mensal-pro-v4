@@ -14,6 +14,7 @@ import {
   mesPorExtensoManaus,
 } from "@/lib/dateUtils";
 import {
+  DecisaoParcialError,
   ORDENACOES_FILA,
   casaBuscaCliente,
   estadoDaLista,
@@ -122,21 +123,42 @@ export function AvaliacoesManager() {
     ids: string[],
     status: "aprovada" | "rejeitada",
     mensagem: string,
-  ) => {
+    motivo?: string,
+  ): Promise<boolean> => {
+    // Devolve `true` quando o dialogo pode fechar: gravou tudo, ou gravou so parte
+    // (repetir com os mesmos ids nao adianta). `false` = nada gravado por erro de
+    // banco/rede/permissao — o dialogo fica aberto, com o texto, para tentar de novo.
     try {
-      await decidir.mutateAsync({ ids, status });
+      await decidir.mutateAsync({ ids, status, motivo });
       setSelecionadas((antes) => {
         const novas = new Set(antes);
         ids.forEach((id) => novas.delete(id));
         return novas;
       });
       toast({ title: mensagem });
+      return true;
     } catch (err) {
+      if (err instanceof DecisaoParcialError) {
+        // O lote inteiro sai da selecao: nenhuma segue pendente, e uma que outra
+        // pessoa devolva a fila nao pode reaparecer ja marcada para o proximo lote.
+        setSelecionadas((antes) => {
+          const novas = new Set(antes);
+          ids.forEach((id) => novas.delete(id));
+          return novas;
+        });
+        toast({
+          title: "Decisão gravada em parte",
+          description: err.message,
+          variant: "destructive",
+        });
+        return true;
+      }
       toast({
         title: "Não foi possível salvar",
         description: mensagemDoErro(err),
         variant: "destructive",
       });
+      return false;
     }
   };
 
@@ -162,23 +184,34 @@ export function AvaliacoesManager() {
     );
   };
 
-  const confirmar = async () => {
+  /** Recusar sempre abre o diálogo: o motivo é obrigatório, e o texto digitado vale
+   *  para todas as `ids` (uma só no botão da linha, a seleção inteira no lote). */
+  const recusar = (ids: string[], titulo: string, descricao: string) => {
+    setConfirmacao({ acao: "recusar", ids, titulo, descricao, motivo: { inicial: "" } });
+  };
+
+  const confirmar = async (motivo?: string) => {
     if (!confirmacao) return;
     const { acao, ids } = confirmacao;
-    setConfirmacao(null);
+    // Com motivo, o diálogo fica aberto até a gravação dar certo: se falhar, o texto
+    // digitado continua lá para tentar de novo. Sem motivo, fecha logo, como antes.
+    if (!confirmacao.motivo) setConfirmacao(null);
+    let ok = true;
     if (acao === "aprovar") {
-      await executarDecisao(
+      ok = await executarDecisao(
         ids,
         "aprovada",
         `${plural(ids.length, "avaliação aprovada", "avaliações aprovadas")}`,
       );
     } else if (acao === "recusar") {
-      await executarDecisao(
+      ok = await executarDecisao(
         ids,
         "rejeitada",
         `${plural(ids.length, "avaliação recusada", "avaliações recusadas")}`,
+        motivo,
       );
     }
+    if (ok && confirmacao.motivo) setConfirmacao(null);
   };
 
   const temFiltroAtivo =
@@ -368,13 +401,13 @@ export function AvaliacoesManager() {
                         size="sm"
                         variant="outline"
                         onClick={() =>
-                          setConfirmacao({
-                            acao: "recusar",
-                            ids: selecionadasVisiveis,
-                            titulo: `Recusar ${plural(selecionadasVisiveis.length, "avaliação", "avaliações")}?`,
-                            descricao:
-                              "Elas saem da fila e ficam no histórico como recusadas. Nada é apagado.",
-                          })
+                          recusar(
+                            selecionadasVisiveis,
+                            `Recusar ${plural(selecionadasVisiveis.length, "avaliação", "avaliações")}?`,
+                            selecionadasVisiveis.length === 1
+                              ? "Ela sai da fila e fica no histórico como recusada, com o motivo abaixo. Nada é apagado."
+                              : `Elas saem da fila e ficam no histórico como recusadas. O mesmo motivo, abaixo, é gravado nas ${selecionadasVisiveis.length}. Nada é apagado.`,
+                          )
                         }
                         disabled={decidir.isPending}
                         className="min-h-[44px] flex-1 gap-1.5 font-body text-red-600 hover:bg-red-50 hover:text-red-700 sm:flex-none"
@@ -466,10 +499,10 @@ export function AvaliacoesManager() {
                               size="sm"
                               variant="outline"
                               onClick={() =>
-                                executarDecisao(
+                                recusar(
                                   [avaliacao.id],
-                                  "rejeitada",
-                                  `Estrela de ${avaliacao.nome_cliente} recusada`,
+                                  "Recusar esta avaliação?",
+                                  `A estrela de ${avaliacao.nome_cliente} sai da fila e fica no histórico como recusada, com o motivo abaixo. Nada é apagado.`,
                                 )
                               }
                               disabled={ocupada || decidir.isPending}

@@ -201,6 +201,7 @@ edge function no load da pagina.**
       **Regra de INSERT no banco** (trigger `avaliacoes_cadastradas_antes_inserir`, migracao `20261019130000_avaliacoes_regra_cadastro.sql`, so para `anon`/`authenticated`): `data_hora_cadastro` e `created_at` viram `now()` (o relogio do celular e ignorado); `data_atendimento` fora de hoje−10..hoje (Manaus) = erro 22023; `cliente_trinks_id` sem linha no espelho (profissional + dia + clienteid) vira NULL. `postgres`/`service_role` ficam livres. Sem trigger de UPDATE
     - `aprovado_por`: Admin UID who approved (UUID, nullable)
     - `data_aprovacao`: Approval timestamp (TIMESTAMPTZ, nullable)
+    - `motivo_recusa`: Motivo da recusa (TEXT, nullable, <= 500; so em `rejeitada`; legado = NULL). Obrigatorio ao recusar (trigger `avaliacoes_cadastradas_antes_atualizar`, 23514); NAO legivel por anon/authenticated — ver "Aba Aprovacoes"
     - `created_at`: Timestamp
     - **Only approved reviews** (`status = 'aprovada'` AND `data_aprovacao IS NOT NULL`) count toward scores
 
@@ -500,6 +501,38 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
   `useStarsData` acima. Decidir uma pendente atrasada mexe em mes fechado, entao ela nunca
   passa sem confirmacao (individual) e o lote conta quantas sao. Ao testar, use transacao com
   `ROLLBACK` — nunca decida uma pendente real para "ver funcionando".
+- **Recusar exige motivo** (`avaliacoes_cadastradas.motivo_recusa`, ate 500 caracteres; migracao
+  propria em `supabase/migrations/`). O dialogo de recusa (`ConfirmacaoDialog` com `motivo`, em
+  `AvaliacoesUI.tsx`) abre SEMPRE, inclusive na recusa individual, e deixa o botao desabilitado com o
+  motivo (trim) vazio; regras puras em `src/lib/motivoRecusa.ts`. No lote ("Recusar selecionadas") e
+  **um texto so**, gravado em todas as selecionadas. O banco garante: `rejeitada` sem motivo =
+  erro 23514 ("Informe o motivo da recusa."), mostrado no toast como os demais erros. Nao adicione
+  recusa sem motivo, nem "motivo padrao" gerado pelo front.
+- **Editar motivo** (historico, so recusadas, dentro de `RequireWrite chave="admin"`): UPDATE de
+  `motivo_recusa` com `.eq("status","rejeitada")` + `.select("id")` conferido (`editarMotivo` em
+  `useHistoricoAvaliacoes`); zero linhas = a estrela deixou de estar recusada. O botao so aparece com o
+  motivo atual ja lido, e o clique refaz a leitura pela RPC e so mostra o campo depois dela (cache
+  velho nao pode sobrescrever edicao de outro admin). Os dialogos com motivo ficam abertos, com o
+  texto, ate a gravacao dar certo; o botao fica desabilitado durante o envio.
+- **Aprovar e recusar so atingem quem ainda esta pendente** (`.eq("status","pendente")` no UPDATE de
+  `decidir`): uma decisao tomada por outro admin com o dialogo aberto nao e sobrescrita. Zero linhas
+  cai no `conferirLinhasEscritas`, com mensagem que cobre as duas causas (decidida por outra pessoa
+  ou sem permissao de escrita). Se o lote gravou so PARTE (`DecisaoParcialError`, em
+  `avaliacoesAdmin.ts`), o dialogo fecha, TODOS os ids do lote saem da selecao (nenhum segue pendente; um devolvido a fila
+  por outra pessoa nao pode reaparecer ja marcado), o snapshot otimista NAO e restaurado e o toast diz as contagens.
+- **`motivo_recusa` NAO e legivel por SELECT** para `anon` nem `authenticated`: nunca ponha a coluna em
+  `.select(...)` nem use `select("*")` em `avaliacoes_cadastradas` (42501 derruba a fila inteira) — por
+  isso `COLUNAS` em `useAdminAvaliacoes` nao a tem. A leitura e so pela RPC
+  `avaliacoes_motivos_recusa(p_ids)` (gate `destaque_can_read_page('admin')`, so linhas
+  `rejeitada`, ate 500 ids), consumida por `useMotivosRecusa` (chave
+  `["admin_avaliacoes","motivos",...ids]`, fora dos prefixos de remocao otimista e invalidada pelas
+  mutacoes). Falha da RPC mostra aviso discreto na linha, **nunca** "Sem motivo registrado" (que e
+  so recusa legada, `motivo_recusa` NULL). A busca do historico tambem casa no texto do motivo
+  (`casaBuscaHistorico`).
+- **Devolver para a fila e aprovar zeram o motivo**: o banco limpa `motivo_recusa` sozinho, e o front nao
+  o envia nesses dois UPDATEs. Aprovar nao tem motivo.
+- **`/minhas-avaliacoes` ainda NAO mostra o motivo**: ele so podera aparecer ali depois do login da
+  profissional (outra entrega); a pagina e publica e a coluna nao e legivel por `anon`.
 
 **Cliente no Trinks no cadastro e nos sinais da fila** (migracoes `20261019120000_avaliacoes_cliente_trinks.sql`, `20261019120100_avaliacoes_sinais.sql`, `20261019180000_avaliacoes_sinais_duplicata_trinks.sql` e `20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`):
 
@@ -527,7 +560,7 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
 | Tabela | Leitura | Escrita |
 |---|---|---|
 | `regras_desafio`, `feriados`, `tratamento_fabricante`, `profissional_fabricante` | publica (`anon`) — o dashboard le sem sessao | `<tabela>_write_admin`: `for all to authenticated using ((select public.destaque_can_write_page('admin')))` |
-| `avaliacoes_cadastradas` | publica | INSERT publico com `status='pendente'` (por design); UPDATE so com `destaque_can_write_page('admin')` |
+| `avaliacoes_cadastradas` | `anon`/`authenticated`: privilegio de COLUNA em todas MENOS `motivo_recusa` (migracao `20261020130000_avaliacoes_motivo_recusa.sql`); `select('*')` da 42501, liste colunas; o motivo so pela RPC `avaliacoes_motivos_recusa` (admin). Coluna nova precisa entrar no grant | INSERT publico com `status='pendente'` (por design); UPDATE so com `destaque_can_write_page('admin')` |
 | `trinks_services` | publica | fechada para `anon` (escrita revogada) |
 | `profissionais_ativos` | `anon`: so as colunas `profissionalId`, `nome_profissional`, `categoria`, `apelido`, `ativo`, `dia_aniversario`, `mes_aniversario`, `created_at`, `updated_at` (privilegio de coluna, migracao `20261019160000_profissionais_ativos_colunas_anon.sql`); cpf, telefone, documento, cnpj, endereco e dados fiscais NAO. `select('*')` como anon da erro: liste colunas. `email` e `trinks_id_profissional` tambem NAO. `authenticated` ainda le tudo, inclusive `email` (pendencia do login) | fechada para `anon` (todos os grants de escrita revogados); NFS-e escreve via `service_role` |
 | `automation_logs` | nenhuma (interna) | so `service_role`/`postgres` (n8n) |
