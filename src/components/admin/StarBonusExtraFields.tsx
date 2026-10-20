@@ -50,7 +50,7 @@ export function StarBonusExtraFields({
     queryFn: async (): Promise<ProfissionalLinha[]> => {
       const { data, error } = await supabase
         .from("profissionais_ativos")
-        .select("*");
+        .select("profissionalId, nome_profissional, apelido, categoria, ativo");
       if (error) throw error;
       return (data as unknown as ProfissionalLinha[]) ?? [];
     },

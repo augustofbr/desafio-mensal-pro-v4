@@ -525,7 +525,8 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
 |---|---|---|
 | `regras_desafio`, `feriados`, `tratamento_fabricante`, `profissional_fabricante` | publica (`anon`) — o dashboard le sem sessao | `<tabela>_write_admin`: `for all to authenticated using ((select public.destaque_can_write_page('admin')))` |
 | `avaliacoes_cadastradas` | publica | INSERT publico com `status='pendente'` (por design); UPDATE so com `destaque_can_write_page('admin')` |
-| `trinks_services`, `profissionais_ativos` | publica | fechada para `anon` (escrita revogada) |
+| `trinks_services` | publica | fechada para `anon` (escrita revogada) |
+| `profissionais_ativos` | `anon`: so as colunas `profissionalId`, `nome_profissional`, `categoria`, `apelido`, `ativo`, `dia_aniversario`, `mes_aniversario`, `created_at`, `updated_at` (privilegio de coluna, migracao `20261019160000_profissionais_ativos_colunas_anon.sql`); cpf, telefone, documento, cnpj, endereco e dados fiscais NAO. `select('*')` como anon da erro: liste colunas. `authenticated` ainda le tudo (pendencia do login) | fechada para `anon` (todos os grants de escrita revogados); NFS-e escreve via `service_role` |
 | `automation_logs` | nenhuma (interna) | so `service_role`/`postgres` (n8n) |
 
 Ao criar tabela nova: `enable` + `force row level security`, `revoke all ... from anon`, e
