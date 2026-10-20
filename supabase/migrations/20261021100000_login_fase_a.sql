@@ -37,9 +37,11 @@
 --      Trigger BEFORE INSERT destaque_users_app_vincular_profissional (funcao
 --      public.vincular_profissional_usuario_destaque, SECURITY DEFINER, search_path vazio): com
 --      new.profissional_id NULL, preenche com o "profissionalId" cujo email = lower(email do
---      auth.users de new.id) e ativo is not false, SO se esse auth user tem email_confirmed_at e
---      nenhuma troca de e-mail pendente (email_change vazio) — fix round 2 do review: protege o
---      religar de uma conta de outro app cujo dono trocou o e-mail. Sem casamento, sem
+--      auth.users de new.id) e ativo is not false, SO se esse auth user nao tem troca de e-mail
+--      pendente (email_change vazio) E (tem email_confirmed_at OU e convite ainda nao aceito:
+--      invited_at preenchido e email_confirmed_at NULL) — fix rounds 2/3 do review: protege o
+--      religar de uma conta de outro app cujo dono trocou o e-mail, sem deixar de ligar quem
+--      entra por convite. Depende de "Confirm email" + "Secure email change" ligados no projeto. Sem casamento, sem
 --      confirmacao, com troca pendente ou com o id ja ligado a outra linha: NULL, sem erro. pg_advisory_xact_lock serializa dois INSERTs
 --      concorrentes (o segundo enxerga o commit do primeiro e cai em NULL em vez de violar o
 --      UNIQUE). profissional_id passado explicitamente e respeitado (o UNIQUE vale). Sem trigger
@@ -298,8 +300,14 @@ begin
     from auth.users au
     join public.profissionais_ativos pa on pa.email = pg_catalog.lower(au.email)
    where au.id = new.id
-     and au.email_confirmed_at is not null           -- e-mail confirmado
-     and coalesce(au.email_change, '') = ''          -- sem troca de e-mail pendente
+     -- sem troca pendente E (e-mail confirmado OU convidado ainda nao confirmado). Convite e ato
+     -- do admin com e-mail da lista conferida pelo dono; o convidado so entra aceitando, e aceitar
+     -- confirma esse mesmo e-mail. Com "Confirm email" + "Secure email change" ligados no projeto
+     -- (2026-10-20 16:02), email_confirmed_at prova a posse do e-mail. Conta de outro app que ja
+     -- existia aparece com ja_tem_login em destaque_profissionais_sem_conta e pede confirmacao.
+     and coalesce(au.email_change, '') = ''
+     and (au.email_confirmed_at is not null
+          or (au.invited_at is not null and au.email_confirmed_at is null))
      and pa.ativo is not false
      and not exists (select 1 from public.destaque_users_app o
                       where o.profissional_id = pa."profissionalId")
@@ -312,8 +320,10 @@ $$;
 
 COMMENT ON FUNCTION public.vincular_profissional_usuario_destaque() IS
   'BEFORE INSERT em destaque_users_app: com profissional_id NULL, liga a conta a profissional ativa '
-  'cujo email = lower(auth.users.email) de new.id, so com email_confirmed_at preenchido e sem '
-  'email_change pendente, e se ela ainda nao estiver ligada; senao NULL. '
+  'cujo email = lower(auth.users.email) de new.id, so sem email_change pendente e com '
+  'email_confirmed_at preenchido OU convite ainda nao aceito (invited_at), e se ela ainda nao '
+  'estiver ligada; senao NULL. DEPENDE de "Confirm email" (e "Secure email change") ligado no '
+  'projeto Supabase: sem isso email_confirmed_at nao prova a posse do e-mail. '
   'Migracao 20261021100000.';
 
 -- funcao de trigger: o EXECUTE so e checado na criacao do trigger; ninguem chama direto
@@ -330,8 +340,9 @@ UPDATE public.destaque_users_app u
    SET profissional_id = pa."profissionalId"
   FROM auth.users au, public.profissionais_ativos pa
  WHERE au.id = u.id
-   AND au.email_confirmed_at IS NOT NULL
    AND coalesce(au.email_change, '') = ''
+   AND (au.email_confirmed_at IS NOT NULL
+        OR (au.invited_at IS NOT NULL AND au.email_confirmed_at IS NULL))
    AND pa.email = lower(au.email)
    AND pa.ativo IS NOT false
    AND u.profissional_id IS NULL
@@ -694,7 +705,9 @@ BEGIN
                JOIN auth.users au ON au.id = u.id
                JOIN public.profissionais_ativos pa ON pa.email = lower(au.email)
               WHERE u.profissional_id IS NULL AND pa.ativo IS NOT false
-                AND au.email_confirmed_at IS NOT NULL AND coalesce(au.email_change, '') = ''
+                AND coalesce(au.email_change, '') = ''
+                AND (au.email_confirmed_at IS NOT NULL
+                     OR (au.invited_at IS NOT NULL AND au.email_confirmed_at IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM public.destaque_users_app o
                                  WHERE o.profissional_id = pa."profissionalId")) THEN
     v_falhas := v_falhas || 'backfill de destaque_users_app.profissional_id incompleto'::text;
