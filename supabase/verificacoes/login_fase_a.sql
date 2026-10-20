@@ -2,12 +2,18 @@
 -- Roda INTEIRO em begin ... rollback (nada persiste), como postgres (MCP execute_sql), DEPOIS
 -- de aplicar a migracao. Sem ela, o passo 0 aborta ("funcoes da migracao A inexistentes").
 -- O MCP recusa lotes grandes/sensiveis: mande o arquivo sem as linhas de comentario.
+-- VALE SO ATE A T5: a pre-condicao exige a Aline (885975) sem usuario de Auth e sem vinculo;
+-- depois que as contas das profissionais forem criadas, o passo 0 aborta.
 --
 -- Fases: A = estado real pos-migracao (policies publicas antigas ainda valem);
 -- pos_C_simulado = DROP, so nesta transacao, das policies publicas de SELECT de trinks_services,
 -- regras_desafio, avaliacoes_cadastradas e do INSERT publico de avaliacoes (o que a migracao C
--- fara): prova o recorte das policies novas por papel. Essa fase pega ACCESS EXCLUSIVE nessas
--- tabelas ate o rollback (~1 s; lock_timeout 3s).
+-- fara): prova o recorte das policies novas por papel. DESLIGADA por padrao: so roda com
+--   select set_config('lfa.pos_c', 'on', true);   -- antes do passo 3
+-- porque pega ACCESS EXCLUSIVE em trinks_services, regras_desafio e avaliacoes_cadastradas ate o
+-- rollback (o sync horario do n8n e o dashboard ficam esperando). Rode fora do horario do sync;
+-- lock_timeout 3s limita a espera pelo lock e statement_timeout 60s limita quanto tempo a fase o
+-- segura.
 -- Papeis (ordem das listas de esperado):
 --   1 anon
 --   2 prof_ligada        perfil Profissional; email do Auth = email da Aline (885975); o vinculo
@@ -17,7 +23,7 @@
 --   6 inativo            perfil Admin, users_app.ativo = false, ligado (pelo trigger) a OUTRA
 --                        profissional ativa: o vinculo tem de cair por estar desativado
 --   7 spoof              Profissional ativo SEM vinculo, mas com claim email = email da Aline
---                        (simula updateUser({email}) com autoconfirm): nao pode virar a Aline
+--                        (simula updateUser({email}) da epoca do autoconfirm, ate 2026-10-20 16:02): nao pode virar a Aline
 --   8 ligada_email_trocado  a MESMA conta da prof_ligada com claim email diferente: continua 885975
 -- Fixtures so do trigger: "ocupante" ligada explicitamente a uma 3a profissional X e
 -- "duplicado" com o email de X no Auth: o trigger deixa NULL (00c, id ja ligado);
@@ -25,8 +31,12 @@
 -- outra livre, email_change preenchido): o trigger deixa NULL (00f, 00g). "convidado" (email de
 -- outra livre, invited_at preenchido e email_confirmed_at NULL): o trigger LIGA (00h). "outro_app": auth user
 -- confirmado com o email de outra livre e FORA de destaque_users_app: sem_conta mostra
--- ja_tem_login = true para ela (15). Todo auth user de fixture nasce com email_confirmed_at,
--- salvo o "nao_confirmado".
+-- ja_tem_login/vincula_automatico = true/true para ela (15). "convidado_com_senha" (convite
+-- pendente mas com encrypted_password) e "confirmado_antigo" (email_confirmed_at antes de
+-- 2026-10-20 16:02-04, epoca do autoconfirm): o trigger deixa NULL (00i, 00j). "outro_app_antigo"
+-- (confirmado antes do corte, fora de destaque_users_app): sem_conta mostra true/false (16).
+-- Todo auth user de fixture nasce com email_confirmed_at = now() (depois do corte), salvo os
+-- casos acima.
 -- Claims via set_config('request.jwt.claims') antes de `set local role`. auth.users dispara
 -- handle_new_user (public.profiles): some no rollback.
 -- Esperados: "a|b|...|h" na ordem dos papeis (valor unico = todos); 1a lista = fase A,
@@ -37,7 +47,8 @@
 -- INSERTs/UPDATEs de teste se desfazem num sub-bloco (errcode LFA01): contagens nao mudam.
 -- Saida: _resultado (fase, papel, verificacao, esperado, obtido, ok, nota); aborta se ok=false.
 -- Opcional: set_config('lfa.so', '<regex>', true) antes do passo 3 roda so as verificacoes que
--- casam (usado no ensaio dividido).
+-- casam (usado no ensaio dividido). Linhas esperadas: 10 de postgres (00a-00j) + 16 verificacoes
+-- x 8 papeis x fases (1 = 138 linhas; com lfa.pos_c = on, 2 = 266 linhas).
 
 begin;
 
@@ -84,7 +95,7 @@ livres as (  -- ativas com email, sem usuario de Auth e sem vinculo (para inativ
    where ativo is not false and email is not null and "profissionalId" <> 885975
      and not exists (select 1 from auth.users a where lower(a.email) = p.email)
      and not exists (select 1 from public.destaque_users_app u where u.profissional_id = p."profissionalId")
-   order by 1 limit 6)
+   order by 1 limit 9)
 select (select email from public.profissionais_ativos where "profissionalId" = 885975) aline,
        (select id from livres order by id limit 1) inativo_id,
        (select email from livres order by id limit 1) inativo_email,
@@ -96,6 +107,10 @@ select (select email from public.profissionais_ativos where "profissionalId" = 8
        (select email from livres order by id offset 4 limit 1) oa_email,
        (select id from livres order by id offset 5 limit 1) cv_id,
        (select email from livres order by id offset 5 limit 1) cv_email,
+       (select email from livres order by id offset 6 limit 1) cs_email,
+       (select email from livres order by id offset 7 limit 1) ca_email,
+       (select id from livres order by id offset 8 limit 1) oaa_id,
+       (select email from livres order by id offset 8 limit 1) oaa_email,
        (select profissional_id from public.avaliacoes_cadastradas where profissional_id <> 885975
          group by 1 order by count(*) desc, 1 limit 1) outra,
        (select count(*) from public.destaque_profissionais_sem_conta()) s_real_rpc_postgres,
@@ -120,14 +135,17 @@ select * from (values
   (8, 'ligada_email_trocado', '00000000-0000-4000-8000-0000106a0001', null, 'fx-login-outro@invalid.local', null, null)
 ) x(o, papel, uid, auth_email, claim_email, perfil, ativo);
 
-insert into auth.users (id, aud, role, email, email_confirmed_at, email_change, invited_at)
-select uid, 'authenticated', 'authenticated', auth_email, now(), '', null::timestamptz from _p where auth_email is not null
-union all select '00000000-0000-4000-8000-0000106a0007', 'authenticated', 'authenticated', 'fx-login-ocupante@invalid.local', now(), '', null
-union all select '00000000-0000-4000-8000-0000106a0008', 'authenticated', 'authenticated', (select x_email from _fx), now(), '', null
-union all select '00000000-0000-4000-8000-0000106a0009', 'authenticated', 'authenticated', (select nc_email from _fx), null, '', null
-union all select '00000000-0000-4000-8000-0000106a000a', 'authenticated', 'authenticated', (select ec_email from _fx), now(), 'fx-login-troca@invalid.local', null
-union all select '00000000-0000-4000-8000-0000106a000b', 'authenticated', 'authenticated', (select oa_email from _fx), now(), '', null
-union all select '00000000-0000-4000-8000-0000106a000c', 'authenticated', 'authenticated', (select cv_email from _fx), null, '', now();
+insert into auth.users (id, aud, role, email, email_confirmed_at, email_change, invited_at, encrypted_password)
+select uid, 'authenticated', 'authenticated', auth_email, now(), '', null::timestamptz, null::varchar from _p where auth_email is not null
+union all select '00000000-0000-4000-8000-0000106a0007', 'authenticated', 'authenticated', 'fx-login-ocupante@invalid.local', now(), '', null, null
+union all select '00000000-0000-4000-8000-0000106a0008', 'authenticated', 'authenticated', (select x_email from _fx), now(), '', null, null
+union all select '00000000-0000-4000-8000-0000106a0009', 'authenticated', 'authenticated', (select nc_email from _fx), null, '', null, null
+union all select '00000000-0000-4000-8000-0000106a000a', 'authenticated', 'authenticated', (select ec_email from _fx), now(), 'fx-login-troca@invalid.local', null, null
+union all select '00000000-0000-4000-8000-0000106a000b', 'authenticated', 'authenticated', (select oa_email from _fx), now(), '', null, null
+union all select '00000000-0000-4000-8000-0000106a000c', 'authenticated', 'authenticated', (select cv_email from _fx), null, '', now(), ''
+union all select '00000000-0000-4000-8000-0000106a000d', 'authenticated', 'authenticated', (select cs_email from _fx), null, '', now(), '$2a$10$fixturefixturefixturefixtu'
+union all select '00000000-0000-4000-8000-0000106a000e', 'authenticated', 'authenticated', (select ca_email from _fx), timestamptz '2026-06-01 12:00:00-04', '', null, null
+union all select '00000000-0000-4000-8000-0000106a000f', 'authenticated', 'authenticated', (select oaa_email from _fx), timestamptz '2026-06-01 12:00:00-04', '', null, null;
 
 -- vinculos pelo TRIGGER (profissional_id omitido), exceto o ocupante (explicito, ANTES do duplicado)
 insert into public.destaque_users_app (id, nome, perfil_id, ativo)
@@ -141,9 +159,11 @@ select v.id::uuid, v.nome, p.id, true
   from (values ('00000000-0000-4000-8000-0000106a0008', 'LoginFx duplicado'),
                ('00000000-0000-4000-8000-0000106a0009', 'LoginFx nao_confirmado'),
                ('00000000-0000-4000-8000-0000106a000a', 'LoginFx troca_pendente'),
-               ('00000000-0000-4000-8000-0000106a000c', 'LoginFx convidado')) v(id, nome)
+               ('00000000-0000-4000-8000-0000106a000c', 'LoginFx convidado'),
+               ('00000000-0000-4000-8000-0000106a000d', 'LoginFx convidado_com_senha'),
+               ('00000000-0000-4000-8000-0000106a000e', 'LoginFx confirmado_antigo')) v(id, nome)
   join public.destaque_perfis p on p.nome = 'Somente Leitura';
--- 0b ("outro_app") fica FORA de destaque_users_app de proposito
+-- 0b ("outro_app") e 0f ("outro_app_antigo") ficam FORA de destaque_users_app de proposito
 
 -- recusa da Aline com motivo (postgres nao passa pelo trigger de INSERT)
 insert into public.avaliacoes_cadastradas (profissional_id, nome_profissional, nome_cliente, status, motivo_recusa)
@@ -171,7 +191,7 @@ select (select count(*) from public.avaliacoes_cadastradas
 do $$
 begin
   if exists (select 1 from _fx where aline is null or inativo_id is null or x_id is null or nc_email is null
-                                   or ec_email is null or oa_id is null or cv_id is null
+                                   or ec_email is null or oa_id is null or cv_id is null or cs_email is null or ca_email is null or oaa_id is null
                                    or outra is null or dia is null or s_real < 19 or s_real_rpc_postgres <> 0)
      or exists (select 1 from _tok where n = '0' or a like '% motivos=0' or o like 'linhas=0 %'
                                    or s like '0/%' or s like '%/0') then
@@ -202,6 +222,10 @@ select 'A', 0, 'postgres', v.k, v.esp, v.obt, null from (values
   ('00h trigger: convidado ainda nao confirmado -> liga', 'ligado',
    (select case when profissional_id = f.cv_id then 'ligado' else coalesce(profissional_id::text, 'NULL') end
       from public.destaque_users_app, _fx f where id = '00000000-0000-4000-8000-0000106a000c')),
+  ('00i trigger: convidado com senha -> NULL', 'NULL',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a000d')),
+  ('00j trigger: confirmado antes de 2026-10-20 16:02 -> NULL', 'NULL',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a000e')),
   ('00e backfill: contas reais com email casavel e sem vinculo', '0',
    (select count(*)::text from public.destaque_users_app u join auth.users au on au.id = u.id
       join public.profissionais_ativos pa on pa.email = lower(au.email)
@@ -259,9 +283,12 @@ begin
   perform pg_temp.r('05 profissionais_sem_conta() linhas/ja_tem_login',
     $q$select format('%s/%s', count(*), count(*) filter (where ja_tem_login)) from public.destaque_profissionais_sem_conta()$q$,
     '42501|0/0|0/0|0/0|S|0/0|0/0|0/0');
-  perform pg_temp.r('15 sem_conta: ja_tem_login da profissional com login de outro app', format(
-    $q$select coalesce((select ja_tem_login::text from public.destaque_profissionais_sem_conta() where "profissionalId" = %s), 'sem linha')$q$,
-    x.oa_id), '42501|sem linha|sem linha|sem linha|true|sem linha|sem linha|sem linha');
+  perform pg_temp.r('15 sem_conta: ja_tem_login/vincula_automatico, login de outro app recente', format(
+    $q$select coalesce((select ja_tem_login || '/' || vincula_automatico from public.destaque_profissionais_sem_conta() where "profissionalId" = %s), 'sem linha')$q$,
+    x.oa_id), '42501|sem linha|sem linha|sem linha|true/true|sem linha|sem linha|sem linha');
+  perform pg_temp.r('16 sem_conta: ja_tem_login/vincula_automatico, login de outro app antes do corte', format(
+    $q$select coalesce((select ja_tem_login || '/' || vincula_automatico from public.destaque_profissionais_sem_conta() where "profissionalId" = %s), 'sem linha')$q$,
+    x.oaa_id), '42501|sem linha|sem linha|sem linha|true/false|sem linha|sem linha|sem linha');
   perform pg_temp.r('06 select trinks_services',
     $q$select case when exists (select 1 from public.trinks_services) then '>0' else '0' end$q$,
     '>0', '0|>0|>0|>0|>0|0|>0|>0');
@@ -299,7 +326,8 @@ end $f$;
 do $$
 declare f text; x record;
 begin
-  foreach f in array array['A', 'pos_C_simulado'] loop
+  foreach f in array case when current_setting('lfa.pos_c', true) = 'on'
+                          then array['A', 'pos_C_simulado'] else array['A'] end loop
     if f = 'pos_C_simulado' then
       perform set_config('request.jwt.claims', '', true);
       drop policy "Public can view trinks_services" on public.trinks_services;

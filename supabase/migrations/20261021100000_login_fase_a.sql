@@ -28,27 +28,40 @@
 --   1b) Vinculo EXPLICITO usuario -> profissional (fix round 1 do review de seguranca):
 --      destaque_users_app.profissional_id integer null, FK para profissionais_ativos
 --      ("profissionalId") on delete set null, UNICO (indice parcial where not null).
---      Por que nao o e-mail do JWT: o projeto tem autoconfirm, entao um usuario logado pode
---      chamar supabase.auth.updateUser({email}) e trocar o proprio e-mail para o de uma colega
---      SEM conta; com o vinculo derivado de auth.email() ele "viraria" ela. Agora o e-mail e lido
+--      Por que nao o e-mail do JWT: ate 2026-10-20 16:02 o projeto tinha autoconfirm (sem
+--      "Confirm email" nem "Secure email change"), entao um usuario logado podia chamar
+--      supabase.auth.updateUser({email}) e trocar o proprio e-mail para o de uma colega SEM
+--      conta; com o vinculo derivado de auth.email() ele "viraria" ela. Desde 16:02 os dois
+--      estao ligados, mas o vinculo continua sem depender do JWT. Agora o e-mail e lido
 --      UMA vez, no INSERT da linha em destaque_users_app (feito pela edge function
 --      destaque-auth-admin, com service_role, quando o admin cria/liga a conta) e nunca mais e
 --      re-derivado. Trocar o e-mail do Auth depois nao muda o vinculo.
 --      Trigger BEFORE INSERT destaque_users_app_vincular_profissional (funcao
 --      public.vincular_profissional_usuario_destaque, SECURITY DEFINER, search_path vazio): com
 --      new.profissional_id NULL, preenche com o "profissionalId" cujo email = lower(email do
---      auth.users de new.id) e ativo is not false, SO se esse auth user nao tem troca de e-mail
---      pendente (email_change vazio) E (tem email_confirmed_at OU e convite ainda nao aceito:
---      invited_at preenchido e email_confirmed_at NULL) — fix rounds 2/3 do review: protege o
---      religar de uma conta de outro app cujo dono trocou o e-mail, sem deixar de ligar quem
---      entra por convite. Depende de "Confirm email" + "Secure email change" ligados no projeto. Sem casamento, sem
---      confirmacao, com troca pendente ou com o id ja ligado a outra linha: NULL, sem erro. pg_advisory_xact_lock serializa dois INSERTs
+--      auth.users de new.id) e ativo is not false, SO se o auth user passa em
+--      public.vinculo_auth_user_elegivel(id) (SECURITY DEFINER, search_path vazio, sem EXECUTE
+--      para PUBLIC/anon/authenticated; usada pelo trigger e pela RPC sem_conta):
+--        sem troca de e-mail pendente (email_change vazio) E
+--        ( email_confirmed_at >= 2026-10-20 16:02-04 (antes disso o autoconfirm preenchia o campo
+--            sem prova de posse — achado 2 do auditor; ha caso real: conta de outro app com o
+--            e-mail da Paula, confirmada em 86 ms em jun/2026, com senha de origem desconhecida)
+--          OU convite ainda nao aceito SEM senha e SEM login: invited_at preenchido,
+--            email_confirmed_at NULL, encrypted_password vazio/NULL, last_sign_in_at NULL
+--            (achado 1: signUp com senha + convite de outro app reaproveitando o usuario deixaria
+--            a senha do atacante valendo depois que a profissional confirmasse) ).
+--      Depende de "Confirm email" + "Secure email change" ligados no projeto. Sem casamento, sem
+--      elegibilidade ou com o id ja ligado a outra linha: NULL, sem erro. pg_advisory_xact_lock serializa dois INSERTs
 --      concorrentes (o segundo enxerga o commit do primeiro e cai em NULL em vez de violar o
 --      UNIQUE). profissional_id passado explicitamente e respeitado (o UNIQUE vale). Sem trigger
 --      de UPDATE: religar/desligar e ato manual (SQL do dono) ate existir tela.
 --      Nome sem o prefixo destaque_ de proposito: o canario do kit avisaria (search_path vazio).
---      Backfill das linhas existentes pelo mesmo criterio (2026-10-20: Augusto -> 593837; a
---      conta "Augusto teste leitura" nao casa e fica NULL).
+--      Backfill das linhas existentes: mesmo criterio, MENOS o corte de data no ramo confirmado
+--      (sao contas que o admin criou e conhecemos; em 2026-10-20 so o Augusto casa -> 593837; a
+--      conta "Augusto teste leitura" nao casa e fica NULL). A guarda final usa o criterio do
+--      backfill (por isso e quase tautologica: so pega colisao, nao erro de criterio).
+--      A FK on delete set null DESLIGA o vinculo em silencio se a profissional for apagada (o
+--      NFS-e apaga com service_role); recadastrar nao religa. Documentar no runbook (T8).
 --      Compatibilidade conferida: a edge function destaque-auth-admin so faz INSERT com colunas
 --      explicitas (id, nome, perfil_id, ativo) — tanto no convite quanto ao ligar um auth user
 --      que ja existe (nao ha upsert; se ja for membro, ela recusa) — e UPDATE so de
@@ -73,7 +86,9 @@
 --          auth.users ligado a destaque_users_app (ativo ou nao) E cujo id nao esta em nenhum
 --          destaque_users_app.profissional_id. Gate write em `usuarios`. Coluna final
 --          ja_tem_login: o email ja pertence a um auth.users fora de destaque_users_app (conta de
---          outro app, que criar_usuario religaria sem convite). DROP + CREATE (tipo de retorno).
+--          outro app, que criar_usuario religaria sem convite); vincula_automatico: o trigger
+--          ligaria essa conta existente (vinculo_auth_user_elegivel), true quando nao ha conta no
+--          Auth (convite novo liga). DROP + CREATE (tipo de retorno).
 --   3) Policies novas, permissivas, `to authenticated`, predicado em (select ...) (InitPlan):
 --        <tabela>_select_painel em trinks_services, regras_desafio, feriados,
 --          tratamento_fabricante, profissional_fabricante: read em `painel`;
@@ -140,6 +155,16 @@
 begin;
 set local lock_timeout = '5s';
 
+-- 0) so desfaz o trigger de avaliacoes se ele ainda e o desta migracao (md5 do prosrc da versao
+--    da A: a58702fd76f0ee6c5ac53c8cb7e01a2f); se alguem o mudou depois, pare e reavalie
+DO $$
+BEGIN
+  IF md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
+     <> 'a58702fd76f0ee6c5ac53c8cb7e01a2f' THEN
+    RAISE EXCEPTION 'avaliacoes_cadastradas_antes_inserir mudou depois da migracao A: rollback abortado';
+  END IF;
+END $$;
+
 -- 1) trigger function vigente antes desta migracao (pg_get_functiondef de 2026-10-20,
 --    md5 23f95a5c165b345d62d0fae957f97d1a; owner postgres, trigger inalterado)
 CREATE OR REPLACE FUNCTION public.avaliacoes_cadastradas_antes_inserir()
@@ -189,6 +214,17 @@ end
 $function$
 ;
 
+-- 1b) conferencia: voltou exatamente a versao anterior a A
+DO $$
+BEGIN
+  IF md5(pg_get_functiondef('public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
+     <> '23f95a5c165b345d62d0fae957f97d1a'
+     OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
+     <> 'fbef0880ff26b6661c8f6ad36c5def12' THEN
+    RAISE EXCEPTION 'trigger de avaliacoes nao voltou a versao anterior a A';
+  END IF;
+END $$;
+
 -- 2) helper
 drop function if exists public.avaliacao_espelho_tem_cliente(integer, date, bigint);
 
@@ -217,6 +253,7 @@ drop function if exists public.destaque_minha_profissional();
 --     select id, profissional_id from public.destaque_users_app where profissional_id is not null)
 drop trigger if exists destaque_users_app_vincular_profissional on public.destaque_users_app;
 drop function if exists public.vincular_profissional_usuario_destaque();
+drop function if exists public.vinculo_auth_user_elegivel(uuid);
 drop index if exists public.destaque_users_app_profissional_id_uniq;
 alter table public.destaque_users_app drop column if exists profissional_id;
 
@@ -281,6 +318,38 @@ COMMENT ON COLUMN public.destaque_users_app.profissional_id IS
   'criacao da conta pelo admin) e nunca re-derivada: trocar o e-mail do Auth nao muda o vinculo. '
   'Fonte de destaque_minha_profissional(). Migracao 20261021100000.';
 
+-- Elegibilidade de um auth user para o vinculo automatico (trigger e RPC sem_conta).
+CREATE OR REPLACE FUNCTION public.vinculo_auth_user_elegivel(p_user_id uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
+  select exists (
+    select 1
+    from auth.users au
+    where au.id = p_user_id
+      and coalesce(au.email_change, '') = ''          -- sem troca de e-mail pendente
+      and (
+        -- confirmado DEPOIS de ligar "Confirm email" (2026-10-20 16:02 -04): antes disso o
+        -- autoconfirm preenchia email_confirmed_at sem provar a posse do e-mail
+        au.email_confirmed_at >= timestamptz '2026-10-20 16:02:00-04'
+        -- ou convite ainda nao aceito, sem senha e sem login: convite e ato do admin com e-mail
+        -- da lista conferida, e aceitar confirma esse mesmo e-mail. Com senha definida (signUp
+        -- previo de outra pessoa) a senha dela continuaria valendo apos a confirmacao: nao liga.
+        or (au.invited_at is not null
+            and au.email_confirmed_at is null
+            and coalesce(au.encrypted_password, '') = ''
+            and au.last_sign_in_at is null)
+      )
+  )
+$$;
+
+COMMENT ON FUNCTION public.vinculo_auth_user_elegivel(uuid) IS
+  'true se o auth user pode ser ligado automaticamente a uma profissional: sem email_change '
+  'pendente E (email_confirmed_at >= 2026-10-20 16:02-04 OU convite nao aceito sem senha e sem '
+  'login). Interna (trigger de destaque_users_app e destaque_profissionais_sem_conta). DEPENDE de '
+  '"Confirm email" e "Secure email change" ligados no projeto. Migracao 20261021100000.';
+
+REVOKE ALL ON FUNCTION public.vinculo_auth_user_elegivel(uuid) FROM PUBLIC, anon, authenticated;
+
 CREATE OR REPLACE FUNCTION public.vincular_profissional_usuario_destaque()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
@@ -300,14 +369,10 @@ begin
     from auth.users au
     join public.profissionais_ativos pa on pa.email = pg_catalog.lower(au.email)
    where au.id = new.id
-     -- sem troca pendente E (e-mail confirmado OU convidado ainda nao confirmado). Convite e ato
-     -- do admin com e-mail da lista conferida pelo dono; o convidado so entra aceitando, e aceitar
-     -- confirma esse mesmo e-mail. Com "Confirm email" + "Secure email change" ligados no projeto
-     -- (2026-10-20 16:02), email_confirmed_at prova a posse do e-mail. Conta de outro app que ja
-     -- existia aparece com ja_tem_login em destaque_profissionais_sem_conta e pede confirmacao.
-     and coalesce(au.email_change, '') = ''
-     and (au.email_confirmed_at is not null
-          or (au.invited_at is not null and au.email_confirmed_at is null))
+     -- criterio em public.vinculo_auth_user_elegivel (corte de 2026-10-20 16:02 no ramo
+     -- confirmado; convite pendente so sem senha e sem login). Conta de outro app que ja existia
+     -- aparece com ja_tem_login/vincula_automatico em destaque_profissionais_sem_conta.
+     and public.vinculo_auth_user_elegivel(au.id)
      and pa.ativo is not false
      and not exists (select 1 from public.destaque_users_app o
                       where o.profissional_id = pa."profissionalId")
@@ -320,10 +385,11 @@ $$;
 
 COMMENT ON FUNCTION public.vincular_profissional_usuario_destaque() IS
   'BEFORE INSERT em destaque_users_app: com profissional_id NULL, liga a conta a profissional ativa '
-  'cujo email = lower(auth.users.email) de new.id, so sem email_change pendente e com '
-  'email_confirmed_at preenchido OU convite ainda nao aceito (invited_at), e se ela ainda nao '
-  'estiver ligada; senao NULL. DEPENDE de "Confirm email" (e "Secure email change") ligado no '
-  'projeto Supabase: sem isso email_confirmed_at nao prova a posse do e-mail. '
+  'cujo email = lower(auth.users.email) de new.id, se vinculo_auth_user_elegivel(new.id) (sem '
+  'email_change pendente e: confirmado desde 2026-10-20 16:02-04, ou convite nao aceito sem senha '
+  'e sem login) e se ela ainda nao estiver ligada; senao NULL. DEPENDE de "Confirm email" (e '
+  '"Secure email change") ligado no projeto Supabase: sem isso email_confirmed_at nao prova a '
+  'posse do e-mail. '
   'Migracao 20261021100000.';
 
 -- funcao de trigger: o EXECUTE so e checado na criacao do trigger; ninguem chama direto
@@ -334,15 +400,17 @@ CREATE OR REPLACE TRIGGER destaque_users_app_vincular_profissional
   FOR EACH ROW
   EXECUTE FUNCTION public.vincular_profissional_usuario_destaque();
 
--- backfill das contas existentes, mesmo criterio do trigger (dispara o guard anti-lockout
--- deferido no commit; nenhum admin muda de estado)
+-- backfill das contas existentes: criterio do trigger SEM o corte de data no ramo confirmado
+-- (contas criadas pelo admin e conhecidas; em 2026-10-20 so o Augusto casa). Dispara o guard
+-- anti-lockout deferido no commit; nenhum admin muda de estado.
 UPDATE public.destaque_users_app u
    SET profissional_id = pa."profissionalId"
   FROM auth.users au, public.profissionais_ativos pa
  WHERE au.id = u.id
    AND coalesce(au.email_change, '') = ''
    AND (au.email_confirmed_at IS NOT NULL
-        OR (au.invited_at IS NOT NULL AND au.email_confirmed_at IS NULL))
+        OR (au.invited_at IS NOT NULL AND au.email_confirmed_at IS NULL
+            AND coalesce(au.encrypted_password, '') = '' AND au.last_sign_in_at IS NULL))
    AND pa.email = lower(au.email)
    AND pa.ativo IS NOT false
    AND u.profissional_id IS NULL
@@ -365,8 +433,9 @@ $$;
 
 COMMENT ON FUNCTION public.destaque_minha_profissional() IS
   'Login -> profissional: destaque_users_app.profissional_id da conta auth.uid(), so com a conta '
-  'ativa e a profissional com ativo is not false; senao NULL. NAO usa auth.email() (o e-mail do '
-  'Auth e trocavel pelo proprio usuario com autoconfirm). Migracao 20261021100000.';
+  'ativa e a profissional com ativo is not false; senao NULL. NAO usa auth.email(): ate '
+  '2026-10-20 16:02 o projeto tinha autoconfirm e o proprio usuario trocava o e-mail do Auth. '
+  'Migracao 20261021100000.';
 
 CREATE OR REPLACE FUNCTION public.destaque_estrelas_periodo(p_inicio timestamptz, p_fim timestamptz)
 RETURNS TABLE (profissional_id integer, status text, data_hora_cadastro timestamptz, data_aprovacao timestamptz)
@@ -413,14 +482,23 @@ COMMENT ON FUNCTION public.destaque_minhas_avaliacoes(integer) IS
 DROP FUNCTION IF EXISTS public.destaque_profissionais_sem_conta();
 CREATE FUNCTION public.destaque_profissionais_sem_conta()
 RETURNS TABLE ("profissionalId" integer, nome_profissional text, apelido text, categoria text, email text,
-               ja_tem_login boolean)
+               ja_tem_login boolean, vincula_automatico boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   select pa."profissionalId", pa.nome_profissional, pa.apelido, pa.categoria, pa.email,
          exists (
            select 1 from auth.users au
            where pg_catalog.lower(au.email) = pa.email
              and not exists (select 1 from public.destaque_users_app u where u.id = au.id)
-         ) as ja_tem_login
+         ) as ja_tem_login,
+         -- o trigger ligaria a conta que ja existe com este e-mail? sem conta no Auth: true
+         -- (convite novo nasce com invited_at, sem senha e sem login)
+         coalesce((
+           select public.vinculo_auth_user_elegivel(au.id)
+           from auth.users au
+           where pg_catalog.lower(au.email) = pa.email
+           order by au.created_at
+           limit 1
+         ), true) as vincula_automatico
   from public.profissionais_ativos pa
   where (select public.destaque_can_write_page('usuarios'))
     and pa.ativo is not false
@@ -444,6 +522,8 @@ COMMENT ON FUNCTION public.destaque_profissionais_sem_conta() IS
   '(destaque_users_app.profissional_id). Gate write em usuarios; senao 0 linhas. '
   'ja_tem_login = o email ja e de um usuario do Auth fora de destaque_users_app (conta de outro app): '
   'criar_usuario LIGA essa conta existente sem convite, entao a tela deve avisar e pedir confirmacao. '
+  'vincula_automatico = o trigger ligaria a conta existente (vinculo_auth_user_elegivel); true sem '
+  'conta no Auth. false = a conta seria criada SEM vinculo (religar e manual). '
   'O email vem do webhook Trinks SEM autenticacao: a lista e conferida pelo dono antes de criar. '
   'Migracao 20261021100000.';
 
@@ -613,8 +693,8 @@ BEGIN
   -- matriz dos 4 perfis
   FOR r IN SELECT key AS nome, value AS paginas FROM jsonb_each(v_esperado) LOOP
     IF NOT EXISTS (SELECT 1 FROM public.destaque_perfis p
-                    WHERE p.nome = r.nome AND p.paginas = r.paginas) THEN
-      v_falhas := v_falhas || format('perfil %s com matriz diferente de %s', r.nome, r.paginas);
+                    WHERE p.nome = r.nome AND p.paginas @> r.paginas) THEN
+      v_falhas := v_falhas || format('perfil %s sem as chaves %s', r.nome, r.paginas);
     END IF;
   END LOOP;
 
@@ -683,6 +763,10 @@ BEGIN
   END IF;
 
   -- vinculo explicito
+  IF has_function_privilege('anon', 'public.vinculo_auth_user_elegivel(uuid)', 'execute')
+     OR has_function_privilege('authenticated', 'public.vinculo_auth_user_elegivel(uuid)', 'execute') THEN
+    v_falhas := v_falhas || 'vinculo_auth_user_elegivel executavel por anon/authenticated'::text;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
                   WHERE attrelid = 'public.destaque_users_app'::regclass
                     AND attname = 'profissional_id' AND NOT attisdropped) THEN
@@ -700,14 +784,15 @@ BEGIN
      OR has_column_privilege('authenticated', 'public.destaque_users_app', 'profissional_id', 'update') THEN
     v_falhas := v_falhas || 'authenticated consegue INSERT/UPDATE em destaque_users_app'::text;
   END IF;
-  -- backfill completo: nenhuma conta sem vinculo cujo e-mail casa com profissional ativa livre
+  -- backfill completo (mesmo predicado do UPDATE: quase tautologico, so pega colisao)
   IF EXISTS (SELECT 1 FROM public.destaque_users_app u
                JOIN auth.users au ON au.id = u.id
                JOIN public.profissionais_ativos pa ON pa.email = lower(au.email)
               WHERE u.profissional_id IS NULL AND pa.ativo IS NOT false
                 AND coalesce(au.email_change, '') = ''
                 AND (au.email_confirmed_at IS NOT NULL
-                     OR (au.invited_at IS NOT NULL AND au.email_confirmed_at IS NULL))
+                     OR (au.invited_at IS NOT NULL AND au.email_confirmed_at IS NULL
+                         AND coalesce(au.encrypted_password, '') = '' AND au.last_sign_in_at IS NULL))
                 AND NOT EXISTS (SELECT 1 FROM public.destaque_users_app o
                                  WHERE o.profissional_id = pa."profissionalId")) THEN
     v_falhas := v_falhas || 'backfill de destaque_users_app.profissional_id incompleto'::text;
