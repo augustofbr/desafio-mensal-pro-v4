@@ -37,8 +37,10 @@
 --      Trigger BEFORE INSERT destaque_users_app_vincular_profissional (funcao
 --      public.vincular_profissional_usuario_destaque, SECURITY DEFINER, search_path vazio): com
 --      new.profissional_id NULL, preenche com o "profissionalId" cujo email = lower(email do
---      auth.users de new.id) e ativo is not false. Sem casamento, ou se esse id ja estiver ligado
---      a outra linha, fica NULL e nao da erro. pg_advisory_xact_lock serializa dois INSERTs
+--      auth.users de new.id) e ativo is not false, SO se esse auth user tem email_confirmed_at e
+--      nenhuma troca de e-mail pendente (email_change vazio) — fix round 2 do review: protege o
+--      religar de uma conta de outro app cujo dono trocou o e-mail. Sem casamento, sem
+--      confirmacao, com troca pendente ou com o id ja ligado a outra linha: NULL, sem erro. pg_advisory_xact_lock serializa dois INSERTs
 --      concorrentes (o segundo enxerga o commit do primeiro e cai em NULL em vez de violar o
 --      UNIQUE). profissional_id passado explicitamente e respeitado (o UNIQUE vale). Sem trigger
 --      de UPDATE: religar/desligar e ato manual (SQL do dono) ate existir tela.
@@ -67,7 +69,9 @@
 --          = destaque_minha_profissional(); senao 0 linhas. Ordem data_hora_cadastro desc.
 --        destaque_profissionais_sem_conta(): ativas com email nao nulo cujo email nao esta em
 --          auth.users ligado a destaque_users_app (ativo ou nao) E cujo id nao esta em nenhum
---          destaque_users_app.profissional_id. Gate write em `usuarios`.
+--          destaque_users_app.profissional_id. Gate write em `usuarios`. Coluna final
+--          ja_tem_login: o email ja pertence a um auth.users fora de destaque_users_app (conta de
+--          outro app, que criar_usuario religaria sem convite). DROP + CREATE (tipo de retorno).
 --   3) Policies novas, permissivas, `to authenticated`, predicado em (select ...) (InitPlan):
 --        <tabela>_select_painel em trinks_services, regras_desafio, feriados,
 --          tratamento_fabricante, profissional_fabricante: read em `painel`;
@@ -294,6 +298,8 @@ begin
     from auth.users au
     join public.profissionais_ativos pa on pa.email = pg_catalog.lower(au.email)
    where au.id = new.id
+     and au.email_confirmed_at is not null           -- e-mail confirmado
+     and coalesce(au.email_change, '') = ''          -- sem troca de e-mail pendente
      and pa.ativo is not false
      and not exists (select 1 from public.destaque_users_app o
                       where o.profissional_id = pa."profissionalId")
@@ -306,7 +312,8 @@ $$;
 
 COMMENT ON FUNCTION public.vincular_profissional_usuario_destaque() IS
   'BEFORE INSERT em destaque_users_app: com profissional_id NULL, liga a conta a profissional ativa '
-  'cujo email = lower(auth.users.email) de new.id, se ela ainda nao estiver ligada; senao NULL. '
+  'cujo email = lower(auth.users.email) de new.id, so com email_confirmed_at preenchido e sem '
+  'email_change pendente, e se ela ainda nao estiver ligada; senao NULL. '
   'Migracao 20261021100000.';
 
 -- funcao de trigger: o EXECUTE so e checado na criacao do trigger; ninguem chama direto
@@ -323,6 +330,8 @@ UPDATE public.destaque_users_app u
    SET profissional_id = pa."profissionalId"
   FROM auth.users au, public.profissionais_ativos pa
  WHERE au.id = u.id
+   AND au.email_confirmed_at IS NOT NULL
+   AND coalesce(au.email_change, '') = ''
    AND pa.email = lower(au.email)
    AND pa.ativo IS NOT false
    AND u.profissional_id IS NULL
@@ -389,10 +398,18 @@ COMMENT ON FUNCTION public.destaque_minhas_avaliacoes(integer) IS
   'a propria, a Recepcao e o Admin veem o motivo). Write em estrelas: qualquer id; read em '
   'estrelas: so o id de destaque_minha_profissional(); senao 0 linhas. Migracao 20261021100000.';
 
-CREATE OR REPLACE FUNCTION public.destaque_profissionais_sem_conta()
-RETURNS TABLE ("profissionalId" integer, nome_profissional text, apelido text, categoria text, email text)
+-- o tipo de retorno mudou entre revisoes (ja_tem_login): create or replace nao troca tipo
+DROP FUNCTION IF EXISTS public.destaque_profissionais_sem_conta();
+CREATE FUNCTION public.destaque_profissionais_sem_conta()
+RETURNS TABLE ("profissionalId" integer, nome_profissional text, apelido text, categoria text, email text,
+               ja_tem_login boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
-  select pa."profissionalId", pa.nome_profissional, pa.apelido, pa.categoria, pa.email
+  select pa."profissionalId", pa.nome_profissional, pa.apelido, pa.categoria, pa.email,
+         exists (
+           select 1 from auth.users au
+           where pg_catalog.lower(au.email) = pa.email
+             and not exists (select 1 from public.destaque_users_app u where u.id = au.id)
+         ) as ja_tem_login
   from public.profissionais_ativos pa
   where (select public.destaque_can_write_page('usuarios'))
     and pa.ativo is not false
@@ -414,6 +431,8 @@ COMMENT ON FUNCTION public.destaque_profissionais_sem_conta() IS
   'Tela de usuarios ("Criar contas das profissionais"): ativas com email cujo email nao esta em '
   'auth.users ligado a destaque_users_app (ativo ou nao) e cujo id nao esta ligado a nenhuma conta '
   '(destaque_users_app.profissional_id). Gate write em usuarios; senao 0 linhas. '
+  'ja_tem_login = o email ja e de um usuario do Auth fora de destaque_users_app (conta de outro app): '
+  'criar_usuario LIGA essa conta existente sem convite, entao a tela deve avisar e pedir confirmacao. '
   'O email vem do webhook Trinks SEM autenticacao: a lista e conferida pelo dono antes de criar. '
   'Migracao 20261021100000.';
 
@@ -675,6 +694,7 @@ BEGIN
                JOIN auth.users au ON au.id = u.id
                JOIN public.profissionais_ativos pa ON pa.email = lower(au.email)
               WHERE u.profissional_id IS NULL AND pa.ativo IS NOT false
+                AND au.email_confirmed_at IS NOT NULL AND coalesce(au.email_change, '') = ''
                 AND NOT EXISTS (SELECT 1 FROM public.destaque_users_app o
                                  WHERE o.profissional_id = pa."profissionalId")) THEN
     v_falhas := v_falhas || 'backfill de destaque_users_app.profissional_id incompleto'::text;

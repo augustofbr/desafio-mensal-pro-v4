@@ -20,7 +20,12 @@
 --                        (simula updateUser({email}) com autoconfirm): nao pode virar a Aline
 --   8 ligada_email_trocado  a MESMA conta da prof_ligada com claim email diferente: continua 885975
 -- Fixtures so do trigger: "ocupante" ligada explicitamente a uma 3a profissional X e
--- "duplicado" com o email de X no Auth: o trigger deixa NULL (00c, id ja ligado).
+-- "duplicado" com o email de X no Auth: o trigger deixa NULL (00c, id ja ligado);
+-- "nao_confirmado" (email de outra livre, email_confirmed_at NULL) e "troca_pendente" (email de
+-- outra livre, email_change preenchido): o trigger deixa NULL (00f, 00g). "outro_app": auth user
+-- confirmado com o email de outra livre e FORA de destaque_users_app: sem_conta mostra
+-- ja_tem_login = true para ela (15). Todo auth user de fixture nasce com email_confirmed_at,
+-- salvo o "nao_confirmado".
 -- Claims via set_config('request.jwt.claims') antes de `set local role`. auth.users dispara
 -- handle_new_user (public.profiles): some no rollback.
 -- Esperados: "a|b|...|h" na ordem dos papeis (valor unico = todos); 1a lista = fase A,
@@ -78,12 +83,16 @@ livres as (  -- ativas com email, sem usuario de Auth e sem vinculo (para inativ
    where ativo is not false and email is not null and "profissionalId" <> 885975
      and not exists (select 1 from auth.users a where lower(a.email) = p.email)
      and not exists (select 1 from public.destaque_users_app u where u.profissional_id = p."profissionalId")
-   order by 1 limit 2)
+   order by 1 limit 5)
 select (select email from public.profissionais_ativos where "profissionalId" = 885975) aline,
        (select id from livres order by id limit 1) inativo_id,
        (select email from livres order by id limit 1) inativo_email,
-       (select id from livres order by id desc limit 1) x_id,
-       (select email from livres order by id desc limit 1) x_email,
+       (select id from livres order by id offset 1 limit 1) x_id,
+       (select email from livres order by id offset 1 limit 1) x_email,
+       (select email from livres order by id offset 2 limit 1) nc_email,
+       (select email from livres order by id offset 3 limit 1) ec_email,
+       (select id from livres order by id offset 4 limit 1) oa_id,
+       (select email from livres order by id offset 4 limit 1) oa_email,
        (select profissional_id from public.avaliacoes_cadastradas where profissional_id <> 885975
          group by 1 order by count(*) desc, 1 limit 1) outra,
        (select count(*) from public.destaque_profissionais_sem_conta()) s_real_rpc_postgres,
@@ -108,10 +117,13 @@ select * from (values
   (8, 'ligada_email_trocado', '00000000-0000-4000-8000-0000106a0001', null, 'fx-login-outro@invalid.local', null, null)
 ) x(o, papel, uid, auth_email, claim_email, perfil, ativo);
 
-insert into auth.users (id, aud, role, email)
-select uid, 'authenticated', 'authenticated', auth_email from _p where auth_email is not null
-union all select '00000000-0000-4000-8000-0000106a0007', 'authenticated', 'authenticated', 'fx-login-ocupante@invalid.local'
-union all select '00000000-0000-4000-8000-0000106a0008', 'authenticated', 'authenticated', (select x_email from _fx);
+insert into auth.users (id, aud, role, email, email_confirmed_at, email_change)
+select uid, 'authenticated', 'authenticated', auth_email, now(), '' from _p where auth_email is not null
+union all select '00000000-0000-4000-8000-0000106a0007', 'authenticated', 'authenticated', 'fx-login-ocupante@invalid.local', now(), ''
+union all select '00000000-0000-4000-8000-0000106a0008', 'authenticated', 'authenticated', (select x_email from _fx), now(), ''
+union all select '00000000-0000-4000-8000-0000106a0009', 'authenticated', 'authenticated', (select nc_email from _fx), null, ''
+union all select '00000000-0000-4000-8000-0000106a000a', 'authenticated', 'authenticated', (select ec_email from _fx), now(), 'fx-login-troca@invalid.local'
+union all select '00000000-0000-4000-8000-0000106a000b', 'authenticated', 'authenticated', (select oa_email from _fx), now(), '';
 
 -- vinculos pelo TRIGGER (profissional_id omitido), exceto o ocupante (explicito, ANTES do duplicado)
 insert into public.destaque_users_app (id, nome, perfil_id, ativo)
@@ -121,8 +133,12 @@ insert into public.destaque_users_app (id, nome, perfil_id, ativo, profissional_
 select '00000000-0000-4000-8000-0000106a0007', 'LoginFx ocupante', id, true, (select x_id from _fx)
   from public.destaque_perfis where nome = 'Somente Leitura';
 insert into public.destaque_users_app (id, nome, perfil_id, ativo)
-select '00000000-0000-4000-8000-0000106a0008', 'LoginFx duplicado', id, true
-  from public.destaque_perfis where nome = 'Somente Leitura';
+select v.id::uuid, v.nome, p.id, true
+  from (values ('00000000-0000-4000-8000-0000106a0008', 'LoginFx duplicado'),
+               ('00000000-0000-4000-8000-0000106a0009', 'LoginFx nao_confirmado'),
+               ('00000000-0000-4000-8000-0000106a000a', 'LoginFx troca_pendente')) v(id, nome)
+  join public.destaque_perfis p on p.nome = 'Somente Leitura';
+-- 0b ("outro_app") fica FORA de destaque_users_app de proposito
 
 -- recusa da Aline com motivo (postgres nao passa pelo trigger de INSERT)
 insert into public.avaliacoes_cadastradas (profissional_id, nome_profissional, nome_cliente, status, motivo_recusa)
@@ -137,18 +153,23 @@ select (select count(*) from public.avaliacoes_cadastradas
           from public.avaliacoes_cadastradas where profissional_id = 885975) a,
        (select format('linhas=%s motivos=%s', count(*), count(motivo_recusa))
           from public.avaliacoes_cadastradas where profissional_id = f.outra) o,
-       (select count(*) from public.profissionais_ativos p
+       (select format('%s/%s', count(*), count(*) filter (where exists (
+                 select 1 from auth.users au where lower(au.email) = p.email
+                    and not exists (select 1 from public.destaque_users_app u where u.id = au.id))))
+          from public.profissionais_ativos p
          where ativo is not false and email is not null
            and not exists (select 1 from auth.users au join public.destaque_users_app u on u.id = au.id
                             where lower(au.email) = p.email)
-           and not exists (select 1 from public.destaque_users_app l where l.profissional_id = p."profissionalId"))::text s
+           and not exists (select 1 from public.destaque_users_app l where l.profissional_id = p."profissionalId")) s
   from _fx f;
 
 do $$
 begin
-  if exists (select 1 from _fx where aline is null or inativo_id is null or x_id is null or inativo_id = x_id
+  if exists (select 1 from _fx where aline is null or inativo_id is null or x_id is null or nc_email is null
+                                   or ec_email is null or oa_id is null
                                    or outra is null or dia is null or s_real < 19 or s_real_rpc_postgres <> 0)
-     or exists (select 1 from _tok where n = '0' or a like '% motivos=0' or o like 'linhas=0 %' or s = '0') then
+     or exists (select 1 from _tok where n = '0' or a like '% motivos=0' or o like 'linhas=0 %'
+                                   or s like '0/%' or s like '%/0') then
     raise exception 'fixtures nao provam nada: % %', (select row_to_json(f) from _fx f), (select row_to_json(t) from _tok t);
   end if;
 end $$;
@@ -169,6 +190,10 @@ select 'A', 0, 'postgres', v.k, v.esp, v.obt, null from (values
   ('00d trigger: liga mesmo com a conta inativa', 'ligado',
    (select case when profissional_id = f.inativo_id then 'ligado' else coalesce(profissional_id::text, 'NULL') end
       from public.destaque_users_app, _fx f where id = '00000000-0000-4000-8000-0000106a0005')),
+  ('00f trigger: email nao confirmado -> NULL', 'NULL',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a0009')),
+  ('00g trigger: troca de email pendente -> NULL', 'NULL',
+   (select coalesce(profissional_id::text, 'NULL') from public.destaque_users_app where id = '00000000-0000-4000-8000-0000106a000a')),
   ('00e backfill: contas reais com email casavel e sem vinculo', '0',
    (select count(*)::text from public.destaque_users_app u join auth.users au on au.id = u.id
       join public.profissionais_ativos pa on pa.email = lower(au.email)
@@ -223,8 +248,12 @@ begin
   perform pg_temp.r('04 minhas_avaliacoes(outra)', format(
     $q$select format('linhas=%%s motivos=%%s', count(*), count(motivo_recusa)) from public.destaque_minhas_avaliacoes(%s)$q$, x.outra),
     '42501|Z|Z|O|O|Z|Z|Z');
-  perform pg_temp.r('05 profissionais_sem_conta() linhas',
-    $q$select count(*)::text from public.destaque_profissionais_sem_conta()$q$, '42501|0|0|0|S|0|0|0');
+  perform pg_temp.r('05 profissionais_sem_conta() linhas/ja_tem_login',
+    $q$select format('%s/%s', count(*), count(*) filter (where ja_tem_login)) from public.destaque_profissionais_sem_conta()$q$,
+    '42501|0/0|0/0|0/0|S|0/0|0/0|0/0');
+  perform pg_temp.r('15 sem_conta: ja_tem_login da profissional com login de outro app', format(
+    $q$select coalesce((select ja_tem_login::text from public.destaque_profissionais_sem_conta() where "profissionalId" = %s), 'sem linha')$q$,
+    x.oa_id), '42501|sem linha|sem linha|sem linha|true|sem linha|sem linha|sem linha');
   perform pg_temp.r('06 select trinks_services',
     $q$select case when exists (select 1 from public.trinks_services) then '>0' else '0' end$q$,
     '>0', '0|>0|>0|>0|>0|0|>0|>0');
