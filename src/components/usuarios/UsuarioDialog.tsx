@@ -92,7 +92,7 @@ export function UsuarioDialog({
           ? "Usuário atualizado."
           : jaTinhaConta
             ? "Acesso liberado. A pessoa já tinha conta — basta entrar pelo login com o email dela."
-            : "Convite enviado por email. Se o link não abrir o destaque-mensal-pro, a pessoa pode entrar direto pela tela de login com esse mesmo email.";
+            : "Convite enviado por email. Se o link não abrir o Profissional Destaque do Mês, a pessoa pode entrar direto pela tela de login com esse mesmo email.";
         onSucesso?.(mensagem);
         // Editar o próprio usuário pode mudar o que a sessão enxerga — refresh()
         // reavalia acesso.paginas pros guards (RequirePage/RequireWrite). Hoje o

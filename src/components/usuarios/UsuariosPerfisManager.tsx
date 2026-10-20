@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { authAdmin, type AuthAdminResult } from "@/auth/authAdmin";
 import { useAcesso } from "@/auth/acesso";
+import { CriarContasProfissionais } from "@/components/admin/CriarContasProfissionais";
 import { PAGES, PAGE_KEYS, type PageAccess, type PageKey } from "@/lib/pages";
 import { UsuarioDialog } from "./UsuarioDialog";
 import { PerfilDialog } from "./PerfilDialog";
@@ -296,6 +297,8 @@ export function UsuariosPerfisManager() {
         </TabsList>
 
         <TabsContent value="usuarios" className="mt-4">
+          {/* Só com write em "usuarios" (UX; o gate real é a RPC e a edge function). */}
+          {podeEditar ? <CriarContasProfissionais perfis={perfis} onFeito={carregar} /> : null}
           {podeEditar ? (
             <div className="mb-3 flex justify-end">
               <UsuarioDialog
