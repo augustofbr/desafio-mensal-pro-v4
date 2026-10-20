@@ -39,6 +39,25 @@ export function selecaoInicial(linhas: ReadonlyArray<LinhaSemConta>): Set<number
   return new Set(linhas.filter((l) => !l.ja_tem_login).map((l) => l.profissionalId));
 }
 
+/**
+ * Quem está marcada de fato: a edição manual do dono, senão o padrão de `selecaoInicial`.
+ * `excluir` tira as que já foram criadas neste lote (podem ficar na tela até o refetch).
+ */
+export function marcadasEfetivas(
+  linhas: ReadonlyArray<LinhaSemConta>,
+  manual: Readonly<Record<number, boolean>>,
+  excluir: ReadonlySet<number> = new Set(),
+): Set<number> {
+  const padrao = selecaoInicial(linhas);
+  const r = new Set<number>();
+  for (const l of linhas) {
+    const id = l.profissionalId;
+    if (excluir.has(id)) continue;
+    if (manual[id] ?? padrao.has(id)) r.add(id);
+  }
+  return r;
+}
+
 /** Entre as marcadas, separa as contas novas (convite) das que já têm login em outro app. */
 export function separarParaConfirmacao(
   linhas: ReadonlyArray<LinhaSemConta>,
@@ -58,7 +77,8 @@ export type ResultadoCriacao = {
 
 // A edge function devolve "Convite falhou: <mensagem do Auth>"; o Auth diz "email rate limit
 // exceeded" / "over_email_send_rate_limit" / "Too many requests".
-const RE_LIMITE_EMAIL = /rate[\s_-]?limit|over_email_send|too many (requests|emails)/i;
+const RE_LIMITE_EMAIL =
+  /rate[\s_-]?limit|over_email_send|too many (requests|emails)|only request this after/i;
 
 /** Traduz a resposta de `criar_usuario` para o resultado mostrado na linha. */
 export function classificarResultado(res: AuthAdminResult): ResultadoCriacao {

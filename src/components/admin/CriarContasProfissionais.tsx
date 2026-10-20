@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertDialog,
@@ -21,6 +21,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { authAdmin } from "@/auth/authAdmin";
+import {
+  assinarLote,
+  encerrarLote,
+  iniciarLote,
+  loteEmAndamento,
+} from "@/lib/loteEmAndamento";
 import { supabase } from "@/lib/supabase";
 import { PROF_CATEGORY_DISPLAY_NAMES } from "@/lib/categoryDisplayNames";
 import {
@@ -32,6 +38,7 @@ import {
 import {
   classificarResultado,
   contarResultados,
+  marcadasEfetivas,
   normalizarLinha,
   resumoDoLote,
   separarParaConfirmacao,
@@ -76,25 +83,37 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
   });
   const linhas = useMemo(() => data ?? [], [data]);
 
-  // Só o que o dono mexeu fica guardado; o resto vem do padrão (marcada se não tem login em
-  // outro app; perfil pela categoria). Assim a lista recarregada não precisa de efeito.
+  // Só o que o dono mexeu fica guardado; o resto vem do padrão (`marcadasEfetivas`: marcada se
+  // não tem login em outro app; perfil pela categoria). Assim a lista recarregada não precisa
+  // de efeito.
   const [marcaManual, setMarcaManual] = useState<Record<number, boolean>>({});
   const [perfilManual, setPerfilManual] = useState<Record<number, PerfilDaCriacao>>({});
-  const marcada = (l: LinhaSemConta) => marcaManual[l.profissionalId] ?? !l.ja_tem_login;
   const perfilDe = (l: LinhaSemConta) => perfilManual[l.profissionalId] ?? perfilSugerido(l.categoria);
 
-  const marcadas = useMemo(
-    () => new Set(linhas.filter((l) => marcaManual[l.profissionalId] ?? !l.ja_tem_login).map((l) => l.profissionalId)),
-    [linhas, marcaManual],
-  );
-  const { novas, existentes } = useMemo(() => separarParaConfirmacao(linhas, marcadas), [linhas, marcadas]);
-
   const [confirmando, setConfirmando] = useState(false);
-  const [executando, setExecutando] = useState(false);
+  // O estado do lote vive fora do componente: trocar de aba desmonta a seção, o loop segue, e
+  // a seção remontada precisa saber que há um lote rodando.
+  const executando = useSyncExternalStore(assinarLote, loteEmAndamento, loteEmAndamento);
   const [atual, setAtual] = useState<number | null>(null);
-  // Resultado por profissional: as que falharam seguem na lista e mostram o motivo.
+  // Resultado por profissional: as que falharam seguem na lista e mostram o motivo; as que deram
+  // certo ficam registradas para não entrarem de novo num lote enquanto a lista não recarrega.
   const [resultados, setResultados] = useState<Record<number, ResultadoCriacao>>({});
   const [lote, setLote] = useState<{ itens: ItemDoLote[]; resumo: string } | null>(null);
+
+  const jaCriadas = useMemo(
+    () =>
+      new Set(
+        Object.entries(resultados)
+          .filter(([, r]) => r.tipo === "convite" || r.tipo === "ja_tinha_conta")
+          .map(([id]) => Number(id)),
+      ),
+    [resultados],
+  );
+  const marcadas = useMemo(
+    () => marcadasEfetivas(linhas, marcaManual, jaCriadas),
+    [linhas, marcaManual, jaCriadas],
+  );
+  const { novas, existentes } = useMemo(() => separarParaConfirmacao(linhas, marcadas), [linhas, marcadas]);
 
   const perfilIdDe = (l: LinhaSemConta) => acharPerfilId(perfis, perfilDe(l));
   const perfisFaltando = PERFIS_DA_CRIACAO.filter((p) => acharPerfilId(perfis, p) === null);
@@ -102,11 +121,18 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
   const podeCriar = !executando && totalMarcadas > 0 && perfis.length > 0;
 
   const criar = async () => {
+    // Trava síncrona (fora do componente): o duplo clique e o lote de antes de uma troca de
+    // aba não abrem um segundo lote.
+    if (!iniciarLote()) return;
     const alvo = linhas.filter((l) => marcadas.has(l.profissionalId));
     setConfirmando(false);
-    setExecutando(true);
     setLote(null);
-    setResultados({});
+    // Mantém só o que deu certo; as falhas do lote anterior serão tentadas de novo.
+    setResultados((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([, r]) => r.tipo === "convite" || r.tipo === "ja_tinha_conta"),
+      ),
+    );
     const itens: ItemDoLote[] = [];
     try {
       for (const l of alvo) {
@@ -137,11 +163,15 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
       }
     } finally {
       setAtual(null);
-      setExecutando(false);
       setLote({ itens, resumo: resumoDoLote(contarResultados(itens.map((i) => i.resultado))) });
-      // As que deram certo saem da lista; as que falharam ficam para uma nova tentativa.
-      await queryClient.invalidateQueries({ queryKey: CHAVE_SEM_CONTA });
-      onFeito?.();
+      try {
+        // As que deram certo saem da lista; as que falharam ficam para uma nova tentativa. O
+        // lote só termina depois do refetch, senão uma criada ainda apareceria marcada.
+        await queryClient.invalidateQueries({ queryKey: CHAVE_SEM_CONTA });
+        onFeito?.();
+      } finally {
+        encerrarLote();
+      }
     }
   };
 
@@ -159,6 +189,12 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
           por e-mail; quem já tem conta no Supabase só tem o acesso liberado, sem convite.
         </p>
       </header>
+
+      {executando ? (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          Um lote está em andamento… Aguarde terminar antes de criar outras contas.
+        </p>
+      ) : null}
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>
@@ -197,7 +233,7 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
                   <Checkbox
                     id={idCampo}
                     className="mt-1"
-                    checked={marcada(l)}
+                    checked={marcadas.has(l.profissionalId)}
                     disabled={executando}
                     onCheckedChange={(v) =>
                       setMarcaManual((prev) => ({ ...prev, [l.profissionalId]: v === true }))
@@ -288,7 +324,9 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
           <p className="font-medium">{lote.resumo}</p>
           {lote.itens.some((i) => i.resultado.tipo === "limite_email" || i.resultado.tipo === "erro") ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              As que falharam continuam na lista acima para uma nova tentativa.
+              {isError
+                ? "Não foi possível recarregar a lista. Use \"Tentar de novo\" acima para ver quem falhou e tentar outra vez."
+                : "As que falharam continuam na lista acima para uma nova tentativa."}
             </p>
           ) : null}
           <ul className="mt-2 flex flex-col gap-1 text-xs">
@@ -355,7 +393,7 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
 
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void criar()}>
+            <AlertDialogAction disabled={executando} onClick={() => void criar()}>
               {totalMarcadas === 1 ? "Criar 1 conta" : `Criar ${totalMarcadas} contas`}
             </AlertDialogAction>
           </AlertDialogFooter>

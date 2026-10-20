@@ -5,6 +5,7 @@ import {
   contarResultados,
   normalizarLinha,
   resumoDoLote,
+  marcadasEfetivas,
   selecaoInicial,
   separarParaConfirmacao,
   type LinhaSemConta,
@@ -54,6 +55,26 @@ describe("selecaoInicial", () => {
   });
 });
 
+describe("marcadasEfetivas", () => {
+  const linhas = [
+    linha({ profissionalId: 1 }),
+    linha({ profissionalId: 2, ja_tem_login: true }),
+    linha({ profissionalId: 3 }),
+  ];
+
+  it("sem edição manual vale a seleção inicial", () => {
+    expect([...marcadasEfetivas(linhas, {})].sort()).toEqual([1, 3]);
+  });
+
+  it("a edição manual vence o padrão nos dois sentidos", () => {
+    expect([...marcadasEfetivas(linhas, { 1: false, 2: true })].sort()).toEqual([2, 3]);
+  });
+
+  it("exclui as já criadas, mesmo marcadas", () => {
+    expect([...marcadasEfetivas(linhas, { 2: true }, new Set([1]))].sort()).toEqual([2, 3]);
+  });
+});
+
 describe("separarParaConfirmacao", () => {
   it("separa as novas das que já têm login em outro app, só entre as marcadas", () => {
     const linhas = [
@@ -84,7 +105,7 @@ describe("classificarResultado", () => {
     for (const e of [
       "Convite falhou: email rate limit exceeded",
       "Convite falhou: over_email_send_rate_limit",
-      "Convite falhou: For security purposes, you can only request this after 60 seconds. Rate limit",
+      "Convite falhou: For security purposes, you can only request this after 60 seconds.",
       "Convite falhou: Too many requests",
     ]) {
       const r = classificarResultado({ ok: false, error: e });

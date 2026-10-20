@@ -19,7 +19,7 @@ export function perfilSugerido(categoria: string | null | undefined): PerfilDaCr
 function chaveDeNome(nome: string): string {
   return nome
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
 }
