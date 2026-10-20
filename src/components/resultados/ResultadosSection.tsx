@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { UserRound } from "lucide-react";
 import { toast } from "sonner";
+import { useAcesso } from "@/auth/acesso";
 import { Card, CardContent } from "@/components/ui/card";
+import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
 import { usePerfilLocal } from "@/hooks/usePerfilLocal";
 import { participaSoDoBonus } from "@/lib/bonusEstrelas";
 import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
@@ -30,7 +32,13 @@ interface ResultadosSectionProps {
   renderAbaixo?: (contexto: {
     perfilId: string | null;
     perfil: ProfissionalAtivo | null;
-    abrirSeletor: () => void;
+    /**
+     * Abre o seletor. undefined = a identidade vem da conta (fixa) ou ainda
+     * carrega: nao ha "Trocar" nem "Quem e voce?" para mostrar.
+     */
+    abrirSeletor: (() => void) | undefined;
+    /** O vinculo da conta ainda carrega: nao mostrar a identidade ainda. */
+    identidadeCarregando: boolean;
   }) => ReactNode;
 }
 
@@ -45,7 +53,8 @@ function numeroDoEntry(entry: Record<string, unknown>, campo: string): number {
  *
  * Nao busca nem recalcula nada — consome os mesmos datasets ja rankeados que
  * alimentam o ranking da pagina, entao os numeros daqui batem com os de la.
- * A identidade e local (localStorage) e sempre reversivel.
+ * A identidade vem da conta quando ela esta ligada a uma profissional (fixa);
+ * senao e local (localStorage, por conta) e sempre reversivel.
  */
 export default function ResultadosSection({
   hairData,
@@ -56,9 +65,26 @@ export default function ResultadosSection({
   activeProfessionals,
   renderAbaixo,
 }: ResultadosSectionProps) {
-  const { perfilId, perfil, escolher, limpar, autoLimpou, reconhecerAutoLimpeza } =
-    usePerfilLocal(activeProfessionals);
+  const { acesso } = useAcesso();
+  const vinculo = useMinhaProfissional();
+  const {
+    perfilId,
+    perfil,
+    escolher,
+    limpar,
+    autoLimpou,
+    reconhecerAutoLimpeza,
+    fixo,
+    carregando,
+  } = usePerfilLocal(activeProfessionals, {
+    userId: acesso?.userId ?? null,
+    vinculoId: vinculo.id,
+    vinculoCarregando: vinculo.carregando,
+  });
   const [seletorAberto, setSeletorAberto] = useState(false);
+  // Seletor e "Trocar" so existem quando a identidade e escolhida no aparelho.
+  const podeTrocar = !fixo && !carregando;
+  const abrirSeletor = podeTrocar ? () => setSeletorAberto(true) : undefined;
 
   const dadosPorCategoria = useMemo<Record<string, Record<string, unknown>[]>>(
     () => ({
@@ -122,7 +148,7 @@ export default function ResultadosSection({
   // Perfil salvo que sumiu do cadastro: em vez de a pessoa voltar ao convite sem
   // entender por que, ela e avisada e o seletor abre uma vez (spec §4.1).
   useEffect(() => {
-    if (!autoLimpou) return;
+    if (!autoLimpou || !podeTrocar) return;
     // Topo: o seletor abre como folha inferior e cobriria um toast na posicao
     // padrao (canto de baixo) — o aviso ficaria invisivel justo quando importa.
     toast("Seu perfil foi atualizado — escolha novamente", {
@@ -131,7 +157,7 @@ export default function ResultadosSection({
     });
     setSeletorAberto(true);
     reconhecerAutoLimpeza();
-  }, [autoLimpou, reconhecerAutoLimpeza]);
+  }, [autoLimpou, podeTrocar, reconhecerAutoLimpeza]);
 
   return (
     <div className="space-y-5">
@@ -142,9 +168,25 @@ export default function ResultadosSection({
           posicao={meuRanking.posicao}
           liderPontos={meuRanking.liderPontos}
           rules={rules}
-          onTrocar={() => setSeletorAberto(true)}
+          onTrocar={abrirSeletor}
           soBonusEstrelas={participaSoDoBonus(perfil, rules)}
         />
+      ) : carregando ? (
+        <Card aria-busy="true">
+          <CardContent className="p-4 sm:p-6">
+            <div className="h-11 animate-shimmer rounded-lg" />
+          </CardContent>
+        </Card>
+      ) : fixo ? (
+        // Conta ligada, mas a profissional nao veio no cadastro: nao ha o que
+        // escolher (a identidade e da conta), so avisar.
+        <Card>
+          <CardContent className="p-4 sm:p-6">
+            <p className="text-base text-muted-foreground">
+              Não encontramos o seu cadastro no desafio. Fale com a recepção.
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -194,11 +236,13 @@ export default function ResultadosSection({
       {renderAbaixo?.({
         perfilId,
         perfil,
-        abrirSeletor: () => setSeletorAberto(true),
+        abrirSeletor,
+        identidadeCarregando: carregando,
       })}
 
       <ProfileSelector
-        aberto={seletorAberto}
+        aberto={seletorAberto && podeTrocar}
+        fixo={fixo}
         onFechar={() => setSeletorAberto(false)}
         ativos={activeProfessionals}
         rules={rules}

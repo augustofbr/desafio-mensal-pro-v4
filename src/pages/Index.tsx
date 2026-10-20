@@ -19,9 +19,13 @@ import { Button } from "@/components/ui/button";
 import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
 import QrCodeOverlay from "@/components/QrCodeOverlay";
 import { ContaLogada } from "@/components/ContaLogada";
+import { useAcesso } from "@/auth/acesso";
 
 function DashboardContent() {
   const navigate = useNavigate();
+  // Perfil sem acesso a "estrelas" nao ve o passo de cadastrar (o gate real e a RLS).
+  const { acesso } = useAcesso();
+  const veCadastroDeEstrela = (acesso?.paginas.estrelas ?? "none") !== "none";
   const {
     hairData,
     cabeloIndisponivel,
@@ -153,27 +157,31 @@ function DashboardContent() {
 
                 <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
 
-                {/* Passo 3 */}
-                <div className="relative w-full">
-                  <span className="absolute top-1 right-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-body font-semibold text-amber-600 z-10 shadow-sm">
-                    Apenas se estrela entrou no Google
-                  </span>
-                  <button
-                    onClick={() => setShowCadastrarAvaliacao(true)}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
-                  >
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
-                      3
+                {veCadastroDeEstrela && (
+                  <>
+                    {/* Passo 3 */}
+                    <div className="relative w-full">
+                      <span className="absolute top-1 right-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-body font-semibold text-amber-600 z-10 shadow-sm">
+                        Apenas se estrela entrou no Google
+                      </span>
+                      <button
+                        onClick={() => setShowCadastrarAvaliacao(true)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                      >
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                          3
+                        </div>
+                        <div className="flex-1 text-left">
+                          <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 3</span>
+                          <p className="text-sm font-body text-gray-700 leading-tight">Cadastre a avaliação da sua cliente</p>
+                        </div>
+                        <Star className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                      </button>
                     </div>
-                    <div className="flex-1 text-left">
-                      <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 3</span>
-                      <p className="text-sm font-body text-gray-700 leading-tight">Cadastre a avaliação da sua cliente</p>
-                    </div>
-                    <Star className="h-5 w-5 text-violet-400 flex-shrink-0" />
-                  </button>
-                </div>
 
-                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+                    <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+                  </>
+                )}
 
                 {/* Passo 4 */}
                 <button
@@ -239,7 +247,7 @@ function DashboardContent() {
                 maquiagemData={maquiagemData}
                 rules={rules}
                 activeProfessionals={activeProfessionals}
-                renderAbaixo={({ perfilId, perfil, abrirSeletor }) => (
+                renderAbaixo={({ perfilId, perfil, abrirSeletor, identidadeCarregando }) => (
                   <BonusEstrelas
                     starsData={starsData}
                     starsError={starsError}
@@ -248,6 +256,7 @@ function DashboardContent() {
                     perfilId={perfilId}
                     perfil={perfil}
                     onAbrirSeletor={abrirSeletor}
+                    identidadeCarregando={identidadeCarregando}
                   />
                 )}
               />

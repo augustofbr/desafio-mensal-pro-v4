@@ -13,6 +13,9 @@ import { useEffect } from "react";
 // Mesmo formatador do painel de aprovação — uma definição só de "hora de Manaus".
 import { formatDataHoraManaus } from "@/lib/dateUtils";
 import { ContaLogada } from "@/components/ContaLogada";
+import { useAcesso } from "@/auth/acesso";
+import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
+import { resolverIdentidade } from "@/lib/identidade";
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -77,7 +80,20 @@ const MinhasAvaliacoes = () => {
     fetchActiveProfessionals,
   } = useActiveProfessionals();
 
-  const [selectedProfId, setSelectedProfId] = useState<number | null>(null);
+  // Identidade da conta: ligada a uma profissional que nao escolhe outra => a
+  // pagina e sempre dela, sem seletor. (A leitura segue como estava; trocar para
+  // a RPC `destaque_minhas_avaliacoes` e o motivo da recusa sao da Task 4.)
+  const { acesso } = useAcesso();
+  const vinculo = useMinhaProfissional();
+  const identidade = resolverIdentidade({
+    vinculoId: vinculo.id,
+    nivelEstrelas: acesso?.paginas.estrelas ?? "none",
+    perfilLocalId: null,
+  });
+  const semSeletor = identidade.fixo && !identidade.podeEscolherProfissionalNoCadastro;
+
+  const [profEscolhidaId, setSelectedProfId] = useState<number | null>(null);
+  const selectedProfId = semSeletor ? vinculo.id : profEscolhidaId;
   const {
     avaliacoes,
     loading: avaliacoesLoading,
@@ -205,17 +221,34 @@ const MinhasAvaliacoes = () => {
               </CardHeader>
 
               <CardContent className="px-4 pb-4">
-                {profsLoading || regrasCarregando ? (
+                {profsLoading || vinculo.carregando || (!semSeletor && regrasCarregando) ? (
                   <div className="h-10 rounded-lg animate-shimmer" />
                 ) : (
                   <>
-                    {/* Professional select */}
-                    <ProfessionalSelect
-                      professionals={sortedProfessionals}
-                      value={selectedProfId ? String(selectedProfId) : ""}
-                      onValueChange={(val) => setSelectedProfId(Number(val))}
-                      className="mb-4"
-                    />
+                    {semSeletor ? (
+                      // Conta ligada: so as proprias avaliacoes, sem lista para trocar.
+                      <p className="mb-4 font-body text-sm font-medium text-gray-800">
+                        {activeProfessionals.find((p) => p.profissionalId === vinculo.id)
+                          ?.nome_profissional ?? "Sua conta"}
+                      </p>
+                    ) : (
+                      <>
+                        {identidade.motivoBloqueio && (
+                          <p
+                            role="alert"
+                            className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-body text-amber-800"
+                          >
+                            {identidade.motivoBloqueio}
+                          </p>
+                        )}
+                        <ProfessionalSelect
+                          professionals={sortedProfessionals}
+                          value={selectedProfId ? String(selectedProfId) : ""}
+                          onValueChange={(val) => setSelectedProfId(Number(val))}
+                          className="mb-4"
+                        />
+                      </>
+                    )}
 
                     {!selectedProfId ? (
                       <div className="text-center py-10">

@@ -30,6 +30,8 @@ interface ProfileSelectorProps {
   perfilId: string | null;
   onEscolher: (id: string) => void;
   onLimpar: () => void;
+  /** Identidade vinda da conta: sem "limpar" (nao ha o que desfazer no aparelho). */
+  fixo?: boolean;
 }
 
 /** Ordem fixa de exibicao das categorias (a mesma do dashboard). */
@@ -67,6 +69,7 @@ export function ProfileSelector({
   perfilId,
   onEscolher,
   onLimpar,
+  fixo = false,
 }: ProfileSelectorProps) {
   // A identidade vale para todos os periodos (localStorage), entao a lista segue
   // as regras do MES ATUAL, como as demais listas publicas — senao, olhando um
@@ -186,14 +189,16 @@ export function ProfileSelector({
           </div>
         )}
 
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={limparEFechar}
-          className="min-h-[44px] w-full text-base"
-        >
-          Não sou nenhum destes (limpar)
-        </Button>
+        {!fixo && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={limparEFechar}
+            className="min-h-[44px] w-full text-base"
+          >
+            Não sou nenhum destes (limpar)
+          </Button>
+        )}
       </SheetContent>
     </Sheet>
   );

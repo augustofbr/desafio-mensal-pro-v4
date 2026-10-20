@@ -27,8 +27,11 @@ interface MeuCartaoProps {
   /** Pontos do 1o colocado (null se o ranking esta vazio). */
   liderPontos: number | null;
   rules: RulesVersion;
-  /** Reabre o seletor de perfil. Requisito do owner: sempre visivel. */
-  onTrocar: () => void;
+  /**
+   * Reabre o seletor de perfil. Visivel sempre que a identidade e escolhida no
+   * aparelho; ausente quando ela vem da conta (fixa) — ai nao ha "Trocar".
+   */
+  onTrocar?: () => void;
   /**
    * O perfil participa SO do Bonus Estrelas no mes (`star_bonus_extra`): sem
    * metas nem posicao — o cartao so explica isso e o Bonus mostra os valores.
@@ -157,7 +160,7 @@ function textoDaMeta(meta: MetaItem): string {
 interface CabecalhoProps {
   nome: string;
   categoriaLabel: string | null;
-  onTrocar: () => void;
+  onTrocar?: () => void;
 }
 
 function Cabecalho({ nome, categoriaLabel, onTrocar }: CabecalhoProps) {
@@ -174,15 +177,17 @@ function Cabecalho({ nome, categoriaLabel, onTrocar }: CabecalhoProps) {
           </Badge>
         )}
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={onTrocar}
-        className="min-h-[44px] shrink-0 gap-1.5 text-base"
-      >
-        <Pencil className="h-4 w-4" aria-hidden="true" />
-        Trocar
-      </Button>
+      {onTrocar && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onTrocar}
+          className="min-h-[44px] shrink-0 gap-1.5 text-base"
+        >
+          <Pencil className="h-4 w-4" aria-hidden="true" />
+          Trocar
+        </Button>
+      )}
     </div>
   );
 }

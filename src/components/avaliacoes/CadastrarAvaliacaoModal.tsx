@@ -30,7 +30,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import ClienteTrinksPicker from "@/components/avaliacoes/ClienteTrinksPicker";
+import { useAcesso } from "@/auth/acesso";
 import { useClientesDoDia } from "@/hooks/useClientesDoDia";
+import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
+import { resolverIdentidade } from "@/lib/identidade";
 import { cn } from "@/lib/utils";
 import {
   diaManaus,
@@ -76,9 +79,10 @@ function criarSchema(hoje: string) {
 
 type FormValues = z.infer<ReturnType<typeof criarSchema>>;
 
-function valoresIniciais(hoje: string): FormValues {
+function valoresIniciais(hoje: string, profissionalFixoId: string | null = null): FormValues {
   return {
-    profissionalId: "",
+    // Conta ligada a uma profissional (sem poder escolher outra): ela ja vem fixa.
+    profissionalId: profissionalFixoId ?? "",
     dataAtendimento: hoje,
     nomeTrinks: "",
     clienteTrinksId: null,
@@ -111,9 +115,26 @@ export default function CadastrarAvaliacaoModal({
 
   const schema = useMemo(() => criarSchema(hoje), [hoje]);
 
+  // Quem a conta e e o que ela pode: a tela decide so a UX; o gate real e a RLS.
+  // O perfil local do aparelho nao entra aqui (nada neste modal depende dele).
+  const { acesso } = useAcesso();
+  const vinculo = useMinhaProfissional();
+  const identidade = resolverIdentidade({
+    vinculoId: vinculo.id,
+    nivelEstrelas: acesso?.paginas.estrelas ?? "none",
+    perfilLocalId: null,
+  });
+  // Profissional ligada que nao pode escolher outra: o cadastro e sempre dela.
+  const profissionalFixoId =
+    vinculo.id !== null && !identidade.podeEscolherProfissionalNoCadastro
+      ? String(vinculo.id)
+      : null;
+  // Enquanto o vinculo carrega nao da para saber se pode cadastrar: botao parado, sem aviso.
+  const bloqueado = vinculo.carregando || !identidade.podeCadastrar;
+
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: valoresIniciais(hoje),
+    defaultValues: valoresIniciais(hoje, profissionalFixoId),
   });
 
   useEffect(() => {
@@ -121,8 +142,8 @@ export default function CadastrarAvaliacaoModal({
     const agora = diaManaus();
     setHoje(agora);
     setOutroDiaAberto(false);
-    form.reset(valoresIniciais(agora));
-  }, [isOpen, form]);
+    form.reset(valoresIniciais(agora, profissionalFixoId));
+  }, [isOpen, form, profissionalFixoId]);
 
   const profissionalId = form.watch("profissionalId");
   const dataAtendimento = form.watch("dataAtendimento");
@@ -164,11 +185,17 @@ export default function CadastrarAvaliacaoModal({
       (a.nome_profissional ?? "").localeCompare(b.nome_profissional ?? "")
     );
 
+  const nomeDaLigada =
+    activeProfessionals.find((p) => p.profissionalId === vinculo.id)?.nome_profissional ??
+    "Sua conta";
+
   const onSubmit = async (values: FormValues) => {
+    if (bloqueado) return;
     try {
       setSubmitting(true);
 
-      const profId = Number(values.profissionalId);
+      // Conta ligada: a profissional e a da conta, nunca o que veio do formulario.
+      const profId = Number(profissionalFixoId ?? values.profissionalId);
       const prof = activeProfessionals.find(
         (p) => p.profissionalId === profId
       );
@@ -198,16 +225,19 @@ export default function CadastrarAvaliacaoModal({
         description: `Avaliação de ${nomeGoogle} registrada com sucesso.`,
       });
 
-      form.reset(valoresIniciais(hoje));
+      form.reset(valoresIniciais(hoje, profissionalFixoId));
       setOutroDiaAberto(false);
       onClose();
     } catch (error: unknown) {
       console.error("Erro ao cadastrar avaliação:", error);
-      // 22023 = regra do banco (trigger avaliacoes_cadastradas_antes_inserir): dia do
-      // atendimento fora de hoje-10..hoje. A mensagem do banco ja e a frase para a usuaria.
+      // Regra do banco (trigger avaliacoes_cadastradas_antes_inserir): dia do atendimento
+      // fora de hoje-10..hoje. 22023 e o codigo antigo; P0D01 o novo (Task 6). A
+      // mensagem do banco ja e a frase para a usuaria.
       const erroDb = error as { code?: unknown; message?: unknown } | null;
       const diaForaDaJanela =
-        erroDb?.code === "22023" && typeof erroDb.message === "string" && erroDb.message;
+        (erroDb?.code === "22023" || erroDb?.code === "P0D01") &&
+        typeof erroDb.message === "string" &&
+        erroDb.message;
       toast({
         title: "Erro ao cadastrar",
         description:
@@ -221,7 +251,7 @@ export default function CadastrarAvaliacaoModal({
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      form.reset(valoresIniciais(hoje));
+      form.reset(valoresIniciais(hoje, profissionalFixoId));
       setOutroDiaAberto(false);
       onClose();
     }
@@ -257,8 +287,13 @@ export default function CadastrarAvaliacaoModal({
                     Profissional
                   </FormLabel>
                   <FormControl>
-                    {regrasCarregando ? (
+                    {vinculo.carregando || (profissionalFixoId === null && regrasCarregando) ? (
                       <div className="h-10 rounded-lg animate-shimmer" />
+                    ) : profissionalFixoId !== null ? (
+                      // Conta ligada: mostra quem e, sem lista para trocar.
+                      <div className="flex h-10 items-center rounded-md border border-violet-200 bg-violet-50/50 px-3 text-sm font-body text-gray-800">
+                        <span className="truncate">{nomeDaLigada}</span>
+                      </div>
                     ) : (
                       <ProfessionalSelect
                         professionals={sortedProfessionals}
@@ -447,6 +482,15 @@ export default function CadastrarAvaliacaoModal({
               )}
             />
 
+            {!vinculo.carregando && identidade.motivoBloqueio && (
+              <p
+                role="alert"
+                className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-body text-amber-800"
+              >
+                {identidade.motivoBloqueio}
+              </p>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"
@@ -458,7 +502,7 @@ export default function CadastrarAvaliacaoModal({
               </Button>
               <Button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || bloqueado}
                 className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white font-body"
               >
                 {submitting ? "Cadastrando..." : "Cadastrar"}
