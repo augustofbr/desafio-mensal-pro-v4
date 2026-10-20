@@ -3,6 +3,8 @@
 -- Editor), DEPOIS de aplicar a migração C. Sem ela, o passo 0 aborta.
 -- O MCP recusa lotes grandes/sensíveis: mande o arquivo sem as linhas de comentário, ou em
 -- partes com lfc.so (abaixo).
+-- Segura locks até o rollback (INSERT/UPDATE de teste em avaliacoes_cadastradas,
+-- destaque_users_app e auth.users): rode fora do horário de pico; statement_timeout 60s.
 --
 -- Diferente da verificação da A, esta NÃO depende de a Task 5 (contas das profissionais) ter
 -- rodado ou não: os vínculos das fixtures são EXPLÍCITOS (profissional_id no INSERT), e se a
@@ -22,21 +24,24 @@
 --   6 inativo            perfil Admin, users_app.ativo = false, ligado à profissional "outra"
 --   7 spoof              Profissional sem vínculo, com claim email = e-mail de P
 --   8 ligada_email_trocado  a MESMA conta da prof_ligada com claim email diferente: continua P
--- Esperados: "a|b|...|h" na ordem dos papéis (valor único = todos). Tokens (contagem direta como
--- postgres, depois das fixtures): P id de P; N estrelas aprovadas+pendentes do mês (Manaus);
--- T linhas de avaliacoes; L linhas de P; A/O "linhas=.. motivos=.." de P/da outra; Z
--- "linhas=0 motivos=0"; S "linhas/ja_tem_login" de destaque_profissionais_sem_conta; FE, TF, PF
--- linhas de feriados, tratamento_fabricante, profissional_fabricante.
+--   9 somente_leitura    perfil Somente Leitura (painel read, estrelas none, admin read), sem vínculo
+-- Esperados: "a|b|...|i" na ordem dos papéis (valor único = todos). Tokens (contagem direta como
+-- postgres, depois das fixtures): P id de P; N estrelas aprovadas+pendentes com
+-- data_hora_cadastro nos ÚLTIMOS 30 DIAS (janela fixa [now()-30d, now()+1d), para rodar também
+-- no dia 1º do mês); T linhas de avaliacoes; L linhas de P; A/O "linhas=.. motivos=.." de P/da
+-- outra; Z "linhas=0 motivos=0"; S "linhas/ja_tem_login" de destaque_profissionais_sem_conta;
+-- FE, TF, PF linhas de feriados, tratamento_fabricante, profissional_fabricante.
 -- INSERTs/UPDATEs de teste se desfazem num sub-bloco (errcode LFC01): contagens não mudam.
+-- Mensagens de erro e row_to_json NÃO trazem e-mail (p_email é tirado).
 -- Saída: _resultado (papel, verificacao, esperado, obtido, ok); aborta se ok=false.
 -- Opcional: set_config('lfc.so', '<regex>', true) antes do passo 3 roda só as verificações de
 -- papel que casam (as de catálogo, c01-c13, rodam sempre).
--- Linhas esperadas: 13 de catálogo (postgres) + 25 verificações x 8 papéis = 213.
+-- Linhas esperadas: 13 de catálogo (postgres) + 25 verificações x 9 papéis = 238.
 
 begin;
 
-set local lock_timeout = '3s';
 set local statement_timeout = '60s';
+set local lock_timeout = '3s';
 set local idle_in_transaction_session_timeout = '30s';
 
 -- 0. Pré-condições
@@ -81,8 +86,8 @@ rank as (
 select s.pid, s.dia, s.cli,
        (select email from public.profissionais_ativos where "profissionalId" = s.pid) p_email,
        o.pid outra, o.dia o_dia, o.cli o_cli,
-       date_trunc('month', now() at time zone 'America/Manaus') at time zone 'America/Manaus' ini,
-       (date_trunc('month', now() at time zone 'America/Manaus') + interval '1 month') at time zone 'America/Manaus' fim,
+       now() - interval '30 days' ini,  -- janela fixa: não depende do dia do mês
+       now() + interval '1 day' fim,
        (now() at time zone 'America/Manaus')::date hoje,
        0 desligados
   from rank s left join rank o on o.n = 2
@@ -94,7 +99,7 @@ begin
                                      and p_email is not null and outra is not null
                                      and o_dia is not null and o_cli is not null) then
     raise exception 'fixtures: sem profissional ativa com e-mail e atendimento na janela, ou sem "outra": %',
-      (select row_to_json(f) from _fx f);
+      (select row_to_json(f)::jsonb - 'p_email' from _fx f);
   end if;
 end $$;
 
@@ -115,7 +120,8 @@ select * from (values
   (5, 'admin',                '00000000-0000-4000-8000-0000106c0004', 'fx-loginc-admin@invalid.local', 'fx-loginc-admin@invalid.local', 'Admin', true, null),
   (6, 'inativo',              '00000000-0000-4000-8000-0000106c0005', 'fx-loginc-inativo@invalid.local', 'fx-loginc-inativo@invalid.local', 'Admin', false, (select outra from _fx)),
   (7, 'spoof',                '00000000-0000-4000-8000-0000106c0006', 'fx-loginc-spoof@invalid.local', (select p_email from _fx), 'Profissional', true, null),
-  (8, 'ligada_email_trocado', '00000000-0000-4000-8000-0000106c0001', null, 'fx-loginc-outro@invalid.local', null, null, null)
+  (8, 'ligada_email_trocado', '00000000-0000-4000-8000-0000106c0001', null, 'fx-loginc-outro@invalid.local', null, null, null),
+  (9, 'somente_leitura',      '00000000-0000-4000-8000-0000106c0007', 'fx-loginc-leitura@invalid.local', 'fx-loginc-leitura@invalid.local', 'Somente Leitura', true, null)
 ) x(o, papel, uid, auth_email, claim_email, perfil, ativo, vinculo);
 
 insert into auth.users (id, aud, role, email, email_confirmed_at, email_change)
@@ -159,7 +165,8 @@ do $$
 begin
   if exists (select 1 from _tok where n = '0' or a like '% motivos=0' or o like 'linhas=0 %'
                                    or s_postgres <> '0/0' or tf = '0' or pf = '0') then
-    raise exception 'fixtures nao provam nada: % %', (select row_to_json(f) from _fx f), (select row_to_json(k) from _tok k);
+    raise exception 'fixtures nao provam nada: % %',
+      (select row_to_json(f)::jsonb - 'p_email' from _fx f), (select row_to_json(k) from _tok k);
   end if;
 end $$;
 
@@ -216,8 +223,8 @@ select 0, 'postgres', v.k, v.esp, v.obt from (values
   ('c11 policy publica de leitura de profissionais_ativos (fila)', '1',
    (select count(*)::text from pg_policies where schemaname = 'public' and tablename = 'profissionais_ativos'
       and policyname = 'Permitir leitura pública de profissionais' and cmd = 'SELECT')),
-  ('c12 trigger antes_inserir: errcode da janela', 'P0D01',
-   (select case when prosrc ~ 'errcode = ''P0D01''' and prosrc !~ '''22023''' then 'P0D01' else 'outro' end
+  ('c12 trigger antes_inserir: errcode da janela', 'PT400',
+   (select case when prosrc ~ 'errcode = ''PT400''' and prosrc !~ '''22023''' then 'PT400' else 'outro' end
       from pg_proc where oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure)),
   ('c13 helper com gate e definer / trigger invoker', 'gate/definer/invoker',
    (select case when h.prosrc like '%public.destaque_can_write_page(''estrelas'')%public.destaque_minha_profissional()%'
@@ -257,6 +264,8 @@ begin
     pg_temp.esp(p_esp), v);
 end $f$;
 
+-- ordem das listas: anon | prof_ligada | prof_sem_vinculo | recepcao | admin | inativo | spoof |
+--                   ligada_email_trocado | somente_leitura
 create function pg_temp.checar() returns void language plpgsql as $f$
 declare
   x record;
@@ -267,57 +276,57 @@ begin
   -- RPCs da A
   perform pg_temp.r('01 minha_profissional()',
     $q$select coalesce(public.destaque_minha_profissional()::text, 'NULL')$q$,
-    '42501|P|NULL|NULL|NULL|NULL|NULL|P');
-  perform pg_temp.r('02 estrelas_periodo(mes atual) linhas', format(
-    $q$select count(*)::text from public.destaque_estrelas_periodo(%L, %L)$q$, x.ini, x.fim), '42501|N|N|N|N|0|N|N');
+    '42501|P|NULL|NULL|NULL|NULL|NULL|P|NULL');
+  perform pg_temp.r('02 estrelas_periodo(ultimos 30 dias) linhas', format(
+    $q$select count(*)::text from public.destaque_estrelas_periodo(%L, %L)$q$, x.ini, x.fim), '42501|N|N|N|N|0|N|N|N');
   perform pg_temp.r('03 minhas_avaliacoes(P)', format(
     $q$select format('linhas=%%s motivos=%%s', count(*), count(motivo_recusa)) from public.destaque_minhas_avaliacoes(%s)$q$, x.pid),
-    '42501|A|Z|A|A|Z|Z|A');
+    '42501|A|Z|A|A|Z|Z|A|Z');
   perform pg_temp.r('04 minhas_avaliacoes(outra)', format(
     $q$select format('linhas=%%s motivos=%%s', count(*), count(motivo_recusa)) from public.destaque_minhas_avaliacoes(%s)$q$, x.outra),
-    '42501|Z|Z|O|O|Z|Z|Z');
+    '42501|Z|Z|O|O|Z|Z|Z|Z');
   perform pg_temp.r('05 profissionais_sem_conta() linhas/ja_tem_login',
     $q$select format('%s/%s', count(*), count(*) filter (where ja_tem_login)) from public.destaque_profissionais_sem_conta()$q$,
-    '42501|0/0|0/0|0/0|S|0/0|0/0|0/0');
+    '42501|0/0|0/0|0/0|S|0/0|0/0|0/0|0/0');
   -- leitura das seis tabelas
   perform pg_temp.r('06 select trinks_services',
     $q$select case when exists (select 1 from public.trinks_services) then '>0' else '0' end$q$,
-    '42501|>0|>0|>0|>0|0|>0|>0');
+    '42501|>0|>0|>0|>0|0|>0|>0|>0');
   perform pg_temp.r('07 select regras_desafio',
     $q$select case when exists (select 1 from public.regras_desafio) then '>0' else '0' end$q$,
-    '42501|>0|>0|>0|>0|0|>0|>0');
+    '42501|>0|>0|>0|>0|0|>0|>0|>0');
   perform pg_temp.r('07b select feriados linhas',
-    $q$select count(*)::text from public.feriados$q$, '42501|FE|FE|FE|FE|0|FE|FE');
+    $q$select count(*)::text from public.feriados$q$, '42501|FE|FE|FE|FE|0|FE|FE|FE');
   perform pg_temp.r('07c select tratamento_fabricante linhas',
-    $q$select count(*)::text from public.tratamento_fabricante$q$, '42501|TF|TF|TF|TF|0|TF|TF');
+    $q$select count(*)::text from public.tratamento_fabricante$q$, '42501|TF|TF|TF|TF|0|TF|TF|TF');
   perform pg_temp.r('07d select profissional_fabricante linhas',
-    $q$select count(*)::text from public.profissional_fabricante$q$, '42501|PF|PF|PF|PF|0|PF|PF');
+    $q$select count(*)::text from public.profissional_fabricante$q$, '42501|PF|PF|PF|PF|0|PF|PF|PF');
   perform pg_temp.r('08 select avaliacoes_cadastradas linhas',
-    $q$select count(id)::text from public.avaliacoes_cadastradas$q$, '42501|L|0|T|T|0|0|L');
+    $q$select count(id)::text from public.avaliacoes_cadastradas$q$, '42501|L|0|T|T|0|0|L|T');
   -- INSERT como o modal; o RETURNING mostra se o helper do trigger manteve o id confirmado pelo espelho
   perform pg_temp.r('09 insert estrela propria (P, id do espelho)', ins || format(
     $q$values (%s, 'LoginFxC', 'LoginFxC propria', 'LoginFxC Trinks', %s, %L, 'lista', 'pendente', now())
        returning case cliente_trinks_id when %s then 'ok id=retido' else 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL') end$q$,
     x.pid, x.cli, x.dia, x.cli),
-    '42501|ok id=retido|42501|ok id=retido|ok id=retido|42501|42501|ok id=retido', true);
+    '42501|ok id=retido|42501|ok id=retido|ok id=retido|42501|42501|ok id=retido|42501', true);
   perform pg_temp.r('10 insert estrela de outra profissional', ins || format(
     $q$values (%s, 'LoginFxC outra', 'LoginFxC outra', 'LoginFxC Trinks', null, %L, 'digitado', 'pendente', now())
        returning 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL')$q$,
     x.outra, x.hoje),
-    '42501|42501|42501|ok id=NULL|ok id=NULL|42501|42501|42501', true);
+    '42501|42501|42501|ok id=NULL|ok id=NULL|42501|42501|42501|42501', true);
   -- Recepção/Admin inserem para a outra com o id real do espelho dela: o helper (gate write) mantém
   perform pg_temp.r('10b insert estrela de outra profissional (id real do espelho dela)', ins || format(
     $q$values (%s, 'LoginFxC outra', 'LoginFxC outra id', 'LoginFxC Trinks', %s, %L, 'lista', 'pendente', now())
        returning case cliente_trinks_id when %s then 'ok id=retido' else 'ok id=' || coalesce(cliente_trinks_id::text, 'NULL') end$q$,
     x.outra, x.o_cli, x.o_dia, x.o_cli),
-    '42501|42501|42501|ok id=retido|ok id=retido|42501|42501|42501', true);
+    '42501|42501|42501|ok id=retido|ok id=retido|42501|42501|42501|42501', true);
   -- helper do espelho com gate: sem permissão = false (não é oráculo); anon nem executa
   perform pg_temp.r('11 espelho_tem_cliente(P, real)/(P, falso)', format(
     $q$select public.avaliacao_espelho_tem_cliente(%1$s, %2$L, %3$s) || '/' || public.avaliacao_espelho_tem_cliente(%1$s, %2$L, -1)$q$,
-    x.pid, x.dia, x.cli), '42501|true/false|false/false|true/false|true/false|false/false|false/false|true/false');
+    x.pid, x.dia, x.cli), '42501|true/false|false/false|true/false|true/false|false/false|false/false|true/false|false/false');
   perform pg_temp.r('11b espelho_tem_cliente(outra, real dela)', format(
     $q$select public.avaliacao_espelho_tem_cliente(%s, %L, %s)::text$q$, x.outra, x.o_dia, x.o_cli),
-    '42501|false|false|true|true|false|false|false');
+    '42501|false|false|true|true|false|false|false|false');
   perform pg_temp.r('12 update profissionais_ativos.email', format(
     $q$with u as (update public.profissionais_ativos set email = email where "profissionalId" = %s returning 1)
        select 'ok:' || count(*) from u$q$, x.pid), '42501', true);
@@ -331,14 +340,14 @@ begin
   perform pg_temp.r('17 insert com dia fora da janela (errcode do trigger)', ins || format(
     $q$values (%s, 'LoginFxC', 'LoginFxC janela', null, null, %L, 'digitado', 'pendente', now())
        returning 'ok'$q$, x.pid, x.hoje - 11),
-    '42501|P0D01|P0D01|P0D01|P0D01|P0D01|P0D01|P0D01', true);
+    '42501|PT400|PT400|PT400|PT400|PT400|PT400|PT400|PT400', true);
   perform pg_temp.r('18 clientes_do_dia(P, dia do espelho)', format(
     $q$select case when count(*) filter (where cliente_trinks_id = %s) > 0 then 'ok' else 'ok sem a cliente' end
          from public.avaliacao_clientes_do_dia(%s, %L)$q$, x.cli, x.pid, x.dia),
-    '42501|ok|42501|ok|ok|42501|42501|ok');
+    '42501|ok|42501|ok|ok|42501|42501|ok|42501');
   perform pg_temp.r('19 clientes_do_dia(outra, hoje)', format(
     $q$select 'ok' from (select count(*) from public.avaliacao_clientes_do_dia(%s, %L)) c$q$, x.outra, x.hoje),
-    '42501|42501|42501|ok|ok|42501|42501|42501');
+    '42501|42501|42501|ok|ok|42501|42501|42501|42501');
   perform pg_temp.r('20 fila: 4 colunas de profissionais_ativos (como a fila le)',
     $q$select case when count(*) > 0 then '>0' else '0' end
          from (select "profissionalId", nome_profissional, categoria, ativo from public.profissionais_ativos
@@ -346,10 +355,10 @@ begin
     '>0');
   perform pg_temp.r('21 profissionais_ativos.apelido',
     $q$select case when count(apelido) >= 0 then '>0' end from public.profissionais_ativos$q$,
-    '42501|>0|>0|>0|>0|>0|>0|>0');
+    '42501|>0|>0|>0|>0|>0|>0|>0|>0');
   perform pg_temp.r('22 profissionais_ativos.email',
     $q$select case when count(email) >= 0 then '>0' end from public.profissionais_ativos$q$,
-    '42501|>0|>0|>0|>0|>0|>0|>0');
+    '42501|>0|>0|>0|>0|>0|>0|>0|>0');
 end $f$;
 
 -- 3. Rodadas por papel

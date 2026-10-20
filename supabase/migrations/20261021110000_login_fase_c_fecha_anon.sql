@@ -11,9 +11,10 @@
 --   avaliacoes_cadastradas, regras_desafio, feriados, tratamento_fabricante,
 --   profissional_fabricante} nem /rpc/avaliacao_clientes_do_dia depois do deploy. Com o bundle
 --   antigo ainda no ar, a página pública quebra inteira (42501 em tudo).
--- AVISO 3 — rodar FORA da janela do sync do n8n: DROP POLICY pega ACCESS EXCLUSIVE em
---   trinks_services. lock_timeout de 5s: se a tabela estiver ocupada, a migração falha inteira,
---   sem efeito parcial; basta rodar de novo.
+-- AVISO 3 — rodar FORA da janela do sync do n8n: a migração pega ACCESS EXCLUSIVE nas seis
+--   tabelas de uma vez (LOCK TABLE logo depois dos asserts de partida), até o commit — o site e o
+--   n8n esperam alguns segundos. lock_timeout de 5s: se alguma tabela estiver ocupada, a
+--   migração falha inteira, sem efeito parcial; basta rodar de novo.
 -- ============================================================================================
 --
 -- Spec: docs/superpowers/specs/2026-10-20-login-todas-as-rotas-design.md.
@@ -29,6 +30,9 @@
 --      versão de 2026-10-19 (md5 do pg_get_functiondef b41650748de4c78723e617f475e1e384, lido em
 --      2026-10-20). Se alguém mudou um dos dois depois, a migração aborta antes de tudo.
 --      Consequência: NÃO é reaplicável (na segunda vez o assert do trigger aborta, sem efeito).
+--      Logo depois, um único LOCK TABLE das seis tabelas IN ACCESS EXCLUSIVE MODE (sob o
+--      lock_timeout de 5s): pega todos os locks de uma vez, em vez de cada DROP POLICY
+--      enfileirar atrás de leitores, um depois do outro.
 --   1) DROP das 7 policies públicas antigas (todas `to public`, então valiam também para
 --      authenticated):
 --        trinks_services          "Public can view trinks_services"                     SELECT
@@ -79,9 +83,11 @@
 --      current_user viraria o dono e a regra inteira do trigger desligaria. O resto do corpo
 --      do helper é o da A (md5 do prosrc 2a5896c97ead08f705902ded2221bc45).
 --   6) Trigger avaliacoes_cadastradas_antes_inserir: a regra (b), dia do atendimento fora de
---      hoje-10..hoje, troca o errcode 22023 por P0D01 (código próprio), com a MESMA mensagem. O
---      front (CadastrarAvaliacaoModal) já aceita os dois códigos. Corpo = o da A, com só a linha
---      do errcode (e o comentário dela) trocada.
+--      hoje-10..hoje, troca o errcode 22023 por PT400, com a MESMA mensagem. SQLSTATE "PTxxx" é
+--      convenção do PostgREST: a resposta HTTP sai com o status xxx (400, erro do cliente) em
+--      vez de 500. O front (mensagemDiaForaDaJanela em src/lib/clienteTrinks.ts) aceita 22023,
+--      P0D01 (rascunho anterior da C, por compatibilidade) e PT400. Corpo = o da A, com só a
+--      linha do errcode (e o comentário dela) trocada.
 --   7) Guarda final: aborta se anon ainda tiver qualquer privilégio nas seis tabelas, se não ler
 --      as 4 colunas da fila, se ler qualquer outra coluna de profissionais_ativos, se executar
 --      avaliacao_clientes_do_dia ou o helper, ou se authenticated tiver perdido o necessário.
@@ -93,7 +99,9 @@
 -- revogados aqui. Não são do Destaque; decidir em separado.
 --
 -- Rollback autossuficiente (não depende de outro arquivo). Reabre a leitura pública: só faz
--- sentido se o login der problema e o bundle antigo voltar ao ar. Rodar inteiro.
+-- sentido se o login der problema e o bundle antigo voltar ao ar. Rodar inteiro, BYTE A BYTE,
+-- no SQL Editor (como postgres) — NÃO pelo apply_migration: o bloco tem begin/commit próprios.
+-- O DO final confere que os privilégios de anon voltaram; se não, aborta e nada é desfeito.
 -- Restaura SELECT (e INSERT em avaliacoes) para anon, mas NÃO devolve REFERENCES/TRIGGER que
 -- anon tinha em trinks_services (não eram usados e não deviam existir).
 /* ---- ROLLBACK ----
@@ -105,7 +113,7 @@ set local lock_timeout = '5s';
 DO $$
 BEGIN
   IF md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure))
-     <> 'dae9e7fae36651181cc60fa9d742664d'
+     <> 'cec084c52ae3909300aed54850ee3910'
      OR md5(pg_get_functiondef('public.avaliacao_clientes_do_dia(integer, date)'::regprocedure))
      <> '067fcc9513ebfa0a9014478c63988716'
      OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)'::regprocedure))
@@ -304,6 +312,58 @@ DROP POLICY IF EXISTS "Permitir inserção pública com status pendente" ON publ
 CREATE POLICY "Permitir inserção pública com status pendente" ON public.avaliacoes_cadastradas
   FOR INSERT TO public
   WITH CHECK (status = 'pendente' AND aprovado_por IS NULL AND data_aprovacao IS NULL);
+
+-- 7) conferência: anon voltou a ter o que o bundle antigo usa (senão aborta, nada é desfeito)
+DO $$
+DECLARE
+  v_falhas text[] := '{}';
+  t text;
+  c text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['public.trinks_services', 'public.regras_desafio', 'public.feriados',
+                           'public.tratamento_fabricante', 'public.profissional_fabricante'] LOOP
+    IF NOT has_table_privilege('anon', t, 'select') THEN
+      v_falhas := v_falhas || format('anon sem SELECT em %s', t);
+    END IF;
+  END LOOP;
+  IF NOT has_table_privilege('anon', 'public.avaliacoes_cadastradas', 'insert') THEN
+    v_falhas := v_falhas || 'anon sem INSERT em avaliacoes_cadastradas'::text;
+  END IF;
+  FOREACH c IN ARRAY ARRAY['id', 'profissional_id', 'nome_profissional', 'nome_cliente',
+                           'nome_cliente_trinks', 'cliente_trinks_id', 'data_atendimento',
+                           'origem_cliente_trinks', 'status', 'data_hora_cadastro',
+                           'aprovado_por', 'data_aprovacao', 'created_at'] LOOP
+    IF NOT has_column_privilege('anon', 'public.avaliacoes_cadastradas', c, 'select') THEN
+      v_falhas := v_falhas || format('anon nao le avaliacoes_cadastradas.%s', c);
+    END IF;
+  END LOOP;
+  IF has_column_privilege('anon', 'public.avaliacoes_cadastradas', 'motivo_recusa', 'select') THEN
+    v_falhas := v_falhas || 'anon le motivo_recusa'::text;
+  END IF;
+  FOREACH c IN ARRAY ARRAY['profissionalId', 'nome_profissional', 'categoria', 'apelido', 'ativo',
+                           'dia_aniversario', 'mes_aniversario', 'created_at', 'updated_at'] LOOP
+    IF NOT has_column_privilege('anon', 'public.profissionais_ativos', c, 'select') THEN
+      v_falhas := v_falhas || format('anon nao le profissionais_ativos.%s', c);
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('anon', 'public.avaliacao_clientes_do_dia(integer, date)', 'execute')
+     OR NOT has_function_privilege('anon', 'public.avaliacao_espelho_tem_cliente(integer, date, bigint)', 'execute') THEN
+    v_falhas := v_falhas || 'anon sem EXECUTE em clientes_do_dia ou no helper'::text;
+  END IF;
+  IF (SELECT count(*) FROM pg_catalog.pg_policies
+       WHERE schemaname = 'public' AND roles = ARRAY['public']::name[]
+         AND policyname IN ('Public can view trinks_services', 'Allow public read on regras_desafio',
+                            'Allow public read on feriados',
+                            'Allow public read access on tratamento_fabricante',
+                            'Allow public read access on profissional_fabricante',
+                            'Permitir leitura pública de avaliações',
+                            'Permitir inserção pública com status pendente')) <> 7 THEN
+    v_falhas := v_falhas || 'policies publicas antigas nao voltaram (7)'::text;
+  END IF;
+  IF array_length(v_falhas, 1) > 0 THEN
+    RAISE EXCEPTION 'rollback da C incompleto: %', array_to_string(v_falhas, ' | ');
+  END IF;
+END $$;
 commit;
 ---- FIM DO ROLLBACK ---- */
 
@@ -345,6 +405,12 @@ BEGIN
     RAISE EXCEPTION 'avaliacao_espelho_tem_cliente nao e a versao da migracao A: abortando';
   END IF;
 END $$;
+
+-- todos os locks de uma vez (sob o lock_timeout de 5s), em vez de um DROP POLICY por vez
+LOCK TABLE public.trinks_services, public.regras_desafio, public.feriados,
+           public.tratamento_fabricante, public.profissional_fabricante,
+           public.avaliacoes_cadastradas
+  IN ACCESS EXCLUSIVE MODE;
 
 -- ---------------------------------------------------------------------------
 -- 1) Policies públicas antigas
@@ -495,7 +561,7 @@ COMMENT ON FUNCTION public.avaliacao_espelho_tem_cliente(integer, date, bigint) 
   'Migracoes 20261021100000 e 20261021110000.';
 
 -- ---------------------------------------------------------------------------
--- 6) Trigger de INSERT: dia fora da janela passa a ser P0D01 (mesma mensagem)
+-- 6) Trigger de INSERT: dia fora da janela passa a ser PT400 (mesma mensagem)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.avaliacoes_cadastradas_antes_inserir()
 RETURNS trigger
@@ -518,7 +584,7 @@ begin
   if new.data_atendimento is not null
      and (new.data_atendimento < v_hoje - 10 or new.data_atendimento > v_hoje) then
     raise exception 'O dia do atendimento precisa estar entre hoje e 10 dias atrás.'
-      using errcode = 'P0D01';  -- codigo proprio (era 22023 ate a migracao C)
+      using errcode = 'PT400';  -- PostgREST responde HTTP 400 (era 22023 ate a migracao C)
   end if;
 
   -- c. id da cliente so fica se o espelho confirma profissional + dia + cliente
@@ -608,10 +674,10 @@ BEGIN
     v_falhas := v_falhas || 'trigger avaliacoes_cadastradas_antes_inserir virou SECURITY DEFINER'::text;
   END IF;
   IF (SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure)
-       !~ 'errcode = ''P0D01'''
+       !~ 'errcode = ''PT400'''
      OR (SELECT prosrc FROM pg_proc WHERE oid = 'public.avaliacoes_cadastradas_antes_inserir()'::regprocedure)
        ~ '''22023''' THEN
-    v_falhas := v_falhas || 'trigger de avaliacoes sem o errcode P0D01'::text;
+    v_falhas := v_falhas || 'trigger de avaliacoes sem o errcode PT400'::text;
   END IF;
 
   -- policies: públicas antigas fora; novas da A e de escrita do admin intactas
