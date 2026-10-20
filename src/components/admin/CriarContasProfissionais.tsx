@@ -72,7 +72,7 @@ function rotuloLinha(l: LinhaSemConta): string {
 export function CriarContasProfissionais({ perfis, onFeito }: Props) {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: CHAVE_SEM_CONTA,
     queryFn: async (): Promise<LinhaSemConta[]> => {
       const { data: rows, error: err } = await supabase.rpc("destaque_profissionais_sem_conta");
@@ -118,12 +118,22 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
   const perfilIdDe = (l: LinhaSemConta) => acharPerfilId(perfis, perfilDe(l));
   const perfisFaltando = PERFIS_DA_CRIACAO.filter((p) => acharPerfilId(perfis, p) === null);
   const totalMarcadas = marcadas.size;
-  const podeCriar = !executando && totalMarcadas > 0 && perfis.length > 0;
+  // isFetching: ao remontar depois de um lote, o cache ainda traz as já criadas até o refetch.
+  const podeCriar = !executando && !isFetching && totalMarcadas > 0 && perfis.length > 0;
 
   const criar = async () => {
     // Trava síncrona (fora do componente): o duplo clique e o lote de antes de uma troca de
     // aba não abrem um segundo lote.
     if (!iniciarLote()) return;
+    // O try abre logo após a trava: qualquer exceção daqui em diante a libera.
+    try {
+      await executarLote();
+    } finally {
+      encerrarLote();
+    }
+  };
+
+  const executarLote = async () => {
     const alvo = linhas.filter((l) => marcadas.has(l.profissionalId));
     setConfirmando(false);
     setLote(null);
@@ -164,14 +174,11 @@ export function CriarContasProfissionais({ perfis, onFeito }: Props) {
     } finally {
       setAtual(null);
       setLote({ itens, resumo: resumoDoLote(contarResultados(itens.map((i) => i.resultado))) });
-      try {
-        // As que deram certo saem da lista; as que falharam ficam para uma nova tentativa. O
-        // lote só termina depois do refetch, senão uma criada ainda apareceria marcada.
-        await queryClient.invalidateQueries({ queryKey: CHAVE_SEM_CONTA });
-        onFeito?.();
-      } finally {
-        encerrarLote();
-      }
+      // As que deram certo saem da lista; as que falharam ficam para uma nova tentativa. O
+      // lote só termina (encerrarLote, em criar) depois do refetch, senão uma criada ainda
+      // apareceria marcada.
+      await queryClient.invalidateQueries({ queryKey: CHAVE_SEM_CONTA });
+      onFeito?.();
     }
   };
 
