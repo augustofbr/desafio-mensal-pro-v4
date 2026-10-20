@@ -6,21 +6,45 @@ import type { AvaliacaoAprovada } from "./estrelasPorCategoria";
  * `authenticated` com gate `painel:read`; sem permissão devolve 0 linhas.
  */
 export interface LinhaEstrelaPeriodo {
-  profissional_id: number | null;
+  profissional_id: number;
   status: string;
   data_hora_cadastro: string | null;
   data_aprovacao: string | null;
 }
 
 /**
- * Valida o retorno cru da RPC. `null` (sem linhas) vira lista vazia; qualquer
- * outra coisa que não seja lista é falha do contrato e NÃO pode virar "0
- * estrelas" em silêncio: lança para o hook expor o erro.
+ * Teto de linhas do PostgREST (`max-rows`). Uma resposta com este tamanho (ou
+ * mais) pode estar TRUNCADA, e contar estrelas sobre ela erraria o ranking em
+ * silêncio: é tratada como falha.
+ */
+export const LIMITE_LINHAS_RPC = 1000;
+
+export const ERRO_PERIODO_LONGO =
+  "Período longo demais para carregar as estrelas. Escolha um intervalo menor.";
+
+/**
+ * Valida o retorno cru da RPC. `null` (sem linhas) vira lista vazia. Lança (e o
+ * hook expõe como erro, nunca como "0 estrelas") quando: não é lista; tem
+ * `LIMITE_LINHAS_RPC` linhas ou mais (possível truncamento); ou alguma linha
+ * foge do formato (`status` string, `profissional_id` inteiro).
  */
 export function linhasDaRpcEstrelas(bruto: unknown): LinhaEstrelaPeriodo[] {
   if (bruto == null) return [];
   if (!Array.isArray(bruto)) {
     throw new Error("Resposta inesperada de destaque_estrelas_periodo");
+  }
+  if (bruto.length >= LIMITE_LINHAS_RPC) {
+    throw new Error(ERRO_PERIODO_LONGO);
+  }
+  for (const l of bruto) {
+    if (
+      l === null ||
+      typeof l !== "object" ||
+      typeof (l as { status?: unknown }).status !== "string" ||
+      !Number.isInteger((l as { profissional_id?: unknown }).profissional_id)
+    ) {
+      throw new Error("Linha inesperada em destaque_estrelas_periodo");
+    }
   }
   return bruto as LinhaEstrelaPeriodo[];
 }
@@ -44,7 +68,7 @@ export function pendentesPorProfissional(
 ): Record<string, number> {
   const porProfissional: Record<string, number> = {};
   for (const l of linhas) {
-    if (l.status !== "pendente" || l.profissional_id == null) continue;
+    if (l.status !== "pendente") continue;
     const id = String(l.profissional_id);
     porProfissional[id] = (porProfissional[id] ?? 0) + 1;
   }

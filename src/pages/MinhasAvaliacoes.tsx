@@ -15,7 +15,7 @@ import { formatDataHoraManaus } from "@/lib/dateUtils";
 import { ContaLogada } from "@/components/ContaLogada";
 import { useAcesso } from "@/auth/acesso";
 import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
-import { resolverIdentidade } from "@/lib/identidade";
+import { modoMinhasAvaliacoes, resolverIdentidade } from "@/lib/identidade";
 import { motivoParaProfissional } from "@/lib/motivoRecusa";
 
 function StatusBadge({ status }: { status: string }) {
@@ -95,19 +95,25 @@ const MinhasAvaliacoes = () => {
   const { acesso } = useAcesso();
   const vinculo = useMinhaProfissional();
   const nivelEstrelas = acesso?.paginas.estrelas ?? "none";
-  // Perfil sem "estrelas" (ex.: Somente Leitura): a RPC devolveria 0 linhas, que
-  // pareceria "nenhuma avaliacao". Nao chama a RPC e avisa que o perfil nao inclui a lista.
-  const semAcessoEstrelas = nivelEstrelas === "none";
   const identidade = resolverIdentidade({
     vinculoId: vinculo.id,
     vinculoErro: vinculo.erro,
     nivelEstrelas,
     perfilLocalId: null,
   });
-  const semSeletor = identidade.fixo && !identidade.podeEscolherProfissionalNoCadastro;
+  // Quem ve o que: `none` sem lista; `write` (recepcao) seletor livre; `read` so a
+  // profissional ligada, e sem vinculo utilizavel (sem ligacao, erro na RPC do vinculo ou
+  // profissional inativa) fica bloqueada: a RPC devolveria 0 linhas para qualquer outro id
+  // e a tela diria "Nenhuma avaliacao" por engano. Fora do seletor, o id vem so do modo.
+  const modo = modoMinhasAvaliacoes({
+    nivelEstrelas,
+    vinculoId: vinculo.id,
+    motivoBloqueio: identidade.motivoBloqueio,
+  });
 
   const [profEscolhidaId, setSelectedProfId] = useState<number | null>(null);
-  const selectedProfId = semAcessoEstrelas ? null : semSeletor ? vinculo.id : profEscolhidaId;
+  const selectedProfId =
+    modo.tipo === "fixo" ? modo.profissionalId : modo.tipo === "seletor" ? profEscolhidaId : null;
   const {
     avaliacoes,
     loading: avaliacoesLoading,
@@ -228,9 +234,9 @@ const MinhasAvaliacoes = () => {
                       Avaliações Google
                     </CardTitle>
                     <p className="text-xs text-gray-500 font-body">
-                      {semAcessoEstrelas
-                        ? "Lista de avaliações indisponível para o seu perfil"
-                        : semSeletor
+                      {modo.tipo === "sem_acesso" || modo.tipo === "bloqueado"
+                        ? "Lista de avaliações indisponível"
+                        : modo.tipo === "fixo"
                         ? "Suas avaliações cadastradas"
                         : "Selecione um profissional para ver suas avaliações"}
                     </p>
@@ -239,15 +245,24 @@ const MinhasAvaliacoes = () => {
               </CardHeader>
 
               <CardContent className="px-4 pb-4">
-                {semAcessoEstrelas ? (
+                {modo.tipo === "sem_acesso" ? (
                   <p role="status" className="py-6 text-center font-body text-sm text-gray-600">
                     Seu perfil não inclui a lista de avaliações.
                   </p>
-                ) : profsLoading || vinculo.carregando || (!semSeletor && regrasCarregando) ? (
+                ) : profsLoading ||
+                  vinculo.carregando ||
+                  (modo.tipo === "seletor" && regrasCarregando) ? (
                   <div className="h-10 rounded-lg animate-shimmer" />
+                ) : modo.tipo === "bloqueado" ? (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-body text-amber-800"
+                  >
+                    {modo.mensagem}
+                  </p>
                 ) : (
                   <>
-                    {semSeletor ? (
+                    {modo.tipo === "fixo" ? (
                       // Conta ligada: so as proprias avaliacoes, sem lista para trocar.
                       <p className="mb-4 font-body text-sm font-medium text-gray-800">
                         {activeProfessionals.find((p) => p.profissionalId === vinculo.id)
@@ -255,14 +270,6 @@ const MinhasAvaliacoes = () => {
                       </p>
                     ) : (
                       <>
-                        {identidade.motivoBloqueio && (
-                          <p
-                            role="alert"
-                            className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-body text-amber-800"
-                          >
-                            {identidade.motivoBloqueio}
-                          </p>
-                        )}
                         <ProfessionalSelect
                           professionals={sortedProfessionals}
                           value={selectedProfId ? String(selectedProfId) : ""}

@@ -5,8 +5,8 @@
 -- postgres) com a mesma contagem feita sobre o retorno da RPC executada como admin simulado.
 -- Esperado: zero diferencas (ok = true em todas as linhas e "diferencas = 0").
 -- So leitura: roda em begin ... rollback; as unicas tabelas criadas sao temporarias (on commit
--- drop). Pre-condicao: migracao 20261021100000_login_fase_a.sql aplicada e o usuario
--- 'Augusto Reis' (perfil Admin) existente em destaque_users_app.
+-- drop). Pre-condicao: migracao 20261021100000_login_fase_a.sql aplicada e ao menos um usuario ativo
+-- com perfil Admin em destaque_users_app (o primeiro, por nome, e o admin simulado).
 -- O MCP recusa lotes grandes/sensiveis: mande o arquivo sem as linhas de comentario.
 
 begin;
@@ -43,9 +43,14 @@ declare
   uid uuid;
   x record;
 begin
-  select id into uid from public.destaque_users_app where nome = 'Augusto Reis';
+  select u.id into uid
+    from public.destaque_users_app u
+    join public.destaque_perfis p on p.id = u.perfil_id
+   where u.ativo and p.nome = 'Admin'
+   order by u.nome, u.id
+   limit 1;
   if uid is null then
-    raise exception 'usuario Augusto Reis nao encontrado em destaque_users_app';
+    raise exception 'login_contagem_estrelas: nenhum usuario ativo com perfil Admin em destaque_users_app';
   end if;
   perform set_config('request.jwt.claims',
     json_build_object('sub', uid, 'role', 'authenticated')::text, true);

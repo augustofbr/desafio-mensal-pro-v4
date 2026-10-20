@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  ERRO_PERIODO_LONGO,
+  LIMITE_LINHAS_RPC,
   aprovadasDoPeriodo,
   linhasDaRpcEstrelas,
   pendentesPorProfissional,
@@ -40,7 +42,6 @@ describe("pendentesPorProfissional", () => {
       linha({ profissional_id: 7, status: "pendente", data_aprovacao: null }),
       linha({ profissional_id: 8, status: "pendente", data_aprovacao: null }),
       linha({ profissional_id: 8 }),
-      linha({ profissional_id: null, status: "pendente", data_aprovacao: null }),
     ]);
     expect(r).toEqual({ "7": 2, "8": 1 });
   });
@@ -57,5 +58,21 @@ describe("linhasDaRpcEstrelas", () => {
   it("formato inesperado lança, nunca vira zero", () => {
     expect(() => linhasDaRpcEstrelas({ erro: true })).toThrow();
     expect(() => linhasDaRpcEstrelas("x")).toThrow();
+  });
+  it("999 linhas passam; 1000 ou mais é possível truncamento e lança", () => {
+    const n = (k: number) => Array.from({ length: k }, () => linha({}));
+    expect(linhasDaRpcEstrelas(n(LIMITE_LINHAS_RPC - 1))).toHaveLength(LIMITE_LINHAS_RPC - 1);
+    expect(() => linhasDaRpcEstrelas(n(LIMITE_LINHAS_RPC))).toThrow(ERRO_PERIODO_LONGO);
+    expect(() => linhasDaRpcEstrelas(n(LIMITE_LINHAS_RPC + 5))).toThrow(ERRO_PERIODO_LONGO);
+  });
+  it("linha fora do formato lança", () => {
+    const ruim = (o: unknown) => () => linhasDaRpcEstrelas([linha({}), o]);
+    expect(ruim(null)).toThrow();
+    expect(ruim("x")).toThrow();
+    expect(ruim({ ...linha({}), status: 1 })).toThrow();
+    expect(ruim({ ...linha({}), status: undefined })).toThrow();
+    expect(ruim({ ...linha({}), profissional_id: null })).toThrow();
+    expect(ruim({ ...linha({}), profissional_id: "7" })).toThrow();
+    expect(ruim({ ...linha({}), profissional_id: 1.5 })).toThrow();
   });
 });

@@ -4,6 +4,7 @@ import {
   MOTIVO_FORA_DO_DESAFIO,
   MOTIVO_SEM_VINCULO,
   escolherPerfilId,
+  modoMinhasAvaliacoes,
   normalizarVinculo,
   resolverIdentidade,
 } from "./identidade";
@@ -204,4 +205,61 @@ describe("normalizarVinculo", () => {
       expect(normalizarVinculo(valor)).toBeNull();
     }
   );
+});
+
+describe("modoMinhasAvaliacoes", () => {
+  const base = { vinculoId: null, motivoBloqueio: null };
+
+  it("sem acesso a estrelas: sem lista", () => {
+    expect(modoMinhasAvaliacoes({ ...base, nivelEstrelas: "none" })).toEqual({ tipo: "sem_acesso" });
+    expect(modoMinhasAvaliacoes({ nivelEstrelas: "none", vinculoId: 7, motivoBloqueio: null })).toEqual({
+      tipo: "sem_acesso",
+    });
+  });
+
+  it("write (recepção): seletor livre, com ou sem vínculo", () => {
+    expect(modoMinhasAvaliacoes({ ...base, nivelEstrelas: "write" })).toEqual({ tipo: "seletor" });
+    expect(modoMinhasAvaliacoes({ nivelEstrelas: "write", vinculoId: 7, motivoBloqueio: null })).toEqual({
+      tipo: "seletor",
+    });
+  });
+
+  it("read com vínculo: só a própria profissional", () => {
+    expect(modoMinhasAvaliacoes({ nivelEstrelas: "read", vinculoId: 885975, motivoBloqueio: null })).toEqual({
+      tipo: "fixo",
+      profissionalId: 885975,
+    });
+  });
+
+  it("read sem vínculo: bloqueado (sem seletor, sem RPC) com a mensagem da identidade", () => {
+    const semVinculo = resolverIdentidade({ vinculoId: null, nivelEstrelas: "read", perfilLocalId: null });
+    expect(
+      modoMinhasAvaliacoes({ nivelEstrelas: "read", vinculoId: null, motivoBloqueio: semVinculo.motivoBloqueio }),
+    ).toEqual({ tipo: "bloqueado", mensagem: MOTIVO_SEM_VINCULO });
+  });
+
+  it("read com erro na RPC do vínculo: bloqueado com a mensagem de falha, sem culpar o e-mail", () => {
+    const erro = resolverIdentidade({
+      vinculoId: null,
+      vinculoErro: true,
+      nivelEstrelas: "read",
+      perfilLocalId: null,
+    });
+    expect(
+      modoMinhasAvaliacoes({ nivelEstrelas: "read", vinculoId: null, motivoBloqueio: erro.motivoBloqueio }),
+    ).toEqual({ tipo: "bloqueado", mensagem: MOTIVO_ERRO_VINCULO });
+  });
+
+  it("read com vínculo mas bloqueada (fora do desafio): bloqueado", () => {
+    expect(
+      modoMinhasAvaliacoes({ nivelEstrelas: "read", vinculoId: 7, motivoBloqueio: MOTIVO_FORA_DO_DESAFIO }),
+    ).toEqual({ tipo: "bloqueado", mensagem: MOTIVO_FORA_DO_DESAFIO });
+  });
+
+  it("read sem vínculo e sem motivo informado: cai em 'sem vínculo' (nunca seletor)", () => {
+    expect(modoMinhasAvaliacoes({ ...base, nivelEstrelas: "read" })).toEqual({
+      tipo: "bloqueado",
+      mensagem: MOTIVO_SEM_VINCULO,
+    });
+  });
 });

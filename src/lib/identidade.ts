@@ -102,3 +102,30 @@ export function normalizarVinculo(bruto: unknown): number | null {
   if (typeof bruto !== "number") return null;
   return Number.isSafeInteger(bruto) && bruto > 0 ? bruto : null;
 }
+
+/** Como `/minhas-avaliacoes` se comporta para a conta (decide a TELA; a RPC é o gate real). */
+export type ModoMinhasAvaliacoes =
+  | { tipo: "sem_acesso" }
+  | { tipo: "seletor" }
+  | { tipo: "fixo"; profissionalId: number }
+  | { tipo: "bloqueado"; mensagem: string };
+
+/**
+ * - `none`: perfil sem a página "estrelas" — não há lista.
+ * - `write` (recepção): seletor livre; a RPC aceita qualquer id.
+ * - `read`: só a profissional ligada à conta. Sem vínculo (conta sem ligação, RPC do
+ *   vínculo com erro ou profissional inativa) ou com `motivoBloqueio`, a RPC devolveria 0
+ *   linhas para qualquer outro id e a tela diria "Nenhuma avaliação" por engano: então
+ *   fica bloqueado, sem seletor e sem chamar a RPC, só com a mensagem.
+ */
+export function modoMinhasAvaliacoes(i: {
+  nivelEstrelas: PageAccess;
+  vinculoId: number | null;
+  motivoBloqueio: string | null;
+}): ModoMinhasAvaliacoes {
+  if (i.nivelEstrelas === "none") return { tipo: "sem_acesso" };
+  if (i.nivelEstrelas === "write") return { tipo: "seletor" };
+  if (i.motivoBloqueio) return { tipo: "bloqueado", mensagem: i.motivoBloqueio };
+  if (i.vinculoId === null) return { tipo: "bloqueado", mensagem: MOTIVO_SEM_VINCULO };
+  return { tipo: "fixo", profissionalId: i.vinculoId };
+}

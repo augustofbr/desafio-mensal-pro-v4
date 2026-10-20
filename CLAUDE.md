@@ -113,7 +113,12 @@ edge function no load da pagina.**
     "Inativos fora do ranking"); `activeProfessionals` continua sendo o cadastro inteiro
 
 - `useStarsData`: Google Stars management hook
-  - Fetches approved reviews from `avaliacoes_cadastradas`
+  - Le pela RPC `destaque_estrelas_periodo(p_inicio, p_fim)` (so `authenticated`, gate `painel:read`),
+    nao mais pela tabela; guarda so as `aprovada` com `data_aprovacao`. A RPC devolve aprovadas e
+    pendentes do periodo [inicio, fim) por `data_hora_cadastro` (Manaus). Sem permissao ela devolve
+    0 linhas SEM erro (o `RequirePage` barra antes). Resposta com 1000 linhas ou mais (teto do
+    PostgREST) conta como falha ("Periodo longo demais...") e linha fora do formato tambem: viram
+    `error`, nunca "0 estrelas" (`src/lib/estrelasRpc.ts`)
   - Returns stars count per professional per category
   - Estrela de `ativo === false` nao entra em mapa nenhum (`agruparEstrelasPorCategoria` em
     `src/lib/estrelasPorCategoria.ts`, ver "Inativos fora do ranking")
@@ -307,7 +312,9 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   Exceção: os ids de `star_bonus_extra` (abaixo), que entram mesmo sem categoria.
 - **Mês de atribuição = mês do `data_hora_cadastro`** (Manaus), o mesmo critério de
   `useStarsData`: as aprovadas vêm de `starsData` (exposto por `useDashboardData`); as pendentes,
-  de `useEstrelasPendentes` (consulta própria, recorte no servidor `.gte/.lt`, uma vez por período).
+  de `useEstrelasPendentes` (RPC `destaque_estrelas_periodo`, as `pendente`; recorte no servidor
+  `[p_inicio, p_fim)`, uma vez por período; mesma validação e mesmo teto de 1000 linhas do
+  `useStarsData`, que viram erro).
 - **Ranking por valor em R$** (desempate: estrelas, depois nome; posição por valor). A seção
   fica oculta no filtro `custom` (só mês atual/anterior). Se `useStarsData` falhar (`error`), a
   seção mostra aviso de erro, nunca "R$ 0,00". Mutações da aba Aprovações invalidam
@@ -531,7 +538,15 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
   (`casaBuscaHistorico`).
 - **Devolver para a fila e aprovar zeram o motivo**: o banco limpa `motivo_recusa` sozinho, e o front nao
   o envia nesses dois UPDATEs. Aprovar nao tem motivo.
-- **`/minhas-avaliacoes` mostra o motivo** (rotulo "Motivo da recusa", so nas recusadas; legado NULL = "Sem motivo registrado"), lido pela RPC `destaque_minhas_avaliacoes` (`useMinhasAvaliacoes`), nao pela tabela. Perfil com `estrelas: none` nao chama a RPC e ve "Seu perfil nao inclui a lista de avaliacoes.". As estrelas do painel (`useStarsData`, `useEstrelasPendentes`) vem da RPC `destaque_estrelas_periodo` (aprovadas e pendentes do periodo; filtros em `src/lib/estrelasRpc.ts`); conferencia em `supabase/verificacoes/login_contagem_estrelas.sql`.
+- **`/minhas-avaliacoes` mostra o motivo** (rotulo "Motivo da recusa", so nas recusadas; legado NULL =
+  "Sem motivo registrado"), lido pela RPC `destaque_minhas_avaliacoes` (`useMinhasAvaliacoes`), nao
+  pela tabela. Quem ve o que (`modoMinhasAvaliacoes` em `src/lib/identidade.ts`): `estrelas: none` nao
+  chama a RPC e ve "Seu perfil nao inclui a lista de avaliacoes."; `write` tem o seletor livre; `read`
+  so a propria profissional, e sem vinculo utilizavel (sem ligacao, erro na RPC do vinculo ou
+  profissional inativa) fica bloqueada, sem seletor e sem RPC, so com a mensagem do `motivoBloqueio`.
+  As estrelas do painel (`useStarsData`, `useEstrelasPendentes`) vem da RPC `destaque_estrelas_periodo`
+  (filtros em `src/lib/estrelasRpc.ts`); conferencia em
+  `supabase/verificacoes/login_contagem_estrelas.sql`.
 
 **Cliente no Trinks no cadastro e nos sinais da fila** (migracoes `20261019120000_avaliacoes_cliente_trinks.sql`, `20261019120100_avaliacoes_sinais.sql`, `20261019180000_avaliacoes_sinais_duplicata_trinks.sql` e `20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`):
 
