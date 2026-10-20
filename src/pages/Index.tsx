@@ -23,11 +23,11 @@ import { useAcesso } from "@/auth/acesso";
 
 function DashboardContent() {
   const navigate = useNavigate();
-  // Perfil sem acesso a "estrelas" nao ve o passo de cadastrar (o gate real e a RLS).
+  // Perfil sem acesso a "estrelas" nao ve os passos de cadastrar nem de ver as
+  // avaliacoes (o gate real e a RLS/RPC). Os dois dependem do mesmo nivel, entao
+  // somem juntos: com "estrelas" liberada sao os passos 3 e 4; sem ela, ficam so 1 e 2.
   const { acesso } = useAcesso();
-  const veCadastroDeEstrela = (acesso?.paginas.estrelas ?? "none") !== "none";
-  // Sem o passo de cadastrar, "ver minhas avaliacoes" vira o 3 (e nao um 4 apos o 2).
-  const numeroDoPassoMinhasAvaliacoes = veCadastroDeEstrela ? 4 : 3;
+  const veEstrelas = (acesso?.paginas.estrelas ?? "none") !== "none";
   const {
     hairData,
     cabeloIndisponivel,
@@ -157,10 +157,10 @@ function DashboardContent() {
                   <ExternalLink className="h-5 w-5 text-violet-400 flex-shrink-0" />
                 </button>
 
-                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
-
-                {veCadastroDeEstrela && (
+                {veEstrelas && (
                   <>
+                    <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+
                     {/* Passo 3 */}
                     <div className="relative w-full">
                       <span className="absolute top-1 right-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-body font-semibold text-amber-600 z-10 shadow-sm">
@@ -182,23 +182,23 @@ function DashboardContent() {
                     </div>
 
                     <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+
+                    {/* Passo 4 */}
+                    <button
+                      onClick={() => navigate('/minhas-avaliacoes')}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                    >
+                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                        4
+                      </div>
+                      <div className="flex-1 text-left">
+                        <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 4</span>
+                        <p className="text-sm font-body text-gray-700 leading-tight">Veja suas avaliações cadastradas</p>
+                      </div>
+                      <ClipboardList className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                    </button>
                   </>
                 )}
-
-                {/* Passo 4 (3 quando o passo de cadastrar esta oculto) */}
-                <button
-                  onClick={() => navigate('/minhas-avaliacoes')}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
-                >
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
-                    {numeroDoPassoMinhasAvaliacoes}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo {numeroDoPassoMinhasAvaliacoes}</span>
-                    <p className="text-sm font-body text-gray-700 leading-tight">Veja suas avaliações cadastradas</p>
-                  </div>
-                  <ClipboardList className="h-5 w-5 text-violet-400 flex-shrink-0" />
-                </button>
               </div>
             </div>
           </div>

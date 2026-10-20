@@ -531,8 +531,7 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
   (`casaBuscaHistorico`).
 - **Devolver para a fila e aprovar zeram o motivo**: o banco limpa `motivo_recusa` sozinho, e o front nao
   o envia nesses dois UPDATEs. Aprovar nao tem motivo.
-- **`/minhas-avaliacoes` ainda NAO mostra o motivo**: ele so podera aparecer ali depois do login da
-  profissional (outra entrega); a pagina e publica e a coluna nao e legivel por `anon`.
+- **`/minhas-avaliacoes` mostra o motivo** (rotulo "Motivo da recusa", so nas recusadas; legado NULL = "Sem motivo registrado"), lido pela RPC `destaque_minhas_avaliacoes` (`useMinhasAvaliacoes`), nao pela tabela. Perfil com `estrelas: none` nao chama a RPC e ve "Seu perfil nao inclui a lista de avaliacoes.". As estrelas do painel (`useStarsData`, `useEstrelasPendentes`) vem da RPC `destaque_estrelas_periodo` (aprovadas e pendentes do periodo; filtros em `src/lib/estrelasRpc.ts`); conferencia em `supabase/verificacoes/login_contagem_estrelas.sql`.
 
 **Cliente no Trinks no cadastro e nos sinais da fila** (migracoes `20261019120000_avaliacoes_cliente_trinks.sql`, `20261019120100_avaliacoes_sinais.sql`, `20261019180000_avaliacoes_sinais_duplicata_trinks.sql` e `20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`):
 

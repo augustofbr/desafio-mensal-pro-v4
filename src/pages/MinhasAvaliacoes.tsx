@@ -16,6 +16,7 @@ import { ContaLogada } from "@/components/ContaLogada";
 import { useAcesso } from "@/auth/acesso";
 import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
 import { resolverIdentidade } from "@/lib/identidade";
+import { motivoParaProfissional } from "@/lib/motivoRecusa";
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -47,27 +48,35 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function AvaliacaoCard({ avaliacao }: { avaliacao: Avaliacao }) {
+  const motivo = motivoParaProfissional(avaliacao.status, avaliacao.motivo_recusa);
   return (
-    <div className="flex items-center justify-between p-3 rounded-xl bg-white/80 border border-violet-100 shadow-sm">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0">
-          <User className="h-4 w-4 text-violet-500" />
-        </div>
-        <div className="min-w-0">
-          <p className="font-body font-medium text-sm text-gray-800 truncate">
-            {avaliacao.nome_cliente}
-          </p>
-          {avaliacao.nome_cliente_trinks?.trim() && (
-            <p className="font-body text-xs text-gray-500 truncate">
-              Trinks: {avaliacao.nome_cliente_trinks.trim()}
+    <div className="p-3 rounded-xl bg-white/80 border border-violet-100 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0">
+            <User className="h-4 w-4 text-violet-500" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-body font-medium text-sm text-gray-800 truncate">
+              {avaliacao.nome_cliente}
             </p>
-          )}
-          <p className="font-body text-xs text-gray-400">
-            {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
-          </p>
+            {avaliacao.nome_cliente_trinks?.trim() && (
+              <p className="font-body text-xs text-gray-500 truncate">
+                Trinks: {avaliacao.nome_cliente_trinks.trim()}
+              </p>
+            )}
+            <p className="font-body text-xs text-gray-400">
+              {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
+            </p>
+          </div>
         </div>
+        <StatusBadge status={avaliacao.status} />
       </div>
-      <StatusBadge status={avaliacao.status} />
+      {motivo && (
+        <p className="mt-2 rounded-lg bg-red-50/70 border border-red-100 px-3 py-2 font-body text-xs text-red-800 break-words">
+          <span className="font-semibold">Motivo da recusa:</span> {motivo}
+        </p>
+      )}
     </div>
   );
 }
@@ -81,19 +90,24 @@ const MinhasAvaliacoes = () => {
   } = useActiveProfessionals();
 
   // Identidade da conta: ligada a uma profissional que nao escolhe outra => a
-  // pagina e sempre dela, sem seletor. (A leitura segue como estava; trocar para
-  // a RPC `destaque_minhas_avaliacoes` e o motivo da recusa sao da Task 4.)
+  // pagina e sempre dela, sem seletor. A lista vem da RPC `destaque_minhas_avaliacoes`
+  // (`estrelas:write` ve qualquer id; `estrelas:read` so o do vinculo).
   const { acesso } = useAcesso();
   const vinculo = useMinhaProfissional();
+  const nivelEstrelas = acesso?.paginas.estrelas ?? "none";
+  // Perfil sem "estrelas" (ex.: Somente Leitura): a RPC devolveria 0 linhas, que
+  // pareceria "nenhuma avaliacao". Nao chama a RPC e avisa que o perfil nao inclui a lista.
+  const semAcessoEstrelas = nivelEstrelas === "none";
   const identidade = resolverIdentidade({
     vinculoId: vinculo.id,
-    nivelEstrelas: acesso?.paginas.estrelas ?? "none",
+    vinculoErro: vinculo.erro,
+    nivelEstrelas,
     perfilLocalId: null,
   });
   const semSeletor = identidade.fixo && !identidade.podeEscolherProfissionalNoCadastro;
 
   const [profEscolhidaId, setSelectedProfId] = useState<number | null>(null);
-  const selectedProfId = semSeletor ? vinculo.id : profEscolhidaId;
+  const selectedProfId = semAcessoEstrelas ? null : semSeletor ? vinculo.id : profEscolhidaId;
   const {
     avaliacoes,
     loading: avaliacoesLoading,
@@ -214,7 +228,9 @@ const MinhasAvaliacoes = () => {
                       Avaliações Google
                     </CardTitle>
                     <p className="text-xs text-gray-500 font-body">
-                      {semSeletor
+                      {semAcessoEstrelas
+                        ? "Lista de avaliações indisponível para o seu perfil"
+                        : semSeletor
                         ? "Suas avaliações cadastradas"
                         : "Selecione um profissional para ver suas avaliações"}
                     </p>
@@ -223,7 +239,11 @@ const MinhasAvaliacoes = () => {
               </CardHeader>
 
               <CardContent className="px-4 pb-4">
-                {profsLoading || vinculo.carregando || (!semSeletor && regrasCarregando) ? (
+                {semAcessoEstrelas ? (
+                  <p role="status" className="py-6 text-center font-body text-sm text-gray-600">
+                    Seu perfil não inclui a lista de avaliações.
+                  </p>
+                ) : profsLoading || vinculo.carregando || (!semSeletor && regrasCarregando) ? (
                   <div className="h-10 rounded-lg animate-shimmer" />
                 ) : (
                   <>
