@@ -1,15 +1,57 @@
 // auth-kit v0.1 — spa/auth/guards.tsx — wrappers de UX, independentes de router.
-import type { ReactNode } from "react";
+// Adaptado neste repo (login em todas as rotas, 2026-10-20): a decisão vive em
+// decidirTela (pura, testada) e o estado "removido" desloga só este aparelho.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAcesso } from "./acesso";
+import { decidirTela } from "./decidirTela";
+import { supabase } from "@/lib/supabase";
 import type { PageKey } from "@/lib/pages";
 import Login from "@/pages/Login";
 import SemAcesso from "@/pages/SemAcesso";
 
+export const AVISO_ACESSO_REMOVIDO = "Seu acesso a este painel foi removido.";
+
 export function RequirePage({ chave, children }: { chave: PageKey; children: ReactNode }) {
   const { session, acesso, loading } = useAcesso();
-  if (loading) return null;
-  if (!session) return <Login />;
-  if (!acesso || acesso.paginas[chave] === "none") return <SemAcesso />;
+  const tela = decidirTela({ loading, temSessao: session !== null, acesso, chave });
+
+  // O aviso precisa sobreviver ao próprio signOut: ele dispara SIGNED_OUT, o
+  // AuthProvider re-resolve (tela "carregando") e cai em "login" sem sessão.
+  // Sem este estado, o aviso piscaria e sumiria, e a pessoa veria um login
+  // "normal" sem saber por quê. Ajuste de estado durante o render (padrão do
+  // React para estado derivado de mudança de entrada), não em efeito.
+  const [avisoRemovido, setAvisoRemovido] = useState(false);
+  if (tela === "removido" && !avisoRemovido) setAvisoRemovido(true);
+  if (avisoRemovido && (tela === "ok" || tela === "sem_acesso")) setAvisoRemovido(false);
+
+  // signOut uma vez por episódio de "removido". O ref sobrevive ao
+  // mount→cleanup→mount do Strict Mode e aos re-renders; só é rearmado quando
+  // a tela sai do ciclo removido/carregando (login concluído, ok, sem_acesso).
+  // Não há loop: o signOut leva a "login" (sem sessão), nunca de volta a
+  // "removido". Se o signOut falhar (rede), a sessão local fica, a tela
+  // continua "removido" com o aviso, e a nova tentativa é no próximo
+  // carregamento. scope "local": o Auth é compartilhado com outros apps do
+  // Studio X; "global" derrubaria as sessões da pessoa neles também.
+  const signOutDisparadoRef = useRef(false);
+  useEffect(() => {
+    if (tela === "removido") {
+      if (signOutDisparadoRef.current) return;
+      signOutDisparadoRef.current = true;
+      void supabase.auth.signOut({ scope: "local" }).then(({ error }) => {
+        if (error) console.error("RequirePage: signOut local falhou no estado removido", error.message);
+      });
+    } else if (tela !== "carregando") {
+      signOutDisparadoRef.current = false;
+    }
+  }, [tela]);
+
+  if (tela === "removido") return <Login aviso={AVISO_ACESSO_REMOVIDO} />;
+  if (avisoRemovido && (tela === "carregando" || tela === "login")) {
+    return <Login aviso={AVISO_ACESSO_REMOVIDO} />;
+  }
+  if (tela === "carregando") return null;
+  if (tela === "login") return <Login />;
+  if (tela === "sem_acesso") return <SemAcesso />;
   return <>{children}</>;
 }
 

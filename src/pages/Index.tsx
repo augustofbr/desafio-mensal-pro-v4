@@ -18,6 +18,7 @@ import { AlertTriangle, Cake, Star, ClipboardList, QrCode, ExternalLink, Chevron
 import { Button } from "@/components/ui/button";
 import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
 import QrCodeOverlay from "@/components/QrCodeOverlay";
+import { ContaLogada } from "@/components/ContaLogada";
 
 function DashboardContent() {
   const navigate = useNavigate();
@@ -79,6 +80,7 @@ function DashboardContent() {
       {/* Header */}
       <div className="px-4 pt-6 pb-4">
         <div className="max-w-7xl mx-auto">
+          <ContaLogada />
           <div className="flex flex-col items-center mb-5 animate-fade-slide-up">
             <img
               src="/lovable-uploads/0cb6b226-2d51-4078-9b78-b6565c728721.png"

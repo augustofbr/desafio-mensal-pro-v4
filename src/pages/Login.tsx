@@ -1,19 +1,24 @@
 // auth-kit v0.1 — spa/pages/Login.tsx
+// Adaptado neste repo (login em todas as rotas, 2026-10-20): o link mágico
+// volta para a URL em que a pessoa estava (não para uma página fixa) e a tela
+// aceita um aviso opcional (ex.: acesso removido).
 import { useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
-import { PAGES, PAGE_KEYS } from "@/lib/pages";
 
-// Destino do link mágico: a primeira página do registry, NÃO a origin nua
-// ("/"). O kit não garante página em "/" — o schema só exige a chave
-// "usuarios" — então um app cuja primeira página seja "/painel" mandaria o
-// link mágico pra origin, o shell não teria rota ali, e o usuário veria 404
-// (ou tela branca) logo depois de um login bem-sucedido. Mesmo raciocínio
-// do DESTINO_PADRAO em next/app/auth/callback/route.ts, adaptado pra SPA:
-// aqui não há callback route — o supabase-js já resolve a sessão a partir
-// da própria URL de destino (detectSessionInUrl, ligado por padrão).
-const DESTINO_PADRAO = PAGES[PAGE_KEYS[0]].href;
+// Destino do link mágico: a URL atual, sem o fragmento (#...). O app usa
+// BrowserRouter, então o fragmento nunca é rota; e ele pode trazer lixo de uma
+// tentativa anterior (ex.: "#error=access_denied&error_code=otp_expired" de um
+// link vencido). No fluxo implícito o Auth devolve a sessão no fragmento da
+// URL de destino, então um fragmento antigo ali estragaria o retorno.
+// PRÉ-REQUISITO: a URL precisa casar com a lista de Redirect URLs do projeto
+// Supabase (Auth → URL Configuration), por exemplo
+// "https://x3.studioxbrasil.com.br/**"; senão o Auth ignora o destino e manda
+// para a Site URL.
+function destinoDoLink(): string {
+  return window.location.href.split("#")[0];
+}
 
-export default function Login() {
+export default function Login({ aviso }: { aviso?: string } = {}) {
   const [email, setEmail] = useState("");
   const [estado, setEstado] = useState<"idle" | "enviando" | "enviado" | "erro">("idle");
   const [erro, setErro] = useState("");
@@ -22,14 +27,10 @@ export default function Login() {
     e.preventDefault();
     setEstado("enviando");
     // shouldCreateUser:false — login NUNCA cadastra; cadastro é só por convite
-    // do admin (docs/armadilhas.md #1). emailRedirectTo aponta pra
-    // DESTINO_PADRAO (primeira página do registry), não pra origin nua — veja
-    // o comentário acima. PRÉ-REQUISITO DE INSTALAÇÃO: essa URL completa
-    // precisa estar na lista de Redirect URLs permitidas do projeto Supabase
-    // (Auth → URL Configuration), senão o link mágico volta com erro.
+    // do admin (docs/armadilhas.md #1). Só link mágico, sem senha.
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}${DESTINO_PADRAO}` },
+      options: { shouldCreateUser: false, emailRedirectTo: destinoDoLink() },
     });
     if (error) {
       setErro(/not.*found|signup|disabled/i.test(error.message)
@@ -45,6 +46,11 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={enviar} className="w-full max-w-sm space-y-4">
         <h1 className="text-xl font-semibold">destaque-mensal-pro</h1>
+        {aviso && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {aviso}
+          </p>
+        )}
         {estado === "enviado" ? (
           <p className="text-sm">Link de acesso enviado para <strong>{email}</strong>. Abra o email neste dispositivo.</p>
         ) : (

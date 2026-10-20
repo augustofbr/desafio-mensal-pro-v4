@@ -12,6 +12,7 @@ import { useMinhasAvaliacoes, type Avaliacao } from "@/hooks/useMinhasAvaliacoes
 import { useEffect } from "react";
 // Mesmo formatador do painel de aprovação — uma definição só de "hora de Manaus".
 import { formatDataHoraManaus } from "@/lib/dateUtils";
+import { ContaLogada } from "@/components/ContaLogada";
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -155,6 +156,7 @@ const MinhasAvaliacoes = () => {
     <div className="min-h-screen bg-gradient-warm">
       <div className="px-4 pt-6 pb-4">
         <div className="max-w-7xl mx-auto">
+          <ContaLogada />
           {/* Header */}
           <div className="flex flex-col items-center mb-5 animate-fade-slide-up">
             <img

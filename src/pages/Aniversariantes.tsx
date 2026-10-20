@@ -7,6 +7,7 @@ import MonthSelector from "@/components/aniversariantes/MonthSelector";
 import BirthdayCard from "@/components/aniversariantes/BirthdayCard";
 import type { BirthdayCardColorScheme } from "@/components/aniversariantes/BirthdayCard";
 import { useAniversariosData } from "@/hooks/useAniversariosData";
+import { ContaLogada } from "@/components/ContaLogada";
 
 const MONTH_NAMES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -48,6 +49,7 @@ const Aniversariantes = () => {
     <div className="min-h-screen bg-gradient-warm">
       <div className="px-4 pt-6 pb-4">
         <div className="max-w-7xl mx-auto">
+          <ContaLogada />
 
           {/* Header */}
           <div className="flex flex-col items-center mb-5 animate-fade-slide-up">

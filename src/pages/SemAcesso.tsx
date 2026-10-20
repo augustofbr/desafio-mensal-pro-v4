@@ -1,4 +1,8 @@
 // auth-kit v0.1 — spa/pages/SemAcesso.tsx
+// Adaptado neste repo (login em todas as rotas, 2026-10-20): conta inativa,
+// sem linha ou sem perfil não chega mais aqui (é o estado "removido" do
+// RequirePage, que desloga e mostra o login com aviso). Esta tela fica só para
+// quem tem acesso válido, mas não à página pedida.
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAcesso, hasAnyAccess } from "@/auth/acesso";
@@ -44,9 +48,12 @@ export default function SemAcesso() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
       <h1 className="text-xl font-semibold">Sem acesso</h1>
       <p className="text-sm text-muted-foreground">
-        Sua conta não está habilitada no destaque-mensal-pro (ou foi desativada). Fale com o administrador para liberar o acesso.
+        Seu perfil não dá acesso a esta página do destaque-mensal-pro. Fale com o administrador se precisar dela.
       </p>
-      <button onClick={() => supabase.auth.signOut()} className="rounded-md border px-3 py-2 text-sm">
+      {/* scope "local": desloga só este aparelho. O Auth é compartilhado com
+          outros apps do Studio X; "global" derrubaria as sessões da pessoa
+          neles também. */}
+      <button onClick={() => void supabase.auth.signOut({ scope: "local" })} className="rounded-md border px-3 py-2 text-sm">
         Sair
       </button>
     </div>
