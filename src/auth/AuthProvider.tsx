@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { AuthContext, carregarAcesso, type Acesso, type Ctx, type RefreshOpts } from "./acesso";
 import { deveLimparCache } from "./deveLimparCache";
+import { reacaoAoEvento } from "./reacaoAoEvento";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -39,9 +40,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // primeira renderização.
   const sessionRef = useRef<Session | null>(null);
 
+  // true enquanto um refresh VISÍVEL (loading=true) está em voo. Um refresh
+  // silencioso que chegue nesse meio tempo supera a geração do visível; se
+  // continuasse silencioso, poderia sair cedo (erro de rede) e baixar o
+  // loading com o estado de antes da troca de identidade. Por isso ele herda
+  // o modo visível.
+  const visivelEmVooRef = useRef(false);
+
   const refresh = useCallback(async (opts?: RefreshOpts) => {
     const minhaGeracao = ++geracaoRef.current;
-    const manterConteudo = opts?.manterConteudo === true;
+    const manterConteudo = opts?.manterConteudo === true && !visivelEmVooRef.current;
+    if (!manterConteudo) visivelEmVooRef.current = true;
     // loading=true no topo é o padrão (sem isso, entre o disparo deste
     // refresh e sua resolução, `acesso` continua sendo o valor ANTERIOR com
     // loading=false — os guards não seguram e renderizam com base em dado
@@ -51,10 +60,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // pra quando isso é seguro.
     if (!manterConteudo) setLoading(true);
     try {
-      const { data: { session: s } } = await supabase.auth.getSession();
+      const { data: { session: s }, error: erroSessao } = await supabase.auth.getSession();
       if (minhaGeracao !== geracaoRef.current) return; // superado por um refresh mais novo
+      if (erroSessao) {
+        // Ex.: token vencido e rede caída: o auth-js devolve session null COM
+        // error (AuthRetryableFetchError) e mantém a sessão guardada. Isso não
+        // é "sem sessão": tratar como login pediria link mágico novo à toa.
+        // Visível → tela "erro" (Tentar de novo). Silencioso → mantém o que
+        // está na tela; a próxima ação/carregamento tenta de novo.
+        console.error("AuthProvider.refresh: getSession devolveu erro", erroSessao.message);
+        if (!manterConteudo) {
+          setAcesso(null);
+          setErroAcesso(true);
+        }
+        return;
+      }
       const resultado = s ? await carregarAcesso(s.user.id, s.user.email ?? "") : null;
       if (minhaGeracao !== geracaoRef.current) return; // superado de novo, após o segundo await
+      if (manterConteudo && resultado?.tipo === "erro") {
+        // Revalidação silenciosa que falhou (rede): não troca a tela por
+        // "erro" no meio do uso, nem desloga. Fica o acesso já resolvido.
+        return;
+      }
       sessionRef.current = s;
       setSession(s);
       setAcesso(resultado?.tipo === "ok" ? resultado.acesso : null);
@@ -74,10 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ela mudou e um soluço não pode exigir link mágico novo.
       if (minhaGeracao !== geracaoRef.current) return;
       console.error("AuthProvider.refresh: exceção não tratada ao resolver sessão/acesso", e);
+      if (manterConteudo) return; // silencioso: não derruba a tela por um soluço
       setAcesso(null);
       setErroAcesso(true);
     } finally {
-      if (minhaGeracao === geracaoRef.current) setLoading(false);
+      if (minhaGeracao === geracaoRef.current) {
+        visivelEmVooRef.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -104,23 +135,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (deveLimparCache(event, sessionRef.current?.user.id ?? null, novaSessao?.user.id ?? null)) {
         queryClient.clear();
       }
-      const mesmoUsuario = novaSessao?.user.id === sessionRef.current?.user.id;
-      if (event === "TOKEN_REFRESHED" && mesmoUsuario) {
-        // Só o access token mudou — o Supabase renova sozinho a cada hora
-        // durante uma sessão ativa, sem que o acesso da pessoa tenha mudado
-        // (é o mesmo usuário). Uma re-resolução completa aqui levantaria
-        // loading=true incondicionalmente e derrubaria pra null qualquer
-        // conteúdo protegido — inclusive estado local de componentes, como
-        // um formulário sendo preenchido — sem necessidade nenhuma. Só
-        // atualiza a sessão local; `acesso` permanece o mesmo.
+      // Ver reacaoAoEvento.ts: só a troca de IDENTIDADE desmonta a área
+      // protegida. O SIGNED_IN que o auth-js emite a cada volta da aba
+      // (mesmo usuário) revalida em silêncio; TOKEN_REFRESHED só troca o
+      // token; INITIAL_SESSION fica com o refresh() da montagem.
+      const reacao = reacaoAoEvento(event, sessionRef.current?.user.id ?? null, novaSessao?.user.id ?? null);
+      if (reacao === "nada") return;
+      if (reacao === "so_sessao") {
         sessionRef.current = novaSessao;
         setSession(novaSessao);
         return;
       }
-      // SIGNED_IN, SIGNED_OUT, USER_UPDATED, ou um TOKEN_REFRESHED que (por
-      // algum motivo) trocou de usuário: tratamos como identidade nova e
-      // fazemos a re-resolução completa, com loading=true.
-      void refresh();
+      void refresh(reacao === "silencioso" ? { manterConteudo: true } : undefined);
     });
     return () => subscription.unsubscribe();
   }, [refresh, queryClient]);

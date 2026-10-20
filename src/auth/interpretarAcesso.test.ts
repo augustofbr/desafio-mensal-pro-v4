@@ -31,9 +31,14 @@ describe("interpretarAcesso: erro de consulta × ausência legítima", () => {
     expect(interpretarAcesso(USER, "a@b.com", linha({ ativo: false }), null)).toEqual({ tipo: "ausente" });
   });
 
-  it("perfil sumido → ausente", () => {
-    expect(interpretarAcesso(USER, "a@b.com", linha({ destaque_perfis: null }), null)).toEqual({ tipo: "ausente" });
-    expect(interpretarAcesso(USER, "a@b.com", linha({ destaque_perfis: [] }), null)).toEqual({ tipo: "ausente" });
+  it("perfil sumido (perfil_id nulo) → ausente", () => {
+    expect(interpretarAcesso(USER, "a@b.com", linha({ perfil_id: null, destaque_perfis: null }), null)).toEqual({ tipo: "ausente" });
+    expect(interpretarAcesso(USER, "a@b.com", linha({ perfil_id: null, destaque_perfis: [] }), null)).toEqual({ tipo: "ausente" });
+  });
+
+  it("perfil_id preenchido mas perfil embutido nulo (ex.: RLS em destaque_perfis) → erro, não desloga", () => {
+    expect(interpretarAcesso(USER, "a@b.com", linha({ destaque_perfis: null }), null)).toEqual({ tipo: "erro" });
+    expect(interpretarAcesso(USER, "a@b.com", linha({ destaque_perfis: [] }), null)).toEqual({ tipo: "erro" });
   });
 
   it("linha válida → ok, com toda chave do registry e valor desconhecido virando none", () => {

@@ -4,21 +4,8 @@
 // aceita um aviso opcional (ex.: acesso removido).
 import { useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
-
-// Destino do link mágico: a URL atual, sem o fragmento (#...). O app usa
-// BrowserRouter, então o fragmento nunca é rota; e ele pode trazer lixo de uma
-// tentativa anterior (ex.: "#error=access_denied&error_code=otp_expired" de um
-// link vencido). No fluxo implícito o Auth devolve a sessão no fragmento da
-// URL de destino, então um fragmento antigo ali estragaria o retorno.
-// PRÉ-REQUISITO: a URL precisa casar com a lista de Redirect URLs do projeto
-// Supabase (Auth → URL Configuration), por exemplo
-// "https://x3.studioxbrasil.com.br/**"; senão o Auth ignora o destino e manda
-// para a Site URL.
-function destinoDoLink(): string {
-  // Sem o "#...": nunca é rota (BrowserRouter) e pode ser lixo de um link
-  // vencido, que estragaria o fragmento onde o Auth devolve a sessão.
-  return window.location.href.split("#")[0];
-}
+import { destinoDoLink } from "@/auth/destinoDoLink";
+import { mensagemErroLogin } from "@/auth/mensagemErroLogin";
 
 export default function Login({ aviso }: { aviso?: string } = {}) {
   const [email, setEmail] = useState("");
@@ -32,12 +19,12 @@ export default function Login({ aviso }: { aviso?: string } = {}) {
     // do admin (docs/armadilhas.md #1). Só link mágico, sem senha.
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: destinoDoLink() },
+      options: { shouldCreateUser: false, emailRedirectTo: destinoDoLink(window.location.href) },
     });
     if (error) {
-      setErro(/not.*found|signup|disabled/i.test(error.message)
-        ? "Email não cadastrado. Peça a um administrador para criar seu acesso."
-        : error.message);
+      // Nunca a mensagem crua (inglês) do Supabase: ver mensagemErroLogin.ts.
+      console.error("Login: signInWithOtp falhou", error.message);
+      setErro(mensagemErroLogin(error.message));
       setEstado("erro");
     } else {
       setEstado("enviado");
@@ -54,7 +41,7 @@ export default function Login({ aviso }: { aviso?: string } = {}) {
           </p>
         )}
         {estado === "enviado" ? (
-          <p className="text-sm">Link de acesso enviado para <strong>{email}</strong>. Abra o email neste dispositivo.</p>
+          <p className="text-sm">Link de acesso enviado para <strong>{email}</strong>. Abra o e-mail neste dispositivo.</p>
         ) : (
           <>
             <input
@@ -64,7 +51,7 @@ export default function Login({ aviso }: { aviso?: string } = {}) {
             />
             <button type="submit" disabled={estado === "enviando"}
               className="w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">
-              {estado === "enviando" ? "Enviando…" : "Entrar por email"}
+              {estado === "enviando" ? "Enviando…" : "Entrar por e-mail"}
             </button>
             {estado === "erro" && <p className="text-sm text-destructive">{erro}</p>}
           </>

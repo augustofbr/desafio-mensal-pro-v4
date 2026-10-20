@@ -4,7 +4,7 @@
 //   - "erro": a consulta falhou (rede, timeout, PostgREST). Não sabemos se a
 //     pessoa tem acesso. Nunca desloga; a tela oferece "Tentar de novo".
 //   - "ausente": a consulta respondeu e a pessoa não tem acesso (sem linha,
-//     inativa, perfil sumido). É o "removido": desloga este aparelho.
+//     inativa, sem perfil). É o "removido": desloga este aparelho.
 import { PAGE_KEYS, type PageAccess, type PageKey } from "@/lib/pages";
 import type { Acesso } from "./acesso";
 
@@ -37,8 +37,16 @@ export function interpretarAcesso(
   const perfilRaw = linha["destaque_perfis"] as PerfilEmbutido | PerfilEmbutido[] | null | undefined;
   const perfil = Array.isArray(perfilRaw) ? perfilRaw[0] : perfilRaw;
   if (!perfil) {
-    console.error("carregarAcesso: perfil ausente (apagado ou bloqueado por RLS)", { userId, perfilId: linha.perfil_id });
-    return { tipo: "ausente" };
+    // perfil_id nulo: a pessoa está sem perfil (perfil apagado com FK set
+    // null) → ausente. perfil_id preenchido e embed nulo: a linha do perfil
+    // não veio, o que pode ser RLS em destaque_perfis ou outra falha de
+    // leitura, e não prova que o acesso acabou → erro (não desloga).
+    if (linha.perfil_id == null) {
+      console.error("carregarAcesso: usuário sem perfil", { userId });
+      return { tipo: "ausente" };
+    }
+    console.error("carregarAcesso: perfil não veio na consulta (RLS ou falha de leitura)", { userId, perfilId: linha.perfil_id });
+    return { tipo: "erro" };
   }
   const matriz = (perfil.paginas ?? {}) as Record<string, unknown>;
   const paginas = Object.fromEntries(

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAcesso } from "./acesso";
 import { decidirTela } from "./decidirTela";
+import { sairDesteAparelho } from "./sair";
 import { supabase } from "@/lib/supabase";
 import type { PageKey } from "@/lib/pages";
 import Login from "@/pages/Login";
@@ -12,17 +13,23 @@ import SemAcesso from "@/pages/SemAcesso";
 export const AVISO_ACESSO_REMOVIDO = "Seu acesso a este painel foi removido.";
 
 // Tela de "erro": a verificação do acesso falhou (rede, PostgREST). Nunca
-// chama signOut: um soluço de rede não pode exigir link mágico novo. "Tentar
-// de novo" refaz a carga (refresh levanta loading e re-resolve).
+// desloga sozinha: um soluço de rede não pode exigir link mágico novo.
+// "Tentar de novo" refaz a carga (refresh levanta loading e re-resolve);
+// "Sair" é escolha explícita da pessoa (só este aparelho).
 function ErroAoVerificarAcesso({ tentarDeNovo }: { tentarDeNovo: () => void }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
       <p role="alert" className="max-w-sm text-sm text-muted-foreground">
         Não foi possível verificar seu acesso. Verifique a conexão e tente de novo.
       </p>
-      <button onClick={tentarDeNovo} className="rounded-md border px-3 py-2 text-sm">
-        Tentar de novo
-      </button>
+      <div className="flex gap-2">
+        <button onClick={tentarDeNovo} className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">
+          Tentar de novo
+        </button>
+        <button onClick={() => void sairDesteAparelho("RequirePage/erro")} className="rounded-md border px-3 py-2 text-sm">
+          Sair
+        </button>
+      </div>
     </div>
   );
 }

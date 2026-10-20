@@ -4,7 +4,7 @@
 // RequirePage, que desloga e mostra o login com aviso). Esta tela fica só para
 // quem tem acesso válido, mas não à página pedida.
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { sairDesteAparelho } from "@/auth/sair";
 import { useAcesso, hasAnyAccess } from "@/auth/acesso";
 import { PAGES, PAGE_KEYS } from "@/lib/pages";
 
@@ -50,10 +50,8 @@ export default function SemAcesso() {
       <p className="text-sm text-muted-foreground">
         Seu perfil não dá acesso a esta página. Fale com o administrador se precisar dela.
       </p>
-      {/* scope "local": desloga só este aparelho. O Auth é compartilhado com
-          outros apps do Studio X; "global" derrubaria as sessões da pessoa
-          neles também. */}
-      <button onClick={() => void supabase.auth.signOut({ scope: "local" })} className="rounded-md border px-3 py-2 text-sm">
+      {/* Só este aparelho (scope "local") e toast se falhar: src/auth/sair.ts. */}
+      <button onClick={() => void sairDesteAparelho("SemAcesso")} className="rounded-md border px-3 py-2 text-sm">
         Sair
       </button>
     </div>

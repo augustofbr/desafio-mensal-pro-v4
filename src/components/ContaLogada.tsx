@@ -3,10 +3,9 @@
 // páginas já estão atrás de RequirePage, então na prática sempre há uma.
 import { useState } from "react";
 import { LogOut } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAcesso } from "@/auth/acesso";
-import { supabase } from "@/lib/supabase";
+import { sairDesteAparelho } from "@/auth/sair";
 
 export function ContaLogada() {
   const { session, acesso } = useAcesso();
@@ -17,20 +16,10 @@ export function ContaLogada() {
 
   async function sair() {
     setSaindo(true);
-    // scope "local": desloga só este aparelho. O Auth é compartilhado com
-    // outros apps do Studio X; "global" derrubaria as sessões da pessoa
-    // neles também.
-    const { error } = await supabase.auth.signOut({ scope: "local" });
-    if (error) {
-      // A sessão local continua (o supabase-js só apaga depois do logout no
-      // servidor dar certo ou voltar 401/403/404). Avisar em vez de fingir.
-      console.error("ContaLogada: signOut falhou", error.message);
-      toast.error("Não foi possível sair agora. Verifique a conexão e tente de novo.");
-      setSaindo(false);
-      return;
-    }
-    // O cache do React Query é zerado pelo AuthProvider no SIGNED_OUT (um
-    // lugar só para todo signOut; ver src/auth/deveLimparCache.ts).
+    // Deu certo: o SIGNED_OUT leva o RequirePage ao login e este componente
+    // desmonta. Falhou: o helper já avisou; o botão volta.
+    const ok = await sairDesteAparelho("ContaLogada");
+    if (!ok) setSaindo(false);
   }
 
   return (
