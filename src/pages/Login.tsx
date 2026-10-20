@@ -15,6 +15,8 @@ import { supabase } from "@/lib/supabase";
 // "https://x3.studioxbrasil.com.br/**"; senão o Auth ignora o destino e manda
 // para a Site URL.
 function destinoDoLink(): string {
+  // Sem o "#...": nunca é rota (BrowserRouter) e pode ser lixo de um link
+  // vencido, que estragaria o fragmento onde o Auth devolve a sessão.
   return window.location.href.split("#")[0];
 }
 
@@ -45,7 +47,7 @@ export default function Login({ aviso }: { aviso?: string } = {}) {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={enviar} className="w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-semibold">destaque-mensal-pro</h1>
+        <h1 className="text-xl font-semibold">Profissional Destaque do Mês</h1>
         {aviso && (
           <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {aviso}

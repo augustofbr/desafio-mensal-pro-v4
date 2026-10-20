@@ -48,7 +48,7 @@ export default function SemAcesso() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
       <h1 className="text-xl font-semibold">Sem acesso</h1>
       <p className="text-sm text-muted-foreground">
-        Seu perfil não dá acesso a esta página do destaque-mensal-pro. Fale com o administrador se precisar dela.
+        Seu perfil não dá acesso a esta página. Fale com o administrador se precisar dela.
       </p>
       {/* scope "local": desloga só este aparelho. O Auth é compartilhado com
           outros apps do Studio X; "global" derrubaria as sessões da pessoa

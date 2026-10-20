@@ -22,48 +22,69 @@ function acessoCom(paginas: Partial<Record<PageKey, PageAccess>>): Acesso {
 
 describe("decidirTela", () => {
   it("loading → carregando", () => {
-    expect(decidirTela({ loading: true, temSessao: false, acesso: null, chave: "painel" })).toBe("carregando");
+    expect(decidirTela({ loading: true, erro: false, temSessao: false, acesso: null, chave: "painel" })).toBe("carregando");
   });
 
   it("sem sessão → login", () => {
-    expect(decidirTela({ loading: false, temSessao: false, acesso: null, chave: "painel" })).toBe("login");
+    expect(decidirTela({ loading: false, erro: false, temSessao: false, acesso: null, chave: "painel" })).toBe("login");
   });
 
   it("sessão + acesso null → removido", () => {
-    expect(decidirTela({ loading: false, temSessao: true, acesso: null, chave: "painel" })).toBe("removido");
+    expect(decidirTela({ loading: false, erro: false, temSessao: true, acesso: null, chave: "painel" })).toBe("removido");
   });
 
   it("acesso com painel:none → sem_acesso", () => {
     const acesso = acessoCom({ painel: "none", admin: "read" });
-    expect(decidirTela({ loading: false, temSessao: true, acesso, chave: "painel" })).toBe("sem_acesso");
+    expect(decidirTela({ loading: false, erro: false, temSessao: true, acesso, chave: "painel" })).toBe("sem_acesso");
   });
 
   it("acesso com painel:read → ok", () => {
     const acesso = acessoCom({ painel: "read" });
-    expect(decidirTela({ loading: false, temSessao: true, acesso, chave: "painel" })).toBe("ok");
+    expect(decidirTela({ loading: false, erro: false, temSessao: true, acesso, chave: "painel" })).toBe("ok");
   });
 
   it("acesso com write também → ok", () => {
     const acesso = acessoCom({ admin: "write" });
-    expect(decidirTela({ loading: false, temSessao: true, acesso, chave: "admin" })).toBe("ok");
+    expect(decidirTela({ loading: false, erro: false, temSessao: true, acesso, chave: "admin" })).toBe("ok");
   });
 
   it("a chave consultada é a pedida, não outra", () => {
     const acesso = acessoCom({ painel: "read", usuarios: "none" });
-    expect(decidirTela({ loading: false, temSessao: true, acesso, chave: "usuarios" })).toBe("sem_acesso");
+    expect(decidirTela({ loading: false, erro: false, temSessao: true, acesso, chave: "usuarios" })).toBe("sem_acesso");
   });
 
   it("sem sessão nunca libera, mesmo com um acesso velho no estado", () => {
     const acesso = acessoCom({ painel: "write" });
-    expect(decidirTela({ loading: false, temSessao: false, acesso, chave: "painel" })).toBe("login");
+    expect(decidirTela({ loading: false, erro: false, temSessao: false, acesso, chave: "painel" })).toBe("login");
   });
 
   it("loading tem precedência sobre todo o resto", () => {
     const comAcesso = acessoCom({ painel: "read" });
     const semPainel = acessoCom({ painel: "none" });
-    expect(decidirTela({ loading: true, temSessao: true, acesso: comAcesso, chave: "painel" })).toBe("carregando");
-    expect(decidirTela({ loading: true, temSessao: true, acesso: null, chave: "painel" })).toBe("carregando");
-    expect(decidirTela({ loading: true, temSessao: true, acesso: semPainel, chave: "painel" })).toBe("carregando");
-    expect(decidirTela({ loading: true, temSessao: false, acesso: comAcesso, chave: "painel" })).toBe("carregando");
+    expect(decidirTela({ loading: true, erro: false, temSessao: true, acesso: comAcesso, chave: "painel" })).toBe("carregando");
+    expect(decidirTela({ loading: true, erro: false, temSessao: true, acesso: null, chave: "painel" })).toBe("carregando");
+    expect(decidirTela({ loading: true, erro: false, temSessao: true, acesso: semPainel, chave: "painel" })).toBe("carregando");
+    expect(decidirTela({ loading: true, erro: false, temSessao: false, acesso: comAcesso, chave: "painel" })).toBe("carregando");
+  });
+
+  it("erro ao verificar o acesso, com sessão → erro (não é removido)", () => {
+    expect(decidirTela({ loading: false, erro: true, temSessao: true, acesso: null, chave: "painel" })).toBe("erro");
+  });
+
+  it("erro nunca libera, mesmo com um acesso velho no estado", () => {
+    const acesso = acessoCom({ painel: "write" });
+    expect(decidirTela({ loading: false, erro: true, temSessao: true, acesso, chave: "painel" })).toBe("erro");
+  });
+
+  it("erro sem sessão conhecida (getSession falhou) → erro, para tentar de novo", () => {
+    expect(decidirTela({ loading: false, erro: true, temSessao: false, acesso: null, chave: "painel" })).toBe("erro");
+  });
+
+  it("acesso null SEM erro continua removido", () => {
+    expect(decidirTela({ loading: false, erro: false, temSessao: true, acesso: null, chave: "painel" })).toBe("removido");
+  });
+
+  it("loading tem precedência sobre erro", () => {
+    expect(decidirTela({ loading: true, erro: true, temSessao: true, acesso: null, chave: "painel" })).toBe("carregando");
   });
 });

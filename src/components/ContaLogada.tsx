@@ -3,7 +3,6 @@
 // páginas já estão atrás de RequirePage, então na prática sempre há uma.
 import { useState } from "react";
 import { LogOut } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAcesso } from "@/auth/acesso";
@@ -11,7 +10,6 @@ import { supabase } from "@/lib/supabase";
 
 export function ContaLogada() {
   const { session, acesso } = useAcesso();
-  const queryClient = useQueryClient();
   const [saindo, setSaindo] = useState(false);
 
   if (!session) return null;
@@ -31,9 +29,8 @@ export function ContaLogada() {
       setSaindo(false);
       return;
     }
-    // Dados de quem saiu não ficam no cache em memória para a próxima pessoa
-    // que entrar nesta aba.
-    queryClient.clear();
+    // O cache do React Query é zerado pelo AuthProvider no SIGNED_OUT (um
+    // lugar só para todo signOut; ver src/auth/deveLimparCache.ts).
   }
 
   return (

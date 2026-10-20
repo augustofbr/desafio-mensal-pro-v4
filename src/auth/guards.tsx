@@ -11,9 +11,25 @@ import SemAcesso from "@/pages/SemAcesso";
 
 export const AVISO_ACESSO_REMOVIDO = "Seu acesso a este painel foi removido.";
 
+// Tela de "erro": a verificação do acesso falhou (rede, PostgREST). Nunca
+// chama signOut: um soluço de rede não pode exigir link mágico novo. "Tentar
+// de novo" refaz a carga (refresh levanta loading e re-resolve).
+function ErroAoVerificarAcesso({ tentarDeNovo }: { tentarDeNovo: () => void }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
+      <p role="alert" className="max-w-sm text-sm text-muted-foreground">
+        Não foi possível verificar seu acesso. Verifique a conexão e tente de novo.
+      </p>
+      <button onClick={tentarDeNovo} className="rounded-md border px-3 py-2 text-sm">
+        Tentar de novo
+      </button>
+    </div>
+  );
+}
+
 export function RequirePage({ chave, children }: { chave: PageKey; children: ReactNode }) {
-  const { session, acesso, loading } = useAcesso();
-  const tela = decidirTela({ loading, temSessao: session !== null, acesso, chave });
+  const { session, acesso, erroAcesso, loading, refresh } = useAcesso();
+  const tela = decidirTela({ loading, erro: erroAcesso, temSessao: session !== null, acesso, chave });
 
   // O aviso precisa sobreviver ao próprio signOut: ele dispara SIGNED_OUT, o
   // AuthProvider re-resolve (tela "carregando") e cai em "login" sem sessão.
@@ -50,6 +66,7 @@ export function RequirePage({ chave, children }: { chave: PageKey; children: Rea
     return <Login aviso={AVISO_ACESSO_REMOVIDO} />;
   }
   if (tela === "carregando") return null;
+  if (tela === "erro") return <ErroAoVerificarAcesso tentarDeNovo={() => void refresh()} />;
   if (tela === "login") return <Login />;
   if (tela === "sem_acesso") return <SemAcesso />;
   return <>{children}</>;

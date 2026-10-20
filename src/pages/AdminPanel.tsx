@@ -35,7 +35,9 @@ export default function AdminPanel() {
   const podeVerUsuarios = acesso != null && acesso.paginas.usuarios !== "none";
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // scope "local": só este aparelho. O Auth é compartilhado com outros apps
+    // do Studio X; o padrão ("global") derrubaria as sessões da pessoa neles.
+    await supabase.auth.signOut({ scope: "local" });
   };
 
   return (

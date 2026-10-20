@@ -8,12 +8,19 @@
 // componente a quente sem precisar de reload completo da página.
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { AuthContext, carregarAcesso, type Acesso, type Ctx, type RefreshOpts } from "./acesso";
+import { deveLimparCache } from "./deveLimparCache";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [acesso, setAcesso] = useState<Acesso | null>(null);
+  const [erroAcesso, setErroAcesso] = useState(false);
+  // Precisa estar dentro do QueryClientProvider (App.tsx: QueryClientProvider
+  // > ... > AuthProvider). Usado só para zerar o cache quando a sessão sai ou
+  // troca de dono (ver deveLimparCache.ts).
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   // Contador de geração: cada refresh() incrementa e captura o próprio número
   // antes dos awaits. Sem isso, duas resoluções concorrentes (ex.: um
@@ -46,11 +53,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: { session: s } } = await supabase.auth.getSession();
       if (minhaGeracao !== geracaoRef.current) return; // superado por um refresh mais novo
-      const novoAcesso = s ? await carregarAcesso(s.user.id, s.user.email ?? "") : null;
+      const resultado = s ? await carregarAcesso(s.user.id, s.user.email ?? "") : null;
       if (minhaGeracao !== geracaoRef.current) return; // superado de novo, após o segundo await
       sessionRef.current = s;
       setSession(s);
-      setAcesso(novoAcesso);
+      setAcesso(resultado?.tipo === "ok" ? resultado.acesso : null);
+      // "erro" (consulta falhou) ≠ "ausente" (sem acesso): só o segundo vira
+      // "removido" e desloga; o primeiro mostra "Tentar de novo".
+      setErroAcesso(resultado?.tipo === "erro");
     } catch (e) {
       // getSession()/carregarAcesso() REJEITAREM (em vez de resolver com um
       // campo `error`) é incomum — GoTrue e PostgREST normalmente embrulham
@@ -59,13 +69,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // embaixo: a geração corrente travava em loading=true PRA SEMPRE (não
       // existe refresh mais novo pra superá-la), e RequirePage/RequireWrite
       // ficavam renderizando null pra sempre — trava, não flash. Fail-closed
-      // igual aos outros ramos: sessão e acesso viram null, mas o erro fica
-      // logado em vez de mudo.
+      // sem deslogar: acesso vira null e erroAcesso true (tela "erro", com
+      // "Tentar de novo"); a sessão fica como estava, porque não sabemos se
+      // ela mudou e um soluço não pode exigir link mágico novo.
       if (minhaGeracao !== geracaoRef.current) return;
       console.error("AuthProvider.refresh: exceção não tratada ao resolver sessão/acesso", e);
-      sessionRef.current = null;
-      setSession(null);
       setAcesso(null);
+      setErroAcesso(true);
     } finally {
       if (minhaGeracao === geracaoRef.current) setLoading(false);
     }
@@ -88,6 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await refresh();
     })();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, novaSessao) => {
+      // Cache do React Query: zera em SIGNED_OUT e quando o dono da sessão
+      // muda. Um lugar só cobre todo signOut (removido, Sair do ContaLogada,
+      // do SemAcesso e do AdminPanel) e a troca de conta em outra aba.
+      if (deveLimparCache(event, sessionRef.current?.user.id ?? null, novaSessao?.user.id ?? null)) {
+        queryClient.clear();
+      }
       const mesmoUsuario = novaSessao?.user.id === sessionRef.current?.user.id;
       if (event === "TOKEN_REFRESHED" && mesmoUsuario) {
         // Só o access token mudou — o Supabase renova sozinho a cada hora
@@ -107,13 +123,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void refresh();
     });
     return () => subscription.unsubscribe();
-  }, [refresh]);
+  }, [refresh, queryClient]);
 
   // Valor extraído para variável em vez de passado como objeto JSX inline no
   // prop `value`: escrever esse objeto direto no JSX exigiria duas chaves
   // abertas seguidas, o que colide com o mecanismo de placeholder do renderer
   // (scripts/render.mjs rejeita qualquer ocorrência residual desse padrão
   // após a substituição).
-  const value: Ctx = { session, acesso, loading, refresh };
+  const value: Ctx = { session, acesso, erroAcesso, loading, refresh };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
