@@ -497,6 +497,37 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
   `useStarsData` acima. Decidir uma pendente atrasada mexe em mes fechado, entao ela nunca
   passa sem confirmacao (individual) e o lote conta quantas sao. Ao testar, use transacao com
   `ROLLBACK` — nunca decida uma pendente real para "ver funcionando".
+- **Recusar exige motivo** (`avaliacoes_cadastradas.motivo_recusa`, ate 500 caracteres; migracao
+  propria em `supabase/migrations/`). O dialogo de recusa (`ConfirmacaoDialog` com `motivo`, em
+  `AvaliacoesUI.tsx`) abre SEMPRE, inclusive na recusa individual, e deixa o botao desabilitado com o
+  motivo (trim) vazio; regras puras em `src/lib/motivoRecusa.ts`. No lote ("Recusar selecionadas") e
+  **um texto so**, gravado em todas as selecionadas. O banco garante: `rejeitada` sem motivo =
+  erro 23514 ("Informe o motivo da recusa."), mostrado no toast como os demais erros. Nao adicione
+  recusa sem motivo, nem "motivo padrao" gerado pelo front.
+- **Editar motivo** (historico, so recusadas, dentro de `RequireWrite chave="admin"`): UPDATE de
+  `motivo_recusa` com `.eq("status","rejeitada")` + `.select("id")` conferido (`editarMotivo` em
+  `useHistoricoAvaliacoes`); zero linhas = a estrela deixou de estar recusada. O botao so aparece com o
+  motivo atual ja lido, e o clique refaz a leitura pela RPC e so mostra o campo depois dela (cache
+  velho nao pode sobrescrever edicao de outro admin). Os dialogos com motivo ficam abertos, com o
+  texto, ate a gravacao dar certo; o botao fica desabilitado durante o envio.
+- **Aprovar e recusar so atingem quem ainda esta pendente** (`.eq("status","pendente")` no UPDATE de
+  `decidir`): uma decisao tomada por outro admin com o dialogo aberto nao e sobrescrita. Zero linhas
+  cai no `conferirLinhasEscritas`, com mensagem que cobre as duas causas (decidida por outra pessoa
+  ou sem permissao de escrita). Se o lote gravou so PARTE (`DecisaoParcialError`, em
+  `avaliacoesAdmin.ts`), o dialogo fecha, as gravadas saem da selecao e o toast diz as contagens.
+- **`motivo_recusa` NAO e legivel por SELECT** para `anon` nem `authenticated`: nunca ponha a coluna em
+  `.select(...)` nem use `select("*")` em `avaliacoes_cadastradas` (42501 derruba a fila inteira) — por
+  isso `COLUNAS` em `useAdminAvaliacoes` nao a tem. A leitura e so pela RPC
+  `avaliacoes_motivos_recusa(p_ids)` (gate `destaque_can_read_page('admin')`, so linhas
+  `rejeitada`, ate 500 ids), consumida por `useMotivosRecusa` (chave
+  `["admin_avaliacoes","motivos",...ids]`, fora dos prefixos de remocao otimista e invalidada pelas
+  mutacoes). Falha da RPC mostra aviso discreto na linha, **nunca** "Sem motivo registrado" (que e
+  so recusa legada, `motivo_recusa` NULL). A busca do historico tambem casa no texto do motivo
+  (`casaBuscaHistorico`).
+- **Devolver para a fila e aprovar zeram o motivo**: o banco limpa `motivo_recusa` sozinho, e o front nao
+  o envia nesses dois UPDATEs. Aprovar nao tem motivo.
+- **`/minhas-avaliacoes` ainda NAO mostra o motivo**: ele so podera aparecer ali depois do login da
+  profissional (outra entrega); a pagina e publica e a coluna nao e legivel por `anon`.
 
 **Cliente no Trinks no cadastro e nos sinais da fila** (migracoes `20261019120000_avaliacoes_cliente_trinks.sql`, `20261019120100_avaliacoes_sinais.sql`, `20261019180000_avaliacoes_sinais_duplicata_trinks.sql` e `20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`):
 

@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -9,8 +11,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, Inbox } from "lucide-react";
+import { AlertTriangle, Inbox, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MOTIVO_MAX, erroDoMotivo, normalizarMotivo } from "@/lib/motivoRecusa";
 
 /** Pecas visuais usadas pela fila e pelo historico do painel de aprovacoes. */
 
@@ -106,16 +109,21 @@ export function SelectFiltro({
 
 /**
  * Confirmacao exigida para o que atinge varias linhas de uma vez, para o que
- * desfaz uma decisao ja tomada e para o que mexe em mes fechado. Aprovar/
- * recusar uma avaliacao isolada do mes corrente sai direto: e a tarefa
- * repetitiva do painel, e o caminho de volta e o "Devolver para a fila".
+ * desfaz uma decisao ja tomada e para o que mexe em mes fechado. Aprovar uma
+ * avaliacao isolada do mes corrente sai direto: e a tarefa repetitiva do painel,
+ * e o caminho de volta e o "Devolver para a fila". Recusar SEMPRE passa por aqui,
+ * porque pede o motivo.
  */
 export interface Confirmacao {
-  acao: "aprovar" | "recusar" | "reverter";
+  acao: "aprovar" | "recusar" | "reverter" | "editar_motivo";
   ids: string[];
   titulo: string;
   descricao: string;
   aviso?: string;
+  /** Presente = o dialogo pede um motivo (obrigatorio), comecando em `inicial`. */
+  motivo?: { inicial: string };
+  /** O texto atual do motivo ainda esta sendo lido: o campo so aparece depois. */
+  carregandoMotivo?: boolean;
 }
 
 export function ConfirmacaoDialog({
@@ -125,11 +133,52 @@ export function ConfirmacaoDialog({
 }: {
   confirmacao: Confirmacao | null;
   onFechar: () => void;
-  onConfirmar: () => void;
+  /** `motivo` ja vem sem espacos nas pontas; so e passado quando o dialogo pede um.
+   *  A Promise resolve quando a gravacao termina: ate la o botao fica desabilitado e o
+   *  dialogo aberto. Quem chama decide se fecha (`onFechar`) — com motivo, so no sucesso,
+   *  para o texto digitado nao se perder numa falha. */
+  onConfirmar: (motivo?: string) => void | Promise<void>;
 }) {
+  const pedeMotivo = !!confirmacao?.motivo;
+  const carregandoMotivo = !!confirmacao?.carregandoMotivo;
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const campoRef = useRef<HTMLTextAreaElement>(null);
+
+  // Cada abertura comeca do texto atual (edicao) ou em branco — nunca do que ficou
+  // digitado num dialogo anterior que foi cancelado. Uma falha mantem o MESMO objeto
+  // `confirmacao`, entao o texto digitado sobrevive a ela.
+  useEffect(() => {
+    setTexto(confirmacao?.motivo?.inicial ?? "");
+    setEnviando(false);
+  }, [confirmacao]);
+
+  const erroMotivo = pedeMotivo ? erroDoMotivo(texto) : null;
+
+  const confirmar = async () => {
+    setEnviando(true);
+    try {
+      await onConfirmar(pedeMotivo ? normalizarMotivo(texto) : undefined);
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   return (
-    <AlertDialog open={!!confirmacao} onOpenChange={(aberto) => !aberto && onFechar()}>
-      <AlertDialogContent>
+    // Durante o envio o dialogo nao fecha (Esc, clique fora ou Cancelar): fechar
+    // agora soltaria o texto sem saber se a gravacao deu certo.
+    <AlertDialog
+      open={!!confirmacao}
+      onOpenChange={(aberto) => !aberto && !enviando && onFechar()}
+    >
+      <AlertDialogContent
+        // No celular o teclado abre ja no campo; sem isto o foco cairia no "Cancelar".
+        onOpenAutoFocus={(e) => {
+          if (!campoRef.current) return;
+          e.preventDefault();
+          campoRef.current.focus();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="font-heading">
             {confirmacao?.titulo}
@@ -143,10 +192,51 @@ export function ConfirmacaoDialog({
             </p>
           )}
         </AlertDialogHeader>
+        {pedeMotivo && carregandoMotivo && (
+          <p role="status" className="font-body text-sm text-muted-foreground">
+            Carregando o motivo atual…
+          </p>
+        )}
+        {pedeMotivo && !carregandoMotivo && (
+          <div className="space-y-1">
+            <label
+              htmlFor="motivo-recusa"
+              className="font-body text-sm font-medium text-gray-700"
+            >
+              Motivo da recusa (obrigatório)
+            </label>
+            <Textarea
+              id="motivo-recusa"
+              ref={campoRef}
+              autoFocus
+              disabled={enviando}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              maxLength={MOTIVO_MAX}
+              rows={4}
+              placeholder="Ex.: a cliente não foi atendida por esta profissional"
+              className="font-body text-sm"
+            />
+            <p
+              className={cn(
+                "text-right font-mono-num text-xs",
+                texto.length >= MOTIVO_MAX ? "text-red-600" : "text-muted-foreground",
+              )}
+            >
+              {texto.length}/{MOTIVO_MAX}
+            </p>
+          </div>
+        )}
         <AlertDialogFooter>
-          <AlertDialogCancel className="font-body">Cancelar</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirmar}
+          <AlertDialogCancel disabled={enviando} className="font-body">
+            Cancelar
+          </AlertDialogCancel>
+          {/* `Button` e nao `AlertDialogAction`: a Action fecha o dialogo no clique, e
+              aqui ele so fecha quando quem chama mandar (ver `onConfirmar`). */}
+          <Button
+            type="button"
+            onClick={() => void confirmar()}
+            disabled={enviando || carregandoMotivo || erroMotivo !== null}
             className={cn(
               "font-body",
               confirmacao?.acao === "aprovar"
@@ -156,8 +246,9 @@ export function ConfirmacaoDialog({
                   : "",
             )}
           >
+            {enviando && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             Confirmar
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

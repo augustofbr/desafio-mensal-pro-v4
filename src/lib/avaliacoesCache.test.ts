@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { removerDoCache, restaurarCache } from "./avaliacoesCache";
 import type { AvaliacaoAdmin } from "@/hooks/useAdminAvaliacoes";
 import { CHAVE_SINAIS } from "@/hooks/useSinaisAvaliacoes";
+import { CHAVE_MOTIVOS } from "@/hooks/useMotivosRecusa";
 
 const PREFIXO = ["admin_avaliacoes", "historico"] as const;
 
@@ -186,5 +187,11 @@ describe("sinais da fila convivem com a remocao otimista", () => {
     expect(CHAVE_SINAIS.slice(0, 2)).toEqual(["admin_avaliacoes", "sinais"]);
     expect(CHAVE_SINAIS[1]).not.toBe("pendentes");
     expect(CHAVE_SINAIS[1]).not.toBe("historico");
+  });
+
+  it("a chave real dos motivos (CHAVE_MOTIVOS) esta fora dos dois prefixos de remocao", () => {
+    expect(CHAVE_MOTIVOS.slice(0, 2)).toEqual(["admin_avaliacoes", "motivos"]);
+    expect(CHAVE_MOTIVOS[1]).not.toBe("pendentes");
+    expect(CHAVE_MOTIVOS[1]).not.toBe("historico");
   });
 });

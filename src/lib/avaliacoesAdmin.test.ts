@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   casaBuscaCliente,
+  casaBuscaHistorico,
+  mensagemDoErro,
+  mensagemDecisaoParcial,
+  DecisaoParcialError,
   linhaTrinks,
   dataCurta,
   statusPorExtenso,
@@ -41,6 +45,90 @@ describe("casaBuscaCliente", () => {
     const legado = { nome_cliente: "Ana Paula", nome_cliente_trinks: null };
     expect(casaBuscaCliente(legado, "paula")).toBe(true);
     expect(casaBuscaCliente(legado, "mariana")).toBe(false);
+  });
+});
+
+describe("mensagemDoErro", () => {
+  it("Error comum: usa a message", () => {
+    expect(mensagemDoErro(new Error("Sessão expirada."))).toBe("Sessão expirada.");
+  });
+
+  it("objeto no formato PostgrestError (nao e Error): o 23514 do banco chega ao toast", () => {
+    const erro = {
+      message: "Informe o motivo da recusa.",
+      code: "23514",
+      details: "Failing row contains (...)",
+      hint: "",
+    };
+    expect(mensagemDoErro(erro)).toBe("Informe o motivo da recusa.");
+  });
+
+  it("objeto sem message em texto cai no String() em vez de quebrar", () => {
+    expect(mensagemDoErro({ message: "", code: "x" })).toBe("[object Object]");
+    expect(mensagemDoErro({ message: 42 })).toBe("[object Object]");
+  });
+
+  it("texto, null e undefined", () => {
+    expect(mensagemDoErro("falhou")).toBe("falhou");
+    expect(mensagemDoErro(null)).toBe("null");
+    expect(mensagemDoErro(undefined)).toBe("undefined");
+  });
+});
+
+describe("mensagemDecisaoParcial", () => {
+  it("lote recusado: diz quantas gravou e quantas ja estavam decididas", () => {
+    expect(mensagemDecisaoParcial("rejeitada", 3, 5)).toBe(
+      "3 de 5 avaliações foram recusadas. 2 avaliações já tinham sido decididas por outra pessoa e não foram alteradas.",
+    );
+  });
+
+  it("lote aprovado, com uma so faltando (singular)", () => {
+    expect(mensagemDecisaoParcial("aprovada", 4, 5)).toBe(
+      "4 de 5 avaliações foram aprovadas. 1 avaliação já tinha sido decidida por outra pessoa e não foi alterada.",
+    );
+  });
+
+  it("DecisaoParcialError carrega os ids gravados e a mensagem pronta", () => {
+    const erro = new DecisaoParcialError("rejeitada", ["a", "b"], 3);
+    expect(erro).toBeInstanceOf(Error);
+    expect(erro).toBeInstanceOf(DecisaoParcialError);
+    expect(erro.gravadas).toEqual(["a", "b"]);
+    expect(erro.message).toBe(mensagemDecisaoParcial("rejeitada", 2, 3));
+    expect(mensagemDoErro(erro)).toBe(erro.message);
+  });
+});
+
+describe("casaBuscaHistorico", () => {
+  const a = {
+    nome_profissional: "Débora Lima",
+    nome_cliente: "José da Silva",
+    nome_cliente_trinks: "Mariana Souza",
+  };
+
+  it("termo vazio casa tudo, com ou sem motivo", () => {
+    expect(casaBuscaHistorico(a, "")).toBe(true);
+    expect(casaBuscaHistorico(a, "  ", "qualquer coisa")).toBe(true);
+  });
+
+  it("continua casando por cliente (Google e Trinks) e por profissional", () => {
+    expect(casaBuscaHistorico(a, "jose")).toBe(true);
+    expect(casaBuscaHistorico(a, "mariana")).toBe(true);
+    expect(casaBuscaHistorico(a, "debora")).toBe(true);
+  });
+
+  it("casa pelo texto do motivo, sem acento e sem diferenciar caixa", () => {
+    expect(casaBuscaHistorico(a, "DUPLICADA", "Estrela duplicada de outra profissional")).toBe(true);
+    expect(casaBuscaHistorico(a, "nao confere", "O nome não confere com o Trinks")).toBe(true);
+  });
+
+  it("nao casa quando nem os nomes nem o motivo tem o termo", () => {
+    expect(casaBuscaHistorico(a, "duplicada", "Nome não confere")).toBe(false);
+  });
+
+  it("sem motivo (aprovada, legado ou ainda carregando) so olha os nomes", () => {
+    expect(casaBuscaHistorico(a, "duplicada")).toBe(false);
+    expect(casaBuscaHistorico(a, "duplicada", null)).toBe(false);
+    expect(casaBuscaHistorico(a, "jose", null)).toBe(true);
   });
 });
 

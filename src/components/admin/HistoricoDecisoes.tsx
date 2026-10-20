@@ -4,16 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Star, Undo2 } from "lucide-react";
+import { Loader2, Pencil, Star, Undo2 } from "lucide-react";
 import {
   useHistoricoAvaliacoes,
   HISTORICO_LIMITE,
   type AvaliacaoAdmin,
 } from "@/hooks/useAdminAvaliacoes";
+import { useMotivosRecusa } from "@/hooks/useMotivosRecusa";
 import { formatDataHoraManaus, mesPorExtensoManaus } from "@/lib/dateUtils";
 import {
   ORDENACOES_HISTORICO,
-  casaBuscaCliente,
+  casaBuscaHistorico,
   estadoDaLista,
   inicial,
   linhaTrinks,
@@ -28,7 +29,6 @@ import {
   type PeriodoChave,
   type PeriodoPersonalizado,
 } from "@/lib/periodoHistorico";
-import { normalizarBusca } from "@/lib/clienteTrinks";
 import { useToast } from "@/hooks/use-toast";
 import { RequireWrite } from "@/auth/guards";
 import {
@@ -46,60 +46,129 @@ type Aba = "todas" | "aprovadas" | "recusadas";
 const PERIODO_PADRAO: PeriodoChave = "mes_atual";
 const ORDENACAO_PADRAO: Ordenacao = "mais_recente";
 
+/**
+ * O que a linha mostra no lugar do motivo de uma recusa. Tres estados DIFERENTES:
+ * - `indisponivel`: a RPC falhou (ou nao devolveu esta linha depois de carregar) —
+ *   nunca pode virar "Sem motivo registrado", que afirmaria algo que nao se sabe;
+ * - `carregando`: ainda sem resposta;
+ * - `motivo` (string | null): leitura feita; `null` = recusa legada, sem motivo.
+ */
+export type MotivoDaLinha =
+  | { estado: "carregando" }
+  | { estado: "indisponivel" }
+  | { estado: "motivo"; texto: string | null };
+
+function MotivoRecusaLinha({ motivo }: { motivo: MotivoDaLinha }) {
+  if (motivo.estado === "carregando") {
+    return (
+      <p className="font-body text-xs text-muted-foreground" aria-live="polite">
+        Carregando motivo…
+      </p>
+    );
+  }
+  if (motivo.estado === "indisponivel") {
+    return (
+      <p className="font-body text-xs text-muted-foreground">
+        Não foi possível carregar o motivo da recusa agora. Recarregue a página.
+      </p>
+    );
+  }
+  if (motivo.texto === null) {
+    return (
+      <p className="font-body text-xs italic text-muted-foreground">
+        Sem motivo registrado
+      </p>
+    );
+  }
+  return (
+    <p className="whitespace-pre-line break-words rounded-xl bg-red-50 px-3 py-2 font-body text-sm text-red-900 dark:bg-red-950/30 dark:text-red-200">
+      <span className="font-semibold">Motivo:</span> {motivo.texto}
+    </p>
+  );
+}
+
 function LinhaHistorico({
   avaliacao,
   ocupada,
+  motivo,
+  editandoMotivo,
   onDevolver,
+  onEditarMotivo,
 }: {
   avaliacao: AvaliacaoAdmin;
   ocupada: boolean;
+  /** `null` = a linha nao e uma recusa (aprovada): nao ha o que mostrar. */
+  motivo: MotivoDaLinha | null;
+  editandoMotivo: boolean;
   onDevolver: () => void;
+  onEditarMotivo: () => void;
 }) {
   return (
-    <li className="flex flex-col gap-2 rounded-2xl border bg-card p-3 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Avatar className="h-9 w-9 shrink-0">
-          <AvatarFallback className="text-sm font-semibold">
-            {inicial(avaliacao.nome_profissional)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-body text-sm font-semibold text-gray-800">
-            {avaliacao.nome_profissional}
-          </p>
-          <p className="truncate font-body text-sm text-gray-600">
-            Google: {avaliacao.nome_cliente}
-          </p>
-          <p className="truncate font-body text-sm text-gray-600">
-            {linhaTrinks(avaliacao)}
-          </p>
-          <p className="font-mono-num text-xs text-muted-foreground">
-            Cadastro {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
-            {avaliacao.data_aprovacao
-              ? ` · Decisão ${formatDataHoraManaus(avaliacao.data_aprovacao)}`
-              : ""}
-          </p>
+    <li className="space-y-2 rounded-2xl border bg-card p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Avatar className="h-9 w-9 shrink-0">
+            <AvatarFallback className="text-sm font-semibold">
+              {inicial(avaliacao.nome_profissional)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-body text-sm font-semibold text-gray-800">
+              {avaliacao.nome_profissional}
+            </p>
+            <p className="truncate font-body text-sm text-gray-600">
+              Google: {avaliacao.nome_cliente}
+            </p>
+            <p className="truncate font-body text-sm text-gray-600">
+              {linhaTrinks(avaliacao)}
+            </p>
+            <p className="font-mono-num text-xs text-muted-foreground">
+              Cadastro {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
+              {avaliacao.data_aprovacao
+                ? ` · Decisão ${formatDataHoraManaus(avaliacao.data_aprovacao)}`
+                : ""}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <StatusBadge status={avaliacao.status} />
+          <RequireWrite chave="admin">
+            {/* So com o motivo lido: abrir a edicao sem saber o texto atual deixaria
+                o campo em branco e a pessoa sobrescreveria o que nao viu. */}
+            {motivo?.estado === "motivo" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onEditarMotivo}
+                disabled={ocupada || editandoMotivo}
+                className="min-h-[44px] gap-1.5 font-body text-xs"
+              >
+                {editandoMotivo ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
+                Editar motivo
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onDevolver}
+              disabled={ocupada}
+              className="min-h-[44px] gap-1.5 font-body text-xs"
+            >
+              {ocupada ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Undo2 className="h-3.5 w-3.5" />
+              )}
+              Devolver para a fila
+            </Button>
+          </RequireWrite>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <StatusBadge status={avaliacao.status} />
-        <RequireWrite chave="admin">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onDevolver}
-            disabled={ocupada}
-            className="min-h-[44px] gap-1.5 font-body text-xs"
-          >
-            {ocupada ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Undo2 className="h-3.5 w-3.5" />
-            )}
-            Devolver para a fila
-          </Button>
-        </RequireWrite>
-      </div>
+      {motivo && <MotivoRecusaLinha motivo={motivo} />}
     </li>
   );
 }
@@ -136,9 +205,38 @@ export function HistoricoDecisoes() {
     [periodoChave, personalizado],
   );
 
-  const { historico, isLoading, isError, atingiuTeto, reverter } =
+  const { historico, isLoading, isError, atingiuTeto, reverter, editarMotivo } =
     useHistoricoAvaliacoes(periodo);
   const estadoHistorico = estadoDaLista({ isLoading, isError, total: historico.length });
+
+  // Motivos das recusadas do PERIODO inteiro (nao das filtradas): filtrar, buscar ou
+  // ordenar nao pode disparar outra chamada, e a busca precisa do texto de todas.
+  const idsRecusadas = useMemo(
+    () => historico.filter((a) => a.status === "rejeitada").map((a) => a.id),
+    [historico],
+  );
+  const {
+    motivos,
+    isLoading: motivosCarregando,
+    isError: motivosIndisponiveis,
+    isFetching: motivosBuscando,
+    isPlaceholderData: motivosDaChaveAnterior,
+    recarregar: recarregarMotivos,
+  } = useMotivosRecusa(idsRecusadas);
+
+  const motivoDaLinha = (a: AvaliacaoAdmin): MotivoDaLinha | null => {
+    if (a.status !== "rejeitada") return null;
+    if (motivosIndisponiveis) return { estado: "indisponivel" };
+    if (motivos.has(a.id)) return { estado: "motivo", texto: motivos.get(a.id) ?? null };
+    // Fora do mapa e sem falha: uma recusa recem-feita tem id novo, e com os dados da
+    // chave anterior na tela (placeholder) ele some do mapa ate a RPC responder — isso
+    // e "carregando", nao falha. So vale "indisponivel" com a busca concluida e os
+    // dados ja sendo os dos ids atuais (a RPC nao devolveu a linha, o que tambem nao
+    // e "sem motivo").
+    return motivosCarregando || motivosBuscando || motivosDaChaveAnterior
+      ? { estado: "carregando" }
+      : { estado: "indisponivel" };
+  };
 
   // Derivada do periodo inteiro, ANTES dos demais filtros — se saisse da lista
   // ja filtrada, escolher um profissional esvaziaria as opcoes dos outros.
@@ -160,16 +258,11 @@ export function HistoricoDecisoes() {
   const filtradas = useMemo(() => {
     const lista = historico.filter((a) => {
       if (filtroProfissional && a.nome_profissional !== filtroProfissional) return false;
-      if (
-        !casaBuscaCliente(a, busca) &&
-        !normalizarBusca(a.nome_profissional).includes(normalizarBusca(busca))
-      ) {
-        return false;
-      }
+      if (!casaBuscaHistorico(a, busca, motivos.get(a.id))) return false;
       return true;
     });
     return ordenar(lista, ordenacao);
-  }, [historico, filtroProfissional, busca, ordenacao]);
+  }, [historico, filtroProfissional, busca, ordenacao, motivos]);
 
   const aprovadas = filtradas.filter((a) => a.status === "aprovada");
   const recusadas = filtradas.filter((a) => a.status === "rejeitada");
@@ -210,6 +303,57 @@ export function HistoricoDecisoes() {
         description: mensagemDoErro(err),
         variant: "destructive",
       });
+    }
+  };
+
+  /** Abre a edicao ja com o dialogo na tela, mas SEM o campo: antes le o motivo de novo
+   *  no banco. O mapa em cache pode estar velho (outro admin pode ter editado), e
+   *  salvar por cima dele apagaria a edicao alheia sem ninguem ver. */
+  const abrirEdicaoDoMotivo = async (avaliacao: AvaliacaoAdmin) => {
+    const { id } = avaliacao;
+    const ehEste = (c: Confirmacao | null) =>
+      c?.acao === "editar_motivo" && c.ids[0] === id;
+    setConfirmacao({
+      acao: "editar_motivo",
+      ids: [id],
+      titulo: "Editar o motivo da recusa",
+      descricao: `Recusa da estrela de ${avaliacao.nome_cliente}. A avaliação continua recusada; só o texto do motivo muda.`,
+      motivo: { inicial: "" },
+      carregandoMotivo: true,
+    });
+    const frescos = await recarregarMotivos();
+    if (!frescos || !frescos.has(id)) {
+      // Falhou, ou a RPC nao devolveu a linha (deixou de estar recusada): nao ha texto
+      // atual para editar, entao o dialogo nao fica pendurado.
+      setConfirmacao((c) => (ehEste(c) ? null : c));
+      toast({
+        title: "Não foi possível abrir a edição",
+        description: !frescos
+          ? "Não foi possível ler o motivo atual. Tente de novo."
+          : "Esta avaliação não está mais recusada. A lista foi atualizada.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // Se a pessoa fechou o dialogo (ou abriu outro) enquanto lia, nao reabre nada.
+    setConfirmacao((c) =>
+      ehEste(c) ? { ...c!, motivo: { inicial: frescos.get(id) ?? "" }, carregandoMotivo: false } : c,
+    );
+  };
+
+  /** `true` = gravou. O dialogo de edicao so fecha nesse caso (ver `onConfirmar`). */
+  const salvarMotivo = async (id: string, motivo: string): Promise<boolean> => {
+    try {
+      await editarMotivo.mutateAsync({ id, motivo });
+      toast({ title: "Motivo atualizado" });
+      return true;
+    } catch (err) {
+      toast({
+        title: "Não foi possível salvar",
+        description: mensagemDoErro(err),
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
@@ -300,7 +444,7 @@ export function HistoricoDecisoes() {
           <Input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por cliente ou profissional..."
+            placeholder="Buscar por cliente, profissional ou motivo..."
             className="h-11 font-body text-sm"
           />
 
@@ -377,6 +521,11 @@ export function HistoricoDecisoes() {
                       ocupada={
                         reverter.isPending && !!reverter.variables?.includes(avaliacao.id)
                       }
+                      motivo={motivoDaLinha(avaliacao)}
+                      editandoMotivo={
+                        editarMotivo.isPending && editarMotivo.variables?.id === avaliacao.id
+                      }
+                      onEditarMotivo={() => void abrirEdicaoDoMotivo(avaliacao)}
                       onDevolver={() =>
                         setConfirmacao({
                           acao: "reverter",
@@ -403,8 +552,14 @@ export function HistoricoDecisoes() {
       <ConfirmacaoDialog
         confirmacao={confirmacao}
         onFechar={() => setConfirmacao(null)}
-        onConfirmar={() => {
+        onConfirmar={async (motivo) => {
+          const acao = confirmacao?.acao;
           const ids = confirmacao?.ids ?? [];
+          if (acao === "editar_motivo") {
+            // Fica aberto (com o texto) ate gravar; numa falha a pessoa tenta de novo.
+            if (await salvarMotivo(ids[0], motivo ?? "")) setConfirmacao(null);
+            return;
+          }
           setConfirmacao(null);
           void devolverParaFila(ids);
         }}
