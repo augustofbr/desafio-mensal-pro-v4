@@ -318,13 +318,14 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   Exceção: os ids de `star_bonus_extra` (abaixo), que entram mesmo sem categoria.
 - **Mês de atribuição = mês do `data_hora_cadastro`** (Manaus), o mesmo critério de
   `useStarsData`: as aprovadas vêm de `starsData` (exposto por `useDashboardData`); as pendentes,
-  de `useEstrelasPendentes` (RPC `destaque_estrelas_periodo`, as `pendente`; recorte no servidor
-  `[p_inicio, p_fim)`, uma vez por período; mesma validação e mesmo teto de 1000 linhas do
-  `useStarsData`, que viram erro).
+  de `useEstrelasPendentes` (as `pendente` da MESMA consulta de `useStarsData`,
+  `consultaEstrelasDoPeriodo` em `src/hooks/useEstrelasDoPeriodo.ts`: uma chamada à RPC
+  `destaque_estrelas_periodo` por período, recorte no servidor `[p_inicio, p_fim)`, mesma validação
+  e mesmo teto de 1000 linhas, que viram erro).
 - **Ranking por valor em R$** (desempate: estrelas, depois nome; posição por valor). A seção
   fica oculta no filtro `custom` (só mês atual/anterior). Se `useStarsData` falhar (`error`), a
   seção mostra aviso de erro, nunca "R$ 0,00". Mutações da aba Aprovações invalidam
-  `["bonus_estrelas"]` para as pendentes não ficarem velhas.
+  `["estrelas_periodo"]` para aprovadas e pendentes não ficarem velhas.
 - **Nunca mostrar soma/total da equipe**, só valores individuais. Sem botão "Atualizar":
   carrega ao abrir/recarregar a página, como o resto do app.
 - **Profissionais só do bônus** (`regras_desafio.star_bonus_extra jsonb`, migração
@@ -868,7 +869,6 @@ Do ledger da entrega (`.superpowers/sdd/2026-10-20-login-todas-as-rotas/progress
   - `useMinhasAvaliacoes` não cancela resposta atrasada (pré-existente);
   - o `PremiacaoPanel` não tem aviso próprio quando as estrelas falham (o aviso da home cobre);
   - a edge `destaque-auth-admin` lista todos os usuários do Auth a cada chamada;
-  - `useStarsData` e `useEstrelasPendentes` fazem duas chamadas à mesma RPC;
   - o `@>` da guarda da migração A deixa passar chave extra nos perfis Recepção/Profissional.
 - **Canário do kit** (`destaque_canario_rls`) sem asserção de "`anon`/`authenticated` sem SELECT em colunas
   sensíveis" de `profissionais_ativos`.
