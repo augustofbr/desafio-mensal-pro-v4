@@ -30,7 +30,9 @@
 -- data_hora_cadastro nos ÚLTIMOS 30 DIAS (janela fixa [now()-30d, now()+1d), para rodar também
 -- no dia 1º do mês); T linhas de avaliacoes; L linhas de P; A/O "linhas=.. motivos=.." de P/da
 -- outra; Z "linhas=0 motivos=0"; S "linhas/ja_tem_login" de destaque_profissionais_sem_conta;
--- FE, TF, PF linhas de feriados, tratamento_fabricante, profissional_fabricante.
+-- FE, TF, PF linhas de feriados, tratamento_fabricante, profissional_fabricante; E22 '>0' se
+-- authenticated ainda lê profissionais_ativos.email (sem a migração B), '42501' com a B aplicada.
+-- Vale com ou sem a B (ordem final: B, deploy do front, C).
 -- INSERTs/UPDATEs de teste se desfazem num sub-bloco (errcode LFC01): contagens não mudam.
 -- Mensagens de erro e row_to_json NÃO trazem e-mail (p_email é tirado).
 -- Saída: _resultado (papel, verificacao, esperado, obtido, ok); aborta se ok=false.
@@ -158,7 +160,10 @@ select f.pid::text p,
            and not exists (select 1 from public.destaque_users_app l where l.profissional_id = p."profissionalId")) s,
        (select count(*) from public.feriados)::text fe,
        (select count(*) from public.tratamento_fabricante)::text tf,
-       (select count(*) from public.profissional_fabricante)::text pf
+       (select count(*) from public.profissional_fabricante)::text pf,
+       -- item 22: depois da migração B, authenticated não lê mais `email` (lido do catálogo)
+       case when has_column_privilege('authenticated', 'public.profissionais_ativos', 'email', 'select')
+            then '>0' else '42501' end e22
   from _fx f;
 
 do $$
@@ -242,7 +247,7 @@ grant insert, select on _r to anon, authenticated;
 create function pg_temp.esp(p_lista text) returns text language sql as $$
   select case v when 'P' then t.p when 'N' then t.n when 'T' then t.t when 'L' then t.l when 'A' then t.a
                 when 'O' then t.o when 'Z' then 'linhas=0 motivos=0' when 'S' then t.s
-                when 'FE' then t.fe when 'TF' then t.tf when 'PF' then t.pf else v end
+                when 'FE' then t.fe when 'TF' then t.tf when 'PF' then t.pf when 'E22' then t.e22 else v end
     from pg_temp._tok t,
          lateral (select case when p_lista like '%|%'
                               then split_part(p_lista, '|', current_setting('lfc.o')::int) else p_lista end v) x
@@ -358,7 +363,7 @@ begin
     '42501|>0|>0|>0|>0|>0|>0|>0|>0');
   perform pg_temp.r('22 profissionais_ativos.email',
     $q$select case when count(email) >= 0 then '>0' end from public.profissionais_ativos$q$,
-    '42501|>0|>0|>0|>0|>0|>0|>0|>0');
+    '42501|E22|E22|E22|E22|E22|E22|E22|E22');
 end $f$;
 
 -- 3. Rodadas por papel

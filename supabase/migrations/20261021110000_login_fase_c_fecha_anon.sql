@@ -11,6 +11,9 @@
 --   avaliacoes_cadastradas, regras_desafio, feriados, tratamento_fabricante,
 --   profissional_fabricante} nem /rpc/avaliacao_clientes_do_dia depois do deploy. Com o bundle
 --   antigo ainda no ar, a página pública quebra inteira (42501 em tudo).
+--   ORDEM FINAL: migração B (20261021105000_login_fase_b_colunas_authenticated.sql), depois o
+--   deploy do front, depois esta C. A C vale com ou sem a B aplicada: a guarda e a verificação
+--   conferem só as 9 colunas de profissionais_ativos que a B mantém para authenticated.
 -- AVISO 3 — rodar FORA da janela do sync do n8n: a migração pega ACCESS EXCLUSIVE nas seis
 --   tabelas de uma vez (LOCK TABLE logo depois dos asserts de partida), até o commit — o site e o
 --   n8n esperam alguns segundos. lock_timeout de 5s: se alguma tabela estiver ocupada, a
@@ -90,7 +93,8 @@
 --      linha do errcode (e o comentário dela) trocada.
 --   7) Guarda final: aborta se anon ainda tiver qualquer privilégio nas seis tabelas, se não ler
 --      as 4 colunas da fila, se ler qualquer outra coluna de profissionais_ativos, se executar
---      avaliacao_clientes_do_dia ou o helper, ou se authenticated tiver perdido o necessário.
+--      avaliacao_clientes_do_dia ou o helper, ou se authenticated tiver perdido o necessário (em
+--      profissionais_ativos, as 9 colunas da B, uma a uma — não o SELECT de tabela, que a B tira).
 --
 -- Fora daqui (de propósito, achados no mapeamento de 2026-10-20 — ver relatório da Task 6):
 -- a view public.professional_performance (owner postgres, sem security_invoker, SELECT para
@@ -709,10 +713,18 @@ BEGIN
 
   -- authenticated: o que o app logado usa
   FOREACH t IN ARRAY ARRAY['public.trinks_services', 'public.regras_desafio', 'public.feriados',
-                           'public.tratamento_fabricante', 'public.profissional_fabricante',
-                           'public.profissionais_ativos'] LOOP
+                           'public.tratamento_fabricante', 'public.profissional_fabricante'] LOOP
     IF NOT has_table_privilege('authenticated', t, 'select') THEN
       v_falhas := v_falhas || format('authenticated perdeu SELECT em %s', t);
+    END IF;
+  END LOOP;
+  -- profissionais_ativos: as 9 colunas do app, uma a uma (vale antes e depois da migração B,
+  -- que troca o SELECT de tabela de authenticated por SELECT só nessas 9; as outras colunas
+  -- dependem da B e não são conferidas aqui)
+  FOREACH c IN ARRAY ARRAY['profissionalId', 'nome_profissional', 'categoria', 'apelido', 'ativo',
+                           'dia_aniversario', 'mes_aniversario', 'created_at', 'updated_at'] LOOP
+    IF NOT has_column_privilege('authenticated', 'public.profissionais_ativos', c, 'select') THEN
+      v_falhas := v_falhas || format('authenticated nao le profissionais_ativos.%s', c);
     END IF;
   END LOOP;
   FOREACH c IN ARRAY v_aval_cols LOOP
