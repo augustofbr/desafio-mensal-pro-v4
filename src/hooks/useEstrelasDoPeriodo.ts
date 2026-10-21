@@ -47,6 +47,9 @@ export function consultaEstrelasDoPeriodo(startDate: string, endDate: string) {
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    // Offline a busca falha e a tela mostra o aviso de erro, em vez de ficar
+    // "carregando" pausada até a rede voltar (o comportamento de antes).
+    networkMode: "always",
     // Repetir o teto de linhas daria o mesmo resultado.
     retry: (falhas, erro) => falhas < 1 && !(erro instanceof PeriodoLongoError),
   });

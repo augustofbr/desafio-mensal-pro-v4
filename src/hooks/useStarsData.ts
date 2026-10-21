@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
@@ -60,10 +60,7 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
     // Sem profissionais ainda ou com o periodo incompleto (filtro personalizado sem
     // as duas datas): nao ha o que pontuar, e nao e falha.
     if (!temProfissionais || !temPeriodo) return semEstrelas();
-    if (consulta.error) {
-      console.error("Erro ao buscar destaque_estrelas_periodo:", consulta.error);
-      return estadoDeFalha(consulta.error);
-    }
+    if (consulta.error) return estadoDeFalha(consulta.error);
     if (!consulta.data) return semEstrelas();
 
     try {
@@ -77,7 +74,6 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
         starsData: agruparEstrelasPorCategoria(avaliacoes, activeProfessionals, startDate, endDate),
       };
     } catch (error) {
-      console.error("Erro ao processar estrelas:", error);
       return estadoDeFalha(error);
     }
   }, [
@@ -89,6 +85,11 @@ export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
     startDate,
     endDate,
   ]);
+
+  // Log fora do memo (render puro): uma vez por falha nova.
+  useEffect(() => {
+    if (estado.falhou) console.error("Erro ao carregar as estrelas do período:", estado.mensagemErro);
+  }, [estado]);
 
   const loading = temProfissionais && temPeriodo && consulta.isPending;
 
