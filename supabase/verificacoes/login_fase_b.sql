@@ -1,19 +1,20 @@
--- Verificação de 20261021120000_login_fase_b_colunas_authenticated.sql (login em todas as rotas,
+-- Verificação de 20261021105000_login_fase_b_colunas_authenticated.sql (login em todas as rotas,
 -- migração B: authenticated lê só as 9 colunas do app em profissionais_ativos).
--- Roda INTEIRO numa transação que TERMINA EM RAISE (nada persiste, nem com sucesso), como
--- postgres (SQL Editor, MCP execute_sql ou psql), DEPOIS de aplicar a migração B. Sem ela, o
+-- Roda INTEIRO numa transação que termina em erro (RAISE), e a transação é desfeita; nada
+-- persiste, nem com sucesso. Como postgres (SQL Editor, MCP execute_sql ou psql), DEPOIS de aplicar a migração B. Sem ela, o
 -- passo 0 aborta. Resultado esperado: ERRO "LOGIN_FASE_B_OK: 112 linhas, 0 falhas (...)" com a
 -- tabela na mensagem. "login_fase_b: falhou: ..." ou qualquer outro erro = reprovação.
 -- O MCP recusa lotes grandes/sensíveis: mande o arquivo sem as linhas de comentário, ou em partes.
 -- Segura locks até o RAISE (INSERT de fixtures em auth.users, destaque_users_app e user_roles; e
 -- UPDATE da linha de destaque_users_app ligada a P, se houver): rode fora do horário de pico.
 --
--- Vale ANTES ou DEPOIS da migração C. A C só mexe em anon: o estado dela é lido do catálogo
--- (anon com SELECT em trinks_services = C ainda não aplicada) e decide o esperado de anon:
--- antes da C, as 9 colunas; depois, só as 4 da fila ("profissionalId", nome_profissional,
--- categoria, ativo). Em qualquer caso, nenhuma coluna sensível. Atenção ao contrário: a
--- verificação da C (login_fase_c.sql, item 22) espera authenticated lendo `email`, o que deixa
--- de valer depois da B.
+-- Ordem final: B, depois o deploy do front, depois a C (20261021110000_login_fase_c_fecha_anon.sql).
+-- Esta verificação vale ANTES ou DEPOIS da C. A C só mexe em anon: o estado dela é lido do
+-- catálogo (anon com SELECT em trinks_services = C ainda não aplicada) e decide o esperado de
+-- anon: antes da C, as 9 colunas; depois, só as 4 da fila ("profissionalId", nome_profissional,
+-- categoria, ativo). Em qualquer caso, nenhuma coluna sensível. A C foi ajustada (commit
+-- 0e04fdd) para valer com a B já aplicada: a guarda dela confere as 9 colunas de authenticated,
+-- uma a uma, e o item 22 da verificação dela lê do catálogo se authenticated ainda lê `email`.
 --
 -- Papéis (ordem das listas de esperado):
 --   1 anon
@@ -44,7 +45,7 @@ begin
   if has_table_privilege('authenticated', 'public.profissionais_ativos', 'select')
      or has_column_privilege('authenticated', 'public.profissionais_ativos', 'cpf', 'select')
      or not has_column_privilege('authenticated', 'public.profissionais_ativos', 'updated_at', 'select') then
-    raise exception 'migracao B nao aplicada: aplique 20261021120000_login_fase_b_colunas_authenticated.sql antes';
+    raise exception 'migracao B nao aplicada: aplique 20261021105000_login_fase_b_colunas_authenticated.sql antes';
   end if;
   if current_user <> 'postgres'
      or (select count(*) from public.destaque_perfis
@@ -153,8 +154,11 @@ select 0, 'postgres', v.k, v.esp, v.obt from (values
                        'select, insert, update, delete, truncate, references, trigger')
                   or has_any_column_privilege('anon', 'public.profissionais_ativos', 'insert, update, references')
                 then 'tem' else 'nenhum' end)),
-  ('c06 service_role: select/insert/update/delete', 'true',
-   has_table_privilege('service_role', 'public.profissionais_ativos', 'select, insert, update, delete')::text),
+  ('c06 service_role: select/insert/update/delete (um has_table_privilege por privilegio)', 'true/true/true/true',
+   has_table_privilege('service_role', 'public.profissionais_ativos', 'select') || '/' ||
+   has_table_privilege('service_role', 'public.profissionais_ativos', 'insert') || '/' ||
+   has_table_privilege('service_role', 'public.profissionais_ativos', 'update') || '/' ||
+   has_table_privilege('service_role', 'public.profissionais_ativos', 'delete')),
   ('c07 PUBLIC: qualquer privilegio', 'nenhum',
    (select case when has_table_privilege('public', 'public.profissionais_ativos',
                        'select, insert, update, delete, truncate, references, trigger')
@@ -281,7 +285,8 @@ begin
   perform set_config('request.jwt.claims', '', true);
 end $$;
 
--- 4. Resultado: termina SEMPRE em RAISE (desfaz fixtures e, no ensaio, a própria migração)
+-- 4. Resultado: termina em erro (RAISE), e a transação é desfeita; nada persiste (nem as
+--    fixtures nem, no ensaio, a própria migração)
 do $$
 declare
   v_tab text := (select string_agg(format('%s | %s | %s | %s | %s', papel, verificacao, esperado, obtido,

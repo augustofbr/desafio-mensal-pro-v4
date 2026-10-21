@@ -10,20 +10,28 @@
 --   NFSE_POS_B_OK: as 13 leituras do NFS-e com o client do usuário funcionam; coluna fiscal,
 --   select * e embed com `documento` dão 42501. Se o NFS-e voltar a ler a tabela com o client
 --   do usuário, quebra (42501) — de propósito.
--- AVISO 3 — ORDEM COM A MIGRAÇÃO C (20261021110000_login_fase_c_fecha_anon.sql). A C, como está
---   escrita no commit f0845ad, confere na guarda final (passo 7) que authenticated tem SELECT
---   de TABELA em profissionais_ativos, e a verificação dela (login_fase_c.sql, item 22) espera
---   authenticated lendo `email`. Depois desta B, as duas coisas deixam de ser verdade: se a B
---   entrar ANTES da C, a C aborta inteira (sem efeito parcial) até a guarda e a verificação
---   dela serem ajustadas para o estado pós-B. A B em si não depende da C: vale antes ou depois.
+-- AVISO 3 — ORDEM FINAL: esta B, depois o deploy do front, depois a C
+--   (20261021110000_login_fase_c_fecha_anon.sql). O nome 20261021105000 faz a B rodar antes da C
+--   também num replay das migrações. A C foi ajustada (commit 0e04fdd) para valer com a B já
+--   aplicada: a guarda final dela confere as 9 colunas de profissionais_ativos para
+--   authenticated, uma a uma (não o SELECT de tabela que a B tira), e a verificação dela
+--   (login_fase_c.sql, item 22) lê do catálogo se authenticated ainda lê `email` (sem a B) ou
+--   não (com a B). A B em si não depende da C: vale antes ou depois dela.
 -- AVISO 4 — lock_timeout de 5s: se a tabela estiver ocupada por DDL, a migração falha inteira,
 --   sem efeito parcial; basta rodar de novo. Reaplicável (REVOKE/GRANT são idempotentes).
+-- AVISO 5 — RELAÇÃO COM A MIGRAÇÃO A (20261021100000_login_fase_a.sql):
+--   * para reverter as duas, reverta a B ANTES da A (o ROLLBACK da A regrava os privilégios de
+--     authenticated em profissionais_ativos a partir do SELECT de tabela que a B tira);
+--   * reaplicar a A depois da B aborta na guarda da A, que exige SELECT de TABELA de
+--     authenticated em profissionais_ativos ("authenticated perdeu SELECT em profissionais_ativos
+--     (e da migracao B)"). Para reaplicar a A, reverta a B antes.
 -- ============================================================================================
 --
 -- Spec: docs/superpowers/specs/2026-10-20-login-todas-as-rotas-design.md (§3, tabela, linha
 -- profissionais_ativos; §5, item 4).
 -- Plano: docs/superpowers/plans/2026-10-20-login-todas-as-rotas.md (Task 7).
--- Verificação: supabase/verificacoes/login_fase_b.sql (transação que termina em RAISE).
+-- Verificação: supabase/verificacoes/login_fase_b.sql (termina em erro (RAISE), e a transação é
+-- desfeita; nada persiste).
 -- Depende da migração A (20261021100000_login_fase_a.sql), já aplicada: o e-mail e o vínculo
 -- da profissional chegam ao app pelas RPCs SECURITY DEFINER destaque_minha_profissional() e
 -- destaque_profissionais_sem_conta(), que leem a tabela como o dono (postgres) e não perdem nada.
@@ -92,7 +100,11 @@ BEGIN
                 AND x.grantee = 'authenticated'::regrole) THEN
     v_falhas := v_falhas || 'sobrou privilegio de coluna para authenticated'::text;
   END IF;
-  IF NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'select, insert, update, delete') THEN
+  -- cada privilégio num has_table_privilege próprio (com a lista, basta UM para dar true)
+  IF NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'select')
+     OR NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'insert')
+     OR NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'update')
+     OR NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'delete') THEN
     v_falhas := v_falhas || 'service_role perdeu privilegio'::text;
   END IF;
   IF array_length(v_falhas, 1) > 0 THEN
@@ -198,7 +210,11 @@ BEGIN
   END IF;
 
   -- service_role: tudo
-  IF NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'select, insert, update, delete') THEN
+  -- cada privilégio num has_table_privilege próprio (com a lista, basta UM para dar true)
+  IF NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'select')
+     OR NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'insert')
+     OR NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'update')
+     OR NOT has_table_privilege('service_role', 'public.profissionais_ativos', 'delete') THEN
     v_falhas := v_falhas || 'service_role perdeu privilegio'::text;
   END IF;
 
