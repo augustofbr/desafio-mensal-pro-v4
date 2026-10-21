@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-// Mesma instância do app, sem o genérico `Database` (que não conhece esta RPC).
-import { supabase } from "@/lib/supabase";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useDateFilter } from "@/contexts/DateFilterContext";
 import type { ProfissionalAtivo } from "@/types/profissionaisAtivos";
-import { limitesDoPeriodoISO } from "@/lib/bonusEstrelas";
 import {
   agruparEstrelasPorCategoria,
   estrelasVazias,
@@ -11,113 +9,97 @@ import {
 } from "@/lib/estrelasPorCategoria";
 import {
   aprovadasDoPeriodo,
-  linhasDaRpcEstrelas,
   tipoDoErroEstrelas,
   type TipoErroEstrelas,
 } from "@/lib/estrelasRpc";
+import { consultaEstrelasDoPeriodo } from "./useEstrelasDoPeriodo";
 
 const STAR_POINTS_VALUE = 3;
 
 export type { StarsByCategory };
 
-export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
-  const [starsData, setStarsData] = useState<StarsByCategory>(estrelasVazias);
-  const [loading, setLoading] = useState(true);
+interface EstadoEstrelas {
+  starsData: StarsByCategory;
   // true quando a leitura/processamento das estrelas falhou. Os mapas continuam
   // zerados (scoring inalterado); o flag so permite a quem exibe valores em R$
   // (Bonus Estrelas) nao confundir "falhou" com "nenhuma estrela".
-  const [falhou, setFalhou] = useState(false);
+  falhou: boolean;
   // Por que falhou, para a tela avisar com o texto certo (teto de linhas x o resto).
-  const [tipoErro, setTipoErro] = useState<TipoErroEstrelas | null>(null);
-  const [mensagemErro, setMensagemErro] = useState<string | null>(null);
-  const registrarFalha = useCallback((erro: unknown) => {
-    setFalhou(true);
-    setTipoErro(tipoDoErroEstrelas(erro));
-    const mensagem = (erro as { message?: unknown } | null)?.message;
-    setMensagemErro(typeof mensagem === "string" ? mensagem : null);
-  }, []);
-  const { getFilteredDateRange } = useDateFilter();
+  tipoErro: TipoErroEstrelas | null;
+  mensagemErro: string | null;
+}
 
-  const fetchStars = useCallback(async () => {
+function semEstrelas(): EstadoEstrelas {
+  return { starsData: estrelasVazias(), falhou: false, tipoErro: null, mensagemErro: null };
+}
+
+function estadoDeFalha(erro: unknown): EstadoEstrelas {
+  const mensagem = (erro as { message?: unknown } | null)?.message;
+  return {
+    starsData: estrelasVazias(),
+    falhou: true,
+    tipoErro: tipoDoErroEstrelas(erro),
+    mensagemErro: typeof mensagem === "string" ? mensagem : null,
+  };
+}
+
+export function useStarsData(activeProfessionals: ProfissionalAtivo[]) {
+  // Periodo do dashboard (YYYY-MM-DD, dias em fuso Manaus)
+  const { startDate, endDate } = useDateFilter().getFilteredDateRange();
+
+  // Estrelas do periodo pela RPC `destaque_estrelas_periodo` (a leitura direta da
+  // tabela foi fechada para o painel), na consulta compartilhada com
+  // `useEstrelasPendentes`: uma chamada por periodo. Ela devolve aprovadas e
+  // pendentes; aqui so contam as aprovadas com `data_aprovacao`. Sem permissao
+  // `painel:read` ela devolve 0 linhas; o gate de rota ja barra quem nao tem.
+  const consulta = useQuery(consultaEstrelasDoPeriodo(startDate, endDate));
+  const temPeriodo = consulta.isEnabled;
+  const temProfissionais = activeProfessionals.length > 0;
+
+  const estado = useMemo((): EstadoEstrelas => {
+    // Sem profissionais ainda ou com o periodo incompleto (filtro personalizado sem
+    // as duas datas): nao ha o que pontuar, e nao e falha.
+    if (!temProfissionais || !temPeriodo) return semEstrelas();
+    if (consulta.error) return estadoDeFalha(consulta.error);
+    if (!consulta.data) return semEstrelas();
+
     try {
-      setLoading(true);
-      setFalhou(false);
-      setTipoErro(null);
-      setMensagemErro(null);
-
-      // Periodo do dashboard (YYYY-MM-DD, dias em fuso Manaus)
-      const { startDate, endDate } = getFilteredDateRange();
-      const limites = limitesDoPeriodoISO(startDate, endDate);
-
-      // Periodo incompleto (filtro personalizado ainda sem as duas datas): nao ha
-      // o que consultar. Nao e falha, so ainda nao ha periodo.
-      if (!limites) {
-        setStarsData(estrelasVazias());
-        return;
-      }
-
-      // Estrelas do periodo pela RPC `destaque_estrelas_periodo` (a leitura
-      // direta da tabela foi fechada para o painel): recorte NO SERVIDOR por
-      // `data_hora_cadastro` [inicio, fim), a mesma data que define o mes da
-      // estrela. A RPC devolve aprovadas e pendentes; aqui so contam as
-      // aprovadas com `data_aprovacao`. Sem permissao `painel:read` ela devolve
-      // 0 linhas; o gate de rota ja barra quem nao tem.
-      const { data, error } = await supabase.rpc("destaque_estrelas_periodo", {
-        p_inicio: limites.inicioISO,
-        p_fim: limites.fimISO,
-      });
-
-      if (error) {
-        console.error("Erro ao buscar destaque_estrelas_periodo:", error);
-        registrarFalha(error);
-        setStarsData(estrelasVazias());
-        return;
-      }
-
-      const avaliacoes = aprovadasDoPeriodo(linhasDaRpcEstrelas(data));
-
-      if (avaliacoes.length === 0) {
-        console.log("Nenhuma avaliação aprovada encontrada");
-        setStarsData(estrelasVazias());
-        return;
-      }
+      const avaliacoes = aprovadasDoPeriodo(consulta.data);
+      if (avaliacoes.length === 0) return semEstrelas();
 
       // Inativos ficam fora (ver `agruparEstrelasPorCategoria`): estrela de quem
       // nao participa mais do desafio nao vira linha no ranking.
-      const result = agruparEstrelasPorCategoria(
-        avaliacoes,
-        activeProfessionals,
-        startDate,
-        endDate
-      );
-
-      console.log("Estrelas processadas:", {
-        cabelo: result.cabelo.size,
-        unhas: result.unhas.size,
-        maquiagem: result.maquiagem.size,
-        estetica: result.estetica.size,
-        semCategoria: result.semCategoria.size,
-      });
-
-      setStarsData(result);
+      return {
+        ...semEstrelas(),
+        starsData: agruparEstrelasPorCategoria(avaliacoes, activeProfessionals, startDate, endDate),
+      };
     } catch (error) {
-      console.error("Erro ao processar estrelas:", error);
-      registrarFalha(error);
-      setStarsData(estrelasVazias());
-    } finally {
-      setLoading(false);
+      return estadoDeFalha(error);
     }
-  }, [activeProfessionals, getFilteredDateRange, registrarFalha]);
+  }, [
+    temProfissionais,
+    temPeriodo,
+    consulta.error,
+    consulta.data,
+    activeProfessionals,
+    startDate,
+    endDate,
+  ]);
 
+  // Log fora do memo (render puro): uma vez por falha nova.
   useEffect(() => {
-    if (activeProfessionals.length > 0) {
-      fetchStars();
-    } else {
-      setLoading(false);
-    }
-  }, [activeProfessionals, fetchStars]);
+    if (estado.falhou) console.error("Erro ao carregar as estrelas do período:", estado.mensagemErro);
+  }, [estado]);
 
-  return { starsData, loading, error: falhou, errorKind: tipoErro, errorMessage: mensagemErro };
+  const loading = temProfissionais && temPeriodo && consulta.isPending;
+
+  return {
+    starsData: estado.starsData,
+    loading,
+    error: estado.falhou,
+    errorKind: estado.tipoErro,
+    errorMessage: estado.mensagemErro,
+  };
 }
 
 export { STAR_POINTS_VALUE };

@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { useAcesso } from "@/auth/acesso";
 import { erroDoMotivo, normalizarMotivo } from "@/lib/motivoRecusa";
 import { DecisaoParcialError } from "@/lib/avaliacoesAdmin";
+import { CHAVE_ESTRELAS_PERIODO } from "./useEstrelasDoPeriodo";
 
 export type StatusAvaliacao = "pendente" | "aprovada" | "rejeitada";
 
@@ -145,12 +146,13 @@ function useRemocaoOtimista() {
     restaurar: (anterior?: SnapshotCache) => restaurarCache(queryClient, anterior),
     // `onSettled` sempre invalida o ramo inteiro: aprovar tira da fila e poe no
     // historico, devolver faz o contrario — os dois lados saem do ar juntos.
-    // Tambem invalida as pendentes do Bonus Estrelas da home (`useEstrelasPendentes`,
-    // staleTime infinito): sem isso, voltar a home pelo SPA mostraria contagem velha.
+    // Tambem invalida as estrelas do periodo da home (`consultaEstrelasDoPeriodo`, que
+    // alimenta o ranking e as pendentes do Bonus Estrelas, staleTime infinito): sem
+    // isso, voltar a home pelo SPA mostraria aprovadas e pendentes velhas.
     invalidar: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin_avaliacoes"] }),
-        queryClient.invalidateQueries({ queryKey: ["bonus_estrelas"] }),
+        queryClient.invalidateQueries({ queryKey: [CHAVE_ESTRELAS_PERIODO] }),
       ]),
   };
 }

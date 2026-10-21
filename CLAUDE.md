@@ -209,7 +209,7 @@ edge function no load da pagina.**
     - Checks: `avaliacoes_origem_cliente_trinks_chk`, `avaliacoes_digitado_sem_cliente_id_chk` (digitado => id NULL), `avaliacoes_cliente_trinks_id_positivo_chk`. Migracao `supabase/migrations/20261019120000_avaliacoes_cliente_trinks.sql`
     - `status`: Review status (TEXT) - 'pendente', 'aprovada', 'rejeitada'
     - `data_hora_cadastro`: Review registration timestamp (TIMESTAMPTZ) - used for date filtering. Default `now()`.
-      **Regra de INSERT no banco** (trigger `avaliacoes_cadastradas_antes_inserir`, migracao `20261019130000_avaliacoes_regra_cadastro.sql`, so para `anon`/`authenticated`): `data_hora_cadastro` e `created_at` viram `now()` (o relogio do celular e ignorado); `data_atendimento` fora de hoje−10..hoje (Manaus) = erro 22023 (`PT400` a partir da migração C, ver "Códigos de erro da regra de data"); `cliente_trinks_id` sem linha no espelho (profissional + dia + clienteid) vira NULL. `postgres`/`service_role` ficam livres. Sem trigger de UPDATE
+      **Regra de INSERT no banco** (trigger `avaliacoes_cadastradas_antes_inserir`, migracao `20261019130000_avaliacoes_regra_cadastro.sql`, so para `anon`/`authenticated`): `data_hora_cadastro` e `created_at` viram `now()` (o relogio do celular e ignorado); `data_atendimento` fora de hoje−10..hoje (Manaus) = erro `PT400` (era 22023 até a migração C; ver "Códigos de erro da regra de data"); `cliente_trinks_id` sem linha no espelho (profissional + dia + clienteid) vira NULL. `postgres`/`service_role` ficam livres. Sem trigger de UPDATE
     - `aprovado_por`: Admin UID who approved (UUID, nullable)
     - `data_aprovacao`: Approval timestamp (TIMESTAMPTZ, nullable)
     - `motivo_recusa`: Motivo da recusa (TEXT, nullable, <= 500; so em `rejeitada`; legado = NULL). Obrigatorio ao recusar (trigger `avaliacoes_cadastradas_antes_atualizar`, 23514); NAO legivel por anon/authenticated — ver "Aba Aprovacoes"
@@ -318,13 +318,14 @@ do `DataRankings`: `src/components/resultados/BonusEstrelas.tsx` (renderizado vi
   Exceção: os ids de `star_bonus_extra` (abaixo), que entram mesmo sem categoria.
 - **Mês de atribuição = mês do `data_hora_cadastro`** (Manaus), o mesmo critério de
   `useStarsData`: as aprovadas vêm de `starsData` (exposto por `useDashboardData`); as pendentes,
-  de `useEstrelasPendentes` (RPC `destaque_estrelas_periodo`, as `pendente`; recorte no servidor
-  `[p_inicio, p_fim)`, uma vez por período; mesma validação e mesmo teto de 1000 linhas do
-  `useStarsData`, que viram erro).
+  de `useEstrelasPendentes` (as `pendente` da MESMA consulta de `useStarsData`,
+  `consultaEstrelasDoPeriodo` em `src/hooks/useEstrelasDoPeriodo.ts`: uma chamada à RPC
+  `destaque_estrelas_periodo` por período, recorte no servidor `[p_inicio, p_fim)`, mesma validação
+  e mesmo teto de 1000 linhas, que viram erro).
 - **Ranking por valor em R$** (desempate: estrelas, depois nome; posição por valor). A seção
   fica oculta no filtro `custom` (só mês atual/anterior). Se `useStarsData` falhar (`error`), a
   seção mostra aviso de erro, nunca "R$ 0,00". Mutações da aba Aprovações invalidam
-  `["bonus_estrelas"]` para as pendentes não ficarem velhas.
+  `["estrelas_periodo"]` para aprovadas e pendentes não ficarem velhas.
 - **Nunca mostrar soma/total da equipe**, só valores individuais. Sem botão "Atualizar":
   carrega ao abrir/recarregar a página, como o resto do app.
 - **Profissionais só do bônus** (`regras_desafio.star_bonus_extra jsonb`, migração
@@ -439,11 +440,11 @@ O app **so le** essa tabela.
   `authenticated`). `verify_jwt: true`. O nome do diretorio de deploy **tem** que ser
   `supabase/functions/destaque-auth-admin/` — diretorio diferente = 404 em producao.
   Secret proprio: `SITE_URL` (URL COMPLETA de destino do convite, ver secao de auth)
-- **create-user**: **não é deste app.** É do `studio-x1-rank-up`, aposentado em 2026-10-20 (repo em
-  `claude-code/aposentados/`). Usuários do Destaque só se criam pela `destaque-auth-admin` (`criar_usuario`). Os objetos do
+- **create-user**: **não é deste app e foi removida em 2026-10-21.** Era do `studio-x1-rank-up`, aposentado em
+  2026-10-20 (o código-fonte segue em `claude-code/aposentados/studio-x1-rank-up/supabase/functions/create-user/`).
+  Usuários do Destaque só se criam pela `destaque-auth-admin` (`criar_usuario`). Os objetos do
   studio-x1 no banco (`professionals`, `profiles`, `queue_*` etc.) foram fechados e não pertencem ao Destaque (migração na
-  branch `chore/aposenta-studio-x1`, não nesta). Remover a função deployada é pendência do dono (ela usa `service_role`; o
-  ledger da migração do studio-x1 prevê 403 depois do fechamento)
+  branch `chore/aposenta-studio-x1`, não nesta)
 - Demais funcoes (`f360-*`, `calcular-faturamento-profissional`, `consultar-faturamento`,
   `gerar-comprovante-das`) pertencem ao projeto financeiro, nao a este app
 
@@ -471,7 +472,7 @@ quem barra de verdade é o banco (RLS e RPCs com gate, mais abaixo).
   (`@/lib/supabase` reexporta o de `@/integrations/supabase/client`; dois clients sobre a mesma
   storage key disputariam o refresh e derrubariam a sessão), com `persistSession` + `autoRefreshToken` no
   padrão. A sessão só dura de verdade se o projeto Supabase estiver sem "Time-box user sessions" e sem
-  "Inactivity timeout" (Auth → Sessions): **conferência do dono, não confirmada em 2026-10-20**.
+  "Inactivity timeout" (Auth → Sessions): **ambos em "never", confirmado pelo dono em 2026-10-21**.
   Revogar = `alternar_ativo` da edge `destaque-auth-admin` (`destaque_users_app.ativo = false`):
   - no **banco**, `destaque_can_read_page`/`destaque_can_write_page` são fail-closed para conta inativa →
     zero linhas ou 42501 em qualquer leitura/escrita do Destaque, mesmo com o JWT ainda válido;
@@ -502,7 +503,7 @@ quem barra de verdade é o banco (RLS e RPCs com gate, mais abaixo).
   `expires_in`; o fluxo é implícito e resto de tentativa anterior estragaria o retorno). Como a pessoa volta
   para a página em que pediu o link, o Supabase (Auth → URL Configuration → Redirect URLs) precisa de
   **`https://x3.studioxbrasil.com.br/**`** (e `http://localhost:8080/**` no dev). Sem isso o link cai na Site
-  URL. Pendência do dono em 2026-10-20.
+  URL. Feito pelo dono em 2026-10-20 (o login em produção funciona).
 - **Configurações do projeto Supabase de que o vínculo depende**: "Confirm email" e "Secure email
   change" **ligados** (dono, 2026-10-20 16:02) e "Allow new users to sign up" **desligado** (confirmado
   pelo dono no mesmo dia). Sem elas, `email_confirmed_at` não prova a posse do e-mail e o critério do
@@ -542,7 +543,7 @@ nesta ordem (o `SemAcesso` leva à primeira acessível): `painel`, `estrelas`, `
 - Aprovar, recusar e editar regras: só `admin: write` (a aba Aprovações é só do Admin, ou de quem o dono
   puser em Somente Leitura para olhar).
 - **Perfil customizado:** `admin` e `estrelas` pressupõem `painel: read`. Todas as rotas exigem `painel`, e depois
-  da C o `/admin` lê regras, feriados e fabricantes pela policy de `painel`. Com `painel: none`, o painel admin
+  da C (aplicada em 2026-10-21) o `/admin` lê regras, feriados e fabricantes pela policy de `painel`. Com `painel: none`, o painel admin
   sai vazio e `/minhas-avaliacoes` cai em "Sem acesso".
 - Andressa e Kelle são Recepção **e** estão ligadas ao próprio cadastro (participam só do Bônus Estrelas): o
   cartão é o delas e elas cadastram para qualquer uma. As contas de aparelho são linhas normais de usuário
@@ -608,55 +609,55 @@ qualificados), com `execute` só para `authenticated` (revogado de `public`/`ano
   essa conta existente; `true` quando não há conta no Auth, porque o convite novo liga).
 - **`avaliacao_espelho_tem_cliente(profissional, dia, cliente)` → boolean** (definer, `search_path` vazio): o
   `EXISTS` que estava no trigger `avaliacoes_cadastradas_antes_inserir` (o trigger continua **invoker**: como
-  definer, `current_user` viraria o dono e a regra inteira desligaria). **Hoje** (A) tem `execute` para `anon` e
-  `authenticated`, porque o INSERT público do bundle antigo passa pelo trigger. **A partir da migração C**: perde
-  o `execute` de `anon` e ganha o gate de estrelas (`write` em `estrelas`, ou `read` com `p_profissional_id =
-  destaque_minha_profissional()`); sem permissão devolve `false` (nunca exceção), para não virar oráculo de "a
-  profissional Y atendeu a cliente X no dia D?".
-- Ver também `avaliacao_clientes_do_dia` (gate a partir da C) e `avaliacoes_motivos_recusa` (admin), na aba
+  definer, `current_user` viraria o dono e a regra inteira desligaria). Desde a migração C (2026-10-21) não tem
+  `execute` para `anon` (na A tinha, por causa do INSERT público do bundle antigo) e tem o gate de estrelas (`write`
+  em `estrelas`, ou `read` com `p_profissional_id = destaque_minha_profissional()`); sem permissão devolve `false`
+  (nunca exceção), para não virar oráculo de "a profissional Y atendeu a cliente X no dia D?".
+- Ver também `avaliacao_clientes_do_dia` (com gate de estrelas desde a C) e `avaliacoes_motivos_recusa` (admin), na aba
   Aprovações.
 
-### Migrações A, B e C (estado em 2026-10-20)
+### Migrações A, B e C (estado em 2026-10-21: as três aplicadas)
 
 | Migração | Estado | O que faz |
 |---|---|---|
-| A `20261021100000_login_fase_a.sql` | **aplicada** (SQL Editor, ~16:58; não registrada em `supabase_migrations`) | perfis Recepção/Profissional e as páginas `painel`/`estrelas`; `profissional_id` + trigger + backfill; as RPCs acima; policies novas `to authenticated` (**aditiva**: as públicas ficam); helper do espelho; revoga a escrita de `authenticated` em `profissionais_ativos` e DELETE/TRUNCATE/REFERENCES/TRIGGER em `avaliacoes_cadastradas` |
-| B `20261021105000_login_fase_b_colunas_authenticated.sql` | **aplicada** (`apply_migration`, 20:55; registro `20261020205607`) | `authenticated` lê **só as 9 colunas** de `profissionais_ativos` (abaixo) |
-| C `20261021110000_login_fase_c_fecha_anon.sql` | **escrita e ensaiada, NÃO aplicada** | fecha `anon` nas tabelas do Destaque (abaixo) |
+| A `20261021100000_login_fase_a.sql` | **aplicada** (SQL Editor, 2026-10-20 ~16:58; não registrada em `supabase_migrations`) | perfis Recepção/Profissional e as páginas `painel`/`estrelas`; `profissional_id` + trigger + backfill; as RPCs acima; policies novas `to authenticated` (eram **aditivas** até a C: as públicas ficaram); helper do espelho; revoga a escrita de `authenticated` em `profissionais_ativos` e DELETE/TRUNCATE/REFERENCES/TRIGGER em `avaliacoes_cadastradas` |
+| B `20261021105000_login_fase_b_colunas_authenticated.sql` | **aplicada** (`apply_migration`, 2026-10-20 20:55; registro `20261020205607`) | `authenticated` lê **só as 9 colunas** de `profissionais_ativos` (abaixo) |
+| C `20261021110000_login_fase_c_fecha_anon.sql` | **aplicada** (`apply_migration`, 2026-10-21 ~15:43 Manaus; registro `20261021154342`, name `login_fase_c_fecha_anon`) | fecha `anon` nas tabelas do Destaque (abaixo) |
+
+Os registros em `supabase_migrations.schema_migrations` **não batem** com os nomes dos arquivos (A ausente; B e C com a
+version do momento da aplicação), então **não use `supabase db push`** neste repo para essas migrações.
 
 Detalhes que ainda importam:
 
-- O efeito real das policies novas só aparece quando a C dropar as públicas; até lá elas não restringem nada.
+- Desde a C, as policies novas `to authenticated` são as que valem: as públicas caíram (até a C elas não restringiam nada).
 - **B**: `select('*')` como `authenticated` dá 42501 — liste colunas. Coluna nova nasce ilegível. O app
   NFS-e (`emissao-nota-prof-parceiro`) só lê `profissionais_ativos` com `service_role`, depois de checar o papel; se
   voltasse a ler com o client do usuário, quebraria com 42501 (de propósito). Para reverter A e B, reverta a B
   **antes** da A (reaplicar a A depois da B aborta na guarda).
-- **C, "a partir da migração C"**: dropa as 7 policies públicas (`SELECT` de `trinks_services`, `regras_desafio`,
+- **C** (2026-10-21): dropou as 7 policies públicas (`SELECT` de `trinks_services`, `regras_desafio`,
   `feriados`, `tratamento_fabricante`, `profissional_fabricante`, `avaliacoes_cadastradas`, e o `INSERT` público de
-  avaliações); `revoke all` de `anon` nessas seis tabelas; em `profissionais_ativos`, `anon` fica só com
-  `"profissionalId"`, `nome_profissional`, `categoria` e `ativo`; `avaliacao_clientes_do_dia` ganha o gate de
-  estrelas (42501 sem permissão) e perde o `execute` de `anon`; o helper do espelho perde `anon` e ganha o gate; o
-  trigger troca o errcode da regra de data (ver "Códigos de erro da regra de data").
-- **Pré-condições da C**: (a) o front com login em todas as rotas já no ar; (b) pré-checagem dos logs da API
-  (`edge_logs`): nenhuma requisição `anon` com referer `x3.studioxbrasil.com.br` para `/rest/v1/` dessas seis
-  tabelas nem para `/rpc/avaliacao_clientes_do_dia` depois do deploy (com o bundle antigo no ar, a página pública
-  quebra inteira com 42501); incluir leituras `anon` de `profissionais_ativos` pedindo `apelido`, aniversário,
-  `created_at` ou `updated_at` vindas de outros apps. Aplicar **byte a byte, com os comentários** (os asserts de md5
-  do trigger e das funções comparam o texto), **fora da janela do sync do n8n** (pega `ACCESS EXCLUSIVE` nas seis
-  tabelas; `lock_timeout` de 5 s, falha inteira sem efeito parcial). **Não é reaplicável.** O rollback é
-  autossuficiente, no cabeçalho.
-- **Ordem decidida em 2026-10-20 (coordenador, após a revisão final)**: B (feita) → SMTP próprio, Redirect URLs/Site
-  URL e `SITE_URL` da edge conferidos (`SITE_URL` = `https://x3.studioxbrasil.com.br/`, a RAIZ: um `/admin` levaria quem
-  aceita o convite antes do deploy ao `SemAcesso` antigo, com `signOut` global) → arquivar o workflow n8n
-  `Bv9b8LOvsi70dqE8` (TRUNCATE CASCADE) → resolver a senha da conta da Paula → criar as contas (pela tela "Criar contas" do front NOVO rodando local, logado como
-  admin; o convite aponta para a URL de produção) → deploy do front → C. Criar as contas ANTES do deploy evita deixar a
-  equipe sem painel entre o deploy e os convites. Quem aceita o convite antes do deploy cai na home antiga já logado
-  (sem aviso); o bundle novo reaproveita a mesma sessão (mesma storage key). Com a B aplicada, uma conta logada antes da
-  C vê o que o `anon` já vê, mais o que as RPCs novas entregam por desenho (motivo das recusas: as próprias para a
-  Profissional, todas para a Recepção). O cabeçalho da C diz que as contas podem vir antes ou depois. Gates para criar contas: B,
-  `audit_log` do NFS-e fechado a `authenticated` e migração do studio-x1 (os três já aplicados) e **SMTP próprio
-  configurado** (não consta como feito; ver "Criar contas"). Quando a C for aplicada, atualize a coluna "Hoje" da tabela de policies e este bloco.
-- O que `anon` ainda lê **depois da C**: só as 4 colunas da fila em `profissionais_ativos` (a fila
+  avaliações); `revoke all` de `anon` nessas seis tabelas; em `profissionais_ativos`, `anon` ficou só com
+  `"profissionalId"`, `nome_profissional`, `categoria` e `ativo`; `avaliacao_clientes_do_dia` ganhou o gate de
+  estrelas (42501 sem permissão) e perdeu o `execute` de `anon`; o helper do espelho perdeu `anon` e ganhou o gate; o
+  trigger trocou o errcode da regra de data para `PT400` (ver "Códigos de erro da regra de data").
+  - **Como foi conferida**: (a) front com login em todas as rotas já no ar; (b) pré-checagem dos logs da API
+    (`edge_logs`, 2026-10-21T03:00Z a 19:40Z): nenhum consumidor `anon` contínuo das seis tabelas (só 3 GETs isolados
+    às 13:13Z, de um aparelho do salão). Aplicada **byte a byte, com os comentários** (os asserts de md5 do trigger e
+    das funções comparam o texto), fora da janela do sync do n8n (pega `ACCESS EXCLUSIVE` nas seis tabelas;
+    `lock_timeout` de 5 s, falha inteira sem efeito parcial).
+  - **Depois de aplicar**: md5 das três funções conferem com os valores que o ROLLBACK espera; com a chave `anon`,
+    `trinks_services`, `regras_desafio`, `avaliacoes_cadastradas`, `profissionais_ativos.apelido` e
+    `rpc/avaliacao_clientes_do_dia` dão 401, e `profissionais_ativos` com `profissionalId,nome_profissional,categoria`
+    dá 200 (a fila segue funcionando).
+  - **Não é reaplicável.** O rollback é autossuficiente, no cabeçalho do arquivo (rodar no SQL Editor, byte a byte).
+- **Ordem seguida (decidida em 2026-10-20)**: B → SMTP próprio, Redirect URLs/Site URL e `SITE_URL` da edge
+  conferidos (`SITE_URL` = `https://x3.studioxbrasil.com.br/`, a RAIZ: um `/admin` levaria quem aceita o convite antes do
+  deploy ao `SemAcesso` antigo, com `signOut` global) → arquivar o workflow n8n `Bv9b8LOvsi70dqE8` (TRUNCATE CASCADE) →
+  resolver a senha da conta da Paula → criar as contas (pela tela "Criar contas" do front NOVO rodando local, logado
+  como admin; o convite aponta para a URL de produção) → deploy do front → C. Criar as contas ANTES do deploy evita
+  deixar a equipe sem painel entre o deploy e os convites; quem aceita o convite antes do deploy cai na home antiga já
+  logado, e o bundle novo reaproveita a mesma sessão (mesma storage key).
+- O que `anon` ainda lê: só as 4 colunas da fila em `profissionais_ativos` (a fila
   `gerenciador-fila-interna-V2` as lê sem login) e as tabelas da própria fila.
 - Os objetos do **studio-x1** (`professionals`, `profiles`, `queue_*`, `monthly_goals`, `system_config`,
   `supervisor_goal_config`, `user_filters`, `user_permissions`, views e funções) foram fechados e **não pertencem
@@ -665,12 +666,11 @@ Detalhes que ainda importam:
 ### Códigos de erro da regra de data
 
 A regra (b) do trigger `avaliacoes_cadastradas_antes_inserir` (dia do atendimento fora de hoje−10..hoje, Manaus)
-levanta `22023` **hoje**. **A partir da migração C** levanta `PT400`, com a mesma mensagem: SQLSTATE `PTxxx` é a
+levanta **`PT400`** desde a migração C (2026-10-21; até então era `22023`), com a mesma mensagem: SQLSTATE `PTxxx` é a
 convenção do PostgREST (a resposta HTTP sai com o status `xxx`, aqui 400, em vez de 500). O front
 (`CODIGOS_DIA_FORA_DA_JANELA` e `mensagemDiaForaDaJanela` em `src/lib/clienteTrinks.ts`, usado pelo
-`CadastrarAvaliacaoModal`) aceita **`22023`, `P0D01` e `PT400`** (`P0D01` foi o primeiro rascunho da C e fica por
-compatibilidade). Por isso o front vai ao ar **antes** da C. A janela de `avaliacao_clientes_do_dia` segue
-levantando `22023`.
+`CadastrarAvaliacaoModal`) aceita **`22023`, `P0D01` e `PT400`** por compatibilidade (`P0D01` foi o primeiro rascunho
+da C; `22023` era o código antigo). A janela de `avaliacao_clientes_do_dia` segue levantando `22023`.
 
 ### Tela "Criar contas das profissionais"
 
@@ -689,10 +689,10 @@ Seção da aba Usuários (`src/components/admin/CriarContasProfissionais.tsx`, m
   aba for trocada e a seção remontada (o laço continua); protege o duplo clique; liga `beforeunload` enquanto roda. As
   contas já criadas saem da seleção (`marcadasEfetivas`); a trava só solta depois do refetch da lista. Ao remontar, o
   resultado por linha e o resumo do lote em curso não reaparecem.
-- **Limite de e-mails**: o convite sai pelo SMTP padrão do Supabase, que tem limite de envios. O erro do Auth
+- **Limite de e-mails**: o convite saía pelo SMTP padrão do Supabase, que tem limite de envios; desde 2026-10-21 usa o
+  SMTP próprio (Resend, porta 587), mas o tratamento do erro continua. O erro do Auth
   (`rate limit`, `over_email_send`, `too many requests/emails`, `only request this after`) vira "Limite de e-mails do
-  Supabase atingido. Tente as restantes mais tarde." e as demais linhas continuam. **Decisão do dono (2026-10-20):
-  configurar SMTP próprio antes de criar as contas.**
+  Supabase atingido. Tente as restantes mais tarde." e as demais linhas continuam. (Decisão do dono, 2026-10-20: SMTP próprio antes de criar as contas; feito.)
 - Falha de uma não para as outras; o resumo final conta convites, "já tinha conta" e falhas.
 
 ### Identidade: Quem é você? e cadastro de estrela
@@ -808,8 +808,8 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
 **Cliente no Trinks no cadastro e nos sinais da fila** (migracoes `20261019120000_avaliacoes_cliente_trinks.sql`, `20261019120100_avaliacoes_sinais.sql`, `20261019180000_avaliacoes_sinais_duplicata_trinks.sql` e `20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`):
 
 - **Cadastro** (`CadastrarAvaliacaoModal`, modal em `/`): profissional → dia → cliente no Trinks, escolhida na lista do dia ou "Nao encontrei" (cai para digitacao). Depois, o nome no Google, com "Mesmo nome do Trinks" desmarcada por padrao. Erro ou lista vazia tambem caem para digitacao. Front: `src/lib/clienteTrinks.ts` (dias permitidos, rotulos, `montarInsertAvaliacao`, `estadoDaLista`), `src/hooks/useClientesDoDia.ts`, `src/components/avaliacoes/ClienteTrinksPicker.tsx`. Historico e `/minhas-avaliacoes` mostram os dois nomes, sem selos.
-- **Regra no banco** (`20261019130000_avaliacoes_regra_cadastro.sql`, verificacao em `supabase/verificacoes/avaliacoes_regra_cadastro.sql`): o INSERT (`anon` hoje; só logado a partir da migração C) não escolhe mais a data do cadastro (vira `now()`), nao grava dia de atendimento fora de hoje−10..hoje (22023; o modal mostra a mensagem do banco) e so guarda `cliente_trinks_id` confirmado pelo espelho naquele dia/profissional — senao NULL, com a origem mantida. Assim o **par id+dia** do sinal "Atendida?" não se forja por INSERT direto; **por nome ainda se forja** (cadastro sem id, ou digitado, cai na comparação por nome). O bundle ainda envia `data_hora_cadastro`, que é sobrescrito. O errcode da regra de data é `22023` hoje e `PT400` a partir da migração C (ver "Códigos de erro da regra de data"); o EXISTS do espelho mora no helper `avaliacao_espelho_tem_cliente` (ver "RPCs de login e de dados do painel").
-- **`avaliacao_clientes_do_dia(p_profissional_id, p_data)`** (`security definer`, `search_path` vazio; **hoje** execute para `anon`/`authenticated`; **a partir da migração C** só `authenticated`, com o gate `write` em `estrelas` OU (`read` em `estrelas` E `p_profissional_id = destaque_minha_profissional()`), embrulhado em `coalesce(.., false)` — sem permissão, erro `42501` antes da checagem da janela): clientes atendidas pela profissional, em janela de 10 dias ate hoje (fuso Manaus; data fora = erro 22023). Fontes: espelho `trinks_services` e, so para hoje, `"gerencia-fila-trinks-appointments"` com status Trinks `em atendimento` ou `finalizado`. Cliente que so existe na fila entra com id NULL (o espaco de id de cliente da fila nao foi verificado) e se funde a do espelho pelo nome normalizado (`avaliacao_normalizar_nome`). Retorna `fonte` = `espelho` | `fila`. Nao depende das permissoes das tabelas da fila.
+- **Regra no banco** (`20261019130000_avaliacoes_regra_cadastro.sql`, verificacao em `supabase/verificacoes/avaliacoes_regra_cadastro.sql`): o INSERT (só logado, desde a migração C; antes era `anon`) não escolhe mais a data do cadastro (vira `now()`), nao grava dia de atendimento fora de hoje−10..hoje (`PT400`; o modal mostra a mensagem do banco) e so guarda `cliente_trinks_id` confirmado pelo espelho naquele dia/profissional — senao NULL, com a origem mantida. Assim o **par id+dia** do sinal "Atendida?" não se forja por INSERT direto; **por nome ainda se forja** (cadastro sem id, ou digitado, cai na comparação por nome). O bundle ainda envia `data_hora_cadastro`, que é sobrescrito. O errcode da regra de data é `PT400` (era `22023` até a migração C; ver "Códigos de erro da regra de data"); o EXISTS do espelho mora no helper `avaliacao_espelho_tem_cliente` (ver "RPCs de login e de dados do painel").
+- **`avaliacao_clientes_do_dia(p_profissional_id, p_data)`** (`security definer`, `search_path` vazio; execute só para `authenticated` (desde a migração C; `anon` perdeu), com o gate `write` em `estrelas` OU (`read` em `estrelas` E `p_profissional_id = destaque_minha_profissional()`), embrulhado em `coalesce(.., false)` — sem permissão, erro `42501` antes da checagem da janela): clientes atendidas pela profissional, em janela de 10 dias ate hoje (fuso Manaus; data fora = erro 22023). Fontes: espelho `trinks_services` e, so para hoje, `"gerencia-fila-trinks-appointments"` com status Trinks `em atendimento` ou `finalizado`. Cliente que so existe na fila entra com id NULL (o espaco de id de cliente da fila nao foi verificado) e se funde a do espelho pelo nome normalizado (`avaliacao_normalizar_nome`). Retorna `fonte` = `espelho` | `fila`. Nao depende das permissoes das tabelas da fila.
 - **`avaliacoes_sinais(p_ids uuid[])`** (`security invoker`, `search_path` vazio, EXECUTE para `authenticated` e `service_role` — `anon`/`public` revogados; maximo 300 ids = erro 22023; ate 5 duplicatas por estrela, a fila mostra "5+" no teto): consumido por `useSinaisAvaliacoes` (chave `["admin_avaliacoes","sinais",...]`, fora dos prefixos de remocao otimista `pendentes`/`historico`, invalidada pelas mutacoes) e exibido em `src/components/admin/SinaisAvaliacao.tsx`. Dois sinais por estrela, sem bloquear aprovar nem recusar:
   - **"Atendida?"** (`atendida` | `provavel` | `aguardando_espelho` | `nao_encontrada`). Com `cliente_trinks_id`: `atendida` se ha linha do espelho com o mesmo `clienteid` (numerico) e `service_date` igual a `data_atendimento`, dentro de [dia do cadastro − 10, min(dia do cadastro, hoje)]. Sem id (digitada ou legado): compara o nome do Trinks (ou o do Google, se legado) normalizado com as clientes da profissional na janela (trava de 30 dias): igual → `atendida`; similaridade ≥ 0,6 → `provavel` (alvo de uma palavra usa so `similarity`). `aguardando_espelho` so quando a data de referencia e entre ontem e hoje (comanda pode nao ter fechado).
   - **Duplicata** (criterio (1) desde `20261019120100_avaliacoes_sinais.sql`; (2) e (3) em `20261019180000_avaliacoes_sinais_duplicata_trinks.sql`; o (4) em `20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`): compara a estrela com TODAS as outras (qualquer status, mes ou profissional). Quatro criterios; basta um. Os dois primeiros usam `nome_cliente` (Google) da alvo contra o Google da outra, normalizado: **(1) nome** — igual ou `similarity` ≥ 0,7; **(2) grafia** — `similarity` ≥ 0,7 entre as chaves de `avaliacao_chave_grafia` (sem `h`; `e/o/y/z/w/k` → `i/u/i/s/v/c`; letras repetidas colapsadas; pega Nivea/Nivia, Joice/Joyce, Andrea/Andreia). **(3) Trinks × Google** — o nome do **Trinks** da alvo (so quando `nome_cliente_trinks` e real; nunca o fallback para o Google do caminho "Atendida?") contra o nome do **Google** da outra, so nessa direcao: as palavras (`avaliacao_palavras_nome`: sem stopwords de anotacao do legado, comparadas ANTES da chave de grafia, entao "Dieylle"/"May"/"Nyla" sobrevivem; depois a chave; ≥ 3 letras) do nome mais curto tem de estar TODAS no outro, e ao menos uma palavra em comum e **rara** (≤ 3 nomes de cliente distintos em `trinks_services`). **(4) mesma cliente no Trinks** (`20261019190000_avaliacoes_sinais_mesma_cliente_trinks.sql`; Trinks × Trinks, o Google nao entra): com `cliente_trinks_id` nas duas, so o id vale para o (4) (ids diferentes = clientes diferentes para este criterio, mesmo com nome igual; os criterios (1)-(3) continuam valendo); se uma delas nao tem id, vale o nome do Trinks real das duas igual apos `avaliacao_normalizar_nome` (sem grafia nem similarity). Sem id, o (4) e so igualdade de nome: duas clientes homonimas tambem disparam o aviso (aceito: o dono confere no Google). Cobre duas profissionais que escolhem a mesma cliente e escrevem Googles diferentes; o dono confere no Google e decide qual aprovar. Nome do Google vazio da alvo desliga so (1) e (2); o (3) e o (4) seguem. Cada item do jsonb traz `motivo`, com precedencia `mesma_cliente_trinks` (4) > `nome_google` ((1) ou (2), inclusive quando o (3) tambem casou) > `nome_trinks` (so o (3)). Maximo 5, escolhidas por essa mesma forca e depois por recencia (uma mesma cliente antiga nao e cortada por candidatas mais novas e mais fracas); a lista sai por recencia. As stopwords e os limiares (0,7 de similarity e 3 de raridade) sao constantes DENTRO da migracao (funcao `avaliacao_palavras_nome` e corpo de `avaliacoes_sinais`): mudar exige nova migracao. A tela acrescenta (`rotuloMotivoDuplicata`) " · o nome do Google dela bate com o nome do Trinks desta estrela" no item `nome_trinks` e " · Mesma cliente no Trinks. Possível duplicata." no `mesma_cliente_trinks`; `motivo` e opcional no tipo, porque o app pode ir ao ar antes das migracoes.
@@ -828,37 +828,37 @@ Regras que **nao** podem ser afrouxadas ao mexer aqui:
 
 ### Policies das tabelas de negocio (padrao `docs/convencao-policies.md` do kit)
 
-Estado em **2026-10-20: A e B aplicadas, C não**. A coluna "Hoje" vale até a C; "A partir da C" é o alvo. Quando a C
-for aplicada, apague a coluna "Hoje" e a nota. Predicados sempre em `(select ...)` (InitPlan).
+Estado em **2026-10-21: A, B e C aplicadas** (a coluna "Hoje" e a nota da fase anterior saíram). Predicados sempre em
+`(select ...)` (InitPlan).
 
-| Tabela | Leitura hoje (A + B) | Leitura a partir da C | Escrita |
-|---|---|---|---|
-| `regras_desafio`, `feriados`, `tratamento_fabricante`, `profissional_fabricante` | `anon` e `authenticated` (policy pública `using true`); a A já criou `<tabela>_select_painel` (`authenticated`, `destaque_can_read_page('painel')`) | só `authenticated` com `read` em `painel`; **`anon` sem nada** | `<tabela>_write_admin`: `for all to authenticated using ((select public.destaque_can_write_page('admin')))` |
-| `trinks_services` | `anon` e `authenticated` (pública); `trinks_services_select_painel` já existe. Qualquer conta com `painel: read` lê a tabela **inteira** (decisão da spec) | só `authenticated` com `read` em `painel`; **`anon` sem nada** | fechada para `anon`; escrita só n8n/`postgres` |
-| `avaliacoes_cadastradas` | `anon` e `authenticated`: privilégio de COLUNA em todas MENOS `motivo_recusa` (migração `20261020130000_avaliacoes_motivo_recusa.sql`) e policy pública de SELECT; `select('*')` dá 42501, liste colunas | **`anon` sem nada.** `authenticated`: as mesmas colunas (sem `motivo_recusa`) **e** a RLS `avaliacoes_select_logado` = `read` em `admin` OU `write` em `estrelas` OU (`read` em `estrelas` E `profissional_id = destaque_minha_profissional()`). O motivo só por RPC: `avaliacoes_motivos_recusa` (admin) e `destaque_minhas_avaliacoes` (Recepção, Admin, e a própria profissional). Coluna nova precisa entrar no grant | INSERT hoje: público com `status='pendente'` **e** `avaliacoes_insert_logado`; **a partir da C só `avaliacoes_insert_logado`** = pendente, sem `aprovado_por`/`data_aprovacao`/`motivo_recusa`, E (`write` em `estrelas` OU (`read` em `estrelas` E `profissional_id = destaque_minha_profissional()`)); o trigger `antes_inserir` força a data (a regra do dia vale também para `authenticated`). UPDATE só com `destaque_can_write_page('admin')`. DELETE, TRUNCATE, REFERENCES e TRIGGER **revogados de `authenticated`** (migração A): recusar nunca apaga |
-| `profissionais_ativos` | `anon`: 9 colunas (`profissionalId`, `nome_profissional`, `categoria`, `apelido`, `ativo`, `dia_aniversario`, `mes_aniversario`, `created_at`, `updated_at`; migração `20261019160000_profissionais_ativos_colunas_anon.sql`). `authenticated` (**migração B**): **as mesmas 9 colunas** e só elas; `select('*')` dá 42501 para os dois; cpf, telefone, `email`, `trinks_id_profissional`, documento, cnpj, endereço e dados fiscais não são legíveis por nenhum dos dois. E-mail e vínculo só pelas RPCs (`destaque_minha_profissional`, `destaque_profissionais_sem_conta`). Coluna nova nasce ilegível | **`anon`: só 4 colunas — `profissionalId`, `nome_profissional`, `categoria`, `ativo`** (o que a fila V2 lê sem login; a policy pública de linhas fica). `authenticated` igual a hoje (9) | fechada para `anon` e, desde a A, para `authenticated` (INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER revogados); NFS-e e financeiro escrevem e leem com `service_role` |
-| `destaque_users_app`, `destaque_perfis` | `authenticated` só SELECT (RLS do kit) | igual | só pela edge `destaque-auth-admin` (`service_role`); o trigger de vínculo roda como definer |
-| `automation_logs` | nenhuma (interna) | nenhuma | só `service_role`/`postgres` (n8n) |
+| Tabela | Leitura | Escrita |
+|---|---|---|
+| `regras_desafio`, `feriados`, `tratamento_fabricante`, `profissional_fabricante` | só `authenticated` com `read` em `painel` (`<tabela>_select_painel`, `destaque_can_read_page('painel')`); **`anon` sem nada** | `<tabela>_write_admin`: `for all to authenticated using ((select public.destaque_can_write_page('admin')))` |
+| `trinks_services` | só `authenticated` com `read` em `painel` (`trinks_services_select_painel`); **`anon` sem nada**. Qualquer conta com `painel: read` lê a tabela **inteira** (decisão da spec) | fechada para `anon`; escrita só n8n/`postgres` |
+| `avaliacoes_cadastradas` | **`anon` sem nada.** `authenticated`: privilégio de COLUNA em todas MENOS `motivo_recusa` (migração `20261020130000_avaliacoes_motivo_recusa.sql`; `select('*')` dá 42501, liste colunas) **e** a RLS `avaliacoes_select_logado` = `read` em `admin` OU `write` em `estrelas` OU (`read` em `estrelas` E `profissional_id = destaque_minha_profissional()`). O motivo só por RPC: `avaliacoes_motivos_recusa` (admin) e `destaque_minhas_avaliacoes` (Recepção, Admin, e a própria profissional). Coluna nova precisa entrar no grant | INSERT só `avaliacoes_insert_logado` = pendente, sem `aprovado_por`/`data_aprovacao`/`motivo_recusa`, E (`write` em `estrelas` OU (`read` em `estrelas` E `profissional_id = destaque_minha_profissional()`)); o trigger `antes_inserir` força a data (a regra do dia vale também para `authenticated`). UPDATE só com `destaque_can_write_page('admin')`. DELETE, TRUNCATE, REFERENCES e TRIGGER **revogados de `authenticated`** (migração A): recusar nunca apaga |
+| `profissionais_ativos` | **`anon`: só 4 colunas — `profissionalId`, `nome_profissional`, `categoria`, `ativo`** (o que a fila V2 lê sem login; a policy pública de linhas fica). `authenticated` (**migração B**): 9 colunas (`profissionalId`, `nome_profissional`, `categoria`, `apelido`, `ativo`, `dia_aniversario`, `mes_aniversario`, `created_at`, `updated_at`; a `anon` as tinha desde `20261019160000_profissionais_ativos_colunas_anon.sql`, até a C) e só elas; `select('*')` dá 42501 para os dois; cpf, telefone, `email`, `trinks_id_profissional`, documento, cnpj, endereço e dados fiscais não são legíveis por nenhum dos dois. E-mail e vínculo só pelas RPCs (`destaque_minha_profissional`, `destaque_profissionais_sem_conta`). Coluna nova nasce ilegível | fechada para `anon` e, desde a A, para `authenticated` (INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER revogados); NFS-e e financeiro escrevem e leem com `service_role` |
+| `destaque_users_app`, `destaque_perfis` | `authenticated` só SELECT (RLS do kit) | só pela edge `destaque-auth-admin` (`service_role`); o trigger de vínculo roda como definer |
+| `automation_logs` | nenhuma (interna) | só `service_role`/`postgres` (n8n) |
 
-Funções (resumo; detalhes em "RPCs de login e de dados do painel"): as quatro `destaque_*` e o helper do espelho. `anon` só
-executa o helper **até a C**. `avaliacao_clientes_do_dia`: `anon` e `authenticated` hoje; só `authenticated`, com gate de
-estrelas, a partir da C.
+Funções (resumo; detalhes em "RPCs de login e de dados do painel"): as quatro `destaque_*` e o helper do espelho. `anon` não
+executa mais nenhuma delas, nem o helper nem `avaliacao_clientes_do_dia` (só `authenticated`, com gate de estrelas).
+
 
 Ao criar tabela nova: `enable` + `force row level security`, `revoke all ... from anon`, e
 policies com o predicado embrulhado em `(select ...)` (InitPlan). Uma `create policy` numa
 tabela sem RLS ligado e **inerte** e nao avisa nada.
 
 ### Security
-- RLS (Row Level Security) enabled on all tables. As policies públicas de leitura caem na migração C: depois dela
+- RLS (Row Level Security) enabled on all tables. As policies públicas de leitura caíram na migração C (2026-10-21):
   o painel lê só como `authenticated`, com permissão por página (`destaque_can_*_page`)
 - A chave `anon` continua no bundle (é o `apikey` do client), mas depois do login as requisições rodam como
-  `authenticated`, com o JWT do usuário; `anon` perde as tabelas do Destaque na C
+  `authenticated`, com o JWT do usuário; `anon` perdeu as tabelas do Destaque na C (2026-10-21)
 - Service role key used in edge functions — no SPA ele existe **somente** dentro da
   `destaque-auth-admin`; nunca no bundle do cliente
 
 ### Pendências conhecidas (login em todas as rotas, 2026-10-20)
 
-Do ledger da entrega (`.superpowers/sdd/2026-10-20-login-todas-as-rotas/progress.md`), sem resolver:
+Pendências que vieram do ledger da entrega (já apagado), sem resolver:
 
 - **Parked das revisões**:
   - um refresh silencioso do Auth pode aplicar a sessão de outra conta sem limpar o cache (janela estreita, `navigator.locks`);
@@ -868,7 +868,6 @@ Do ledger da entrega (`.superpowers/sdd/2026-10-20-login-todas-as-rotas/progress
   - `useMinhasAvaliacoes` não cancela resposta atrasada (pré-existente);
   - o `PremiacaoPanel` não tem aviso próprio quando as estrelas falham (o aviso da home cobre);
   - a edge `destaque-auth-admin` lista todos os usuários do Auth a cada chamada;
-  - `useStarsData` e `useEstrelasPendentes` fazem duas chamadas à mesma RPC;
   - o `@>` da guarda da migração A deixa passar chave extra nos perfis Recepção/Profissional.
 - **Canário do kit** (`destaque_canario_rls`) sem asserção de "`anon`/`authenticated` sem SELECT em colunas
   sensíveis" de `profissionais_ativos`.
@@ -883,8 +882,9 @@ Do ledger da entrega (`.superpowers/sdd/2026-10-20-login-todas-as-rotas/progress
 - **Webhook Trinks sem token** (decisão do dono): quem souber a URL grava e-mail em profissional sem e-mail; mitigação é a
   conferência da lista em "Criar contas".
 - **Workflow n8n da Juliana** lê `profissionais_ativos` inteira por `supabaseTool`; a credencial não foi confirmada.
-- **SMTP próprio** a configurar antes de criar as contas; **Redirect URLs** e **Sessions** a conferir (ver acima);
-  **remover a edge function `create-user`**.
+- **Feitos em 2026-10-20/21 (não são mais pendência)**: SMTP próprio (Resend, porta 587); Redirect URLs (dono,
+  2026-10-20); Auth → Sessions com time-box e inatividade em "never" (dono, 2026-10-21); remoção da edge function
+  `create-user` (2026-10-21).
 
 ## Date Filtering System
 
