@@ -12,15 +12,12 @@ describe("perfilSugerido", () => {
     expect(perfilSugerido(" Unhas ")).toBe("Profissional");
   });
 
-  it("sem categoria vira Recepção", () => {
-    expect(perfilSugerido(null)).toBe("Recepção");
-    expect(perfilSugerido("")).toBe("Recepção");
-    expect(perfilSugerido("   ")).toBe("Recepção");
-  });
-
-  it("categoria desconhecida vira Recepção", () => {
-    expect(perfilSugerido("Recepcao")).toBe("Recepção");
-    expect(perfilSugerido("cabelo")).toBe("Recepção");
+  it("sem categoria ou desconhecida também sugere Profissional (menor privilégio)", () => {
+    expect(perfilSugerido(null)).toBe("Profissional");
+    expect(perfilSugerido("")).toBe("Profissional");
+    expect(perfilSugerido("   ")).toBe("Profissional");
+    expect(perfilSugerido("Recepcao")).toBe("Profissional");
+    expect(perfilSugerido("cabelo")).toBe("Profissional");
   });
 });
 

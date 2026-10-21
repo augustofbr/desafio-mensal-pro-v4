@@ -10,7 +10,8 @@ import type { PageKey } from "@/lib/pages";
 import Login from "@/pages/Login";
 import SemAcesso from "@/pages/SemAcesso";
 
-export const AVISO_ACESSO_REMOVIDO = "Seu acesso a este painel foi removido.";
+// Cobre conta desativada e conta do Auth compartilhado que nunca teve acesso ao Destaque (sem linha).
+export const AVISO_ACESSO_REMOVIDO = "Esta conta não tem acesso a este painel. Fale com a recepção.";
 
 // Tela de "erro": a verificação do acesso falhou (rede, PostgREST). Nunca
 // desloga sozinha: um soluço de rede não pode exigir link mágico novo.

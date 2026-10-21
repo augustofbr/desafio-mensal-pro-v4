@@ -463,7 +463,9 @@ para uma subárvore e não deixe rota sem `RequirePage`** (o 404 também fica at
 quem barra de verdade é o banco (RLS e RPCs com gate, mais abaixo).
 
 - **Login só por magic link** (`@/pages/Login`), com `shouldCreateUser: false`: login **nunca** cadastra;
-  cadastro é ato de admin, pela tela de usuários. Sem senha, sem CPF. O título da tela é "Profissional
+  cadastro é ato de admin, pela tela de usuários. Sem senha, sem CPF **na interface**: o grant por senha do Auth
+  continua ativo no projeto (compartilhado), então conta que JÁ tem senha (ex.: contas antigas de outros apps) entra pela
+  API com ela. Antes de liberar o Destaque para uma conta assim, confirme com a pessoa ou troque a senha no admin do Auth. O título da tela é "Profissional
   Destaque do Mês".
 - **Sessão longa, revogação no próximo carregamento ou ação.** Há um só `createClient`
   (`@/lib/supabase` reexporta o de `@/integrations/supabase/client`; dois clients sobre a mesma
@@ -474,8 +476,9 @@ quem barra de verdade é o banco (RLS e RPCs com gate, mais abaixo).
   - no **banco**, `destaque_can_read_page`/`destaque_can_write_page` são fail-closed para conta inativa →
     zero linhas ou 42501 em qualquer leitura/escrita do Destaque, mesmo com o JWT ainda válido;
   - no **app**, o próximo carregamento (ou a volta à aba, que revalida em silêncio sem desmontar a
-    página: `reacaoAoEvento`) faz `carregarAcesso` devolver "ausente" → `signOut` local + "Seu acesso a
-    este painel foi removido." **Não há checagem periódica com a aba aberta** (decisão do dono):
+    página: `reacaoAoEvento`) faz `carregarAcesso` devolver "ausente" → `signOut` local + "Esta conta não
+    tem acesso a este painel. Fale com a recepção." (o mesmo texto serve para conta desativada e para conta do
+    Auth compartilhado que nunca teve linha no Destaque) **Não há checagem periódica com a aba aberta** (decisão do dono):
     `TOKEN_REFRESHED` só troca o token;
   - **sem ban no Auth**: os usuários do Auth são compartilhados com fila, NFS-e e financeiro (ex.: Paula);
     banir derrubaria o acesso dela nos outros apps. O corte é por app, no banco.
@@ -538,6 +541,9 @@ nesta ordem (o `SemAcesso` leva à primeira acessível): `painel`, `estrelas`, `
   avaliações." e o passo "cadastrar" some da home.
 - Aprovar, recusar e editar regras: só `admin: write` (a aba Aprovações é só do Admin, ou de quem o dono
   puser em Somente Leitura para olhar).
+- **Perfil customizado:** `admin` e `estrelas` pressupõem `painel: read`. Todas as rotas exigem `painel`, e depois
+  da C o `/admin` lê regras, feriados e fabricantes pela policy de `painel`. Com `painel: none`, o painel admin
+  sai vazio e `/minhas-avaliacoes` cai em "Sem acesso".
 - Andressa e Kelle são Recepção **e** estão ligadas ao próprio cadastro (participam só do Bônus Estrelas): o
   cartão é o delas e elas cadastram para qualquer uma. As contas de aparelho são linhas normais de usuário
   (perfil e revogação pela tela de usuários); não há nada fixo no código.
@@ -639,8 +645,11 @@ Detalhes que ainda importam:
   do trigger e das funções comparam o texto), **fora da janela do sync do n8n** (pega `ACCESS EXCLUSIVE` nas seis
   tabelas; `lock_timeout` de 5 s, falha inteira sem efeito parcial). **Não é reaplicável.** O rollback é
   autossuficiente, no cabeçalho.
-- **Ordem decidida em 2026-10-20 (coordenador)**: B (feita) → deploy do front → C → criar as contas. O cabeçalho da C
-  ainda diz "depois do deploy do front **e das contas**": a ordem acima prevalece. Gates para criar contas: B,
+- **Ordem decidida em 2026-10-20 (coordenador, após a revisão final)**: B (feita) → SMTP próprio, Redirect URLs/Site
+  URL e `SITE_URL` da edge conferidos → criar as contas (pela tela "Criar contas" do front NOVO rodando local, logado como
+  admin; o convite aponta para a URL de produção) → deploy do front → C. Criar as contas ANTES do deploy evita deixar a
+  equipe sem painel entre o deploy e os convites; com a B aplicada, uma conta logada antes da C não vê mais do que o
+  `anon` já vê. O cabeçalho da C diz que as contas podem vir antes ou depois. Gates para criar contas: B,
   `audit_log` do NFS-e fechado a `authenticated` e migração do studio-x1 (os três já aplicados) e **SMTP próprio
   configurado** (não consta como feito; ver "Criar contas"). Quando a C for aplicada, atualize a coluna "Hoje" da tabela de policies e este bloco.
 - O que `anon` ainda lê **depois da C**: só as 4 colunas da fila em `profissionais_ativos` (a fila

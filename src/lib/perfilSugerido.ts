@@ -1,19 +1,14 @@
-import { PROF_CATEGORIES } from "@/lib/categoryDisplayNames";
-
 /** Perfis que a tela "Criar contas das profissionais" oferece. Admin e Somente Leitura ficam de fora. */
 export const PERFIS_DA_CRIACAO = ["Profissional", "Recepção"] as const;
 export type PerfilDaCriacao = (typeof PERFIS_DA_CRIACAO)[number];
 
-const CATEGORIAS = new Set<string>(Object.values(PROF_CATEGORIES));
-
 /**
- * Perfil sugerido pela categoria em `profissionais_ativos`: categoria do desafio
- * (`PROF_CATEGORIES`, com trim) vira Profissional; sem categoria ou desconhecida vira
- * Recepção. É só sugestão: o dono troca por linha (ex.: Andressa e Kelle são Recepção
- * mesmo com categoria).
+ * Perfil sugerido na tela "Criar contas": sempre Profissional, o de MENOR privilégio
+ * (Recepção vê todas as estrelas e cadastra para qualquer uma). Recepção é escolha explícita
+ * do dono por linha (ex.: Andressa e Kelle). O parâmetro fica para a assinatura não mudar.
  */
-export function perfilSugerido(categoria: string | null | undefined): PerfilDaCriacao {
-  return categoria != null && CATEGORIAS.has(categoria.trim()) ? "Profissional" : "Recepção";
+export function perfilSugerido(_categoria: string | null | undefined): PerfilDaCriacao {
+  return "Profissional";
 }
 
 function chaveDeNome(nome: string): string {
