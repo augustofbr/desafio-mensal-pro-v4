@@ -38,9 +38,16 @@
 --      nos defaults). A pré-condição aborta se aparecer uma, porque o ROLLBACK não a cobriria.
 --   3) DROP TRIGGER trigger_profiles_permission_audit ON public.profiles e
 --      trigger_user_permissions_audit ON public.user_permissions. Eles chamam
---      log_permission_change(), que grava em permission_audit_log — tabela que NÃO existe —, e
---      fazem falhar operações que os disparam (exclusão de usuário do Auth, via cascata). As
---      funções de trigger (trigger_log_role_change, trigger_log_user_permissions_change) FICAM.
+--      log_permission_change(), que grava em permission_audit_log — tabela que NÃO existe. Hoje
+--      (conferido em 2026-10-20 com transação desfeita) eles quebram com 42P01 todo UPDATE de
+--      role/permissão em profiles (can_enter_queue, can_undo_action, can_manage_queue) e
+--      QUALQUER escrita (INSERT/UPDATE/DELETE) em user_permissions. NÃO quebram a exclusão de
+--      usuário no Auth enquanto user_permissions estiver vazia (0 linhas hoje): a cascata
+--      auth.users -> profiles -> user_permissions só dispara o trigger se houver linha nela.
+--      As funções de trigger (trigger_log_role_change, trigger_log_user_permissions_change) FICAM.
+--      Nota (fora do escopo, não mexido): as FKs NO ACTION professionals.user_id ->
+--      profiles(id) e user_permissions.created_by / updated_by -> profiles(id) podem barrar uma
+--      exclusão no Auth no futuro (profile referenciado por elas não cascateia).
 --
 -- O que NÃO toca (a guarda final compara um retrato do catálogo antes x depois, dentro da
 -- própria transação, e aborta se qualquer outra coisa mudou):
@@ -77,7 +84,9 @@
 -- Idempotente: REVOKE repetido não falha; DROP TRIGGER IF EXISTS. A pré-condição dos triggers
 -- aceita "já removido".
 --
--- Rollback autossuficiente (não depende de outro arquivo). Devolve os grants EXATOS de
+-- Rollback autossuficiente (não depende de outro arquivo). Rode-o BYTE A BYTE no SQL Editor
+-- (papel postgres), NÃO pelo apply_migration: ele tem begin/commit próprios, e o
+-- apply_migration já embrulha o lote numa transação. Devolve os grants EXATOS de
 -- 2026-10-20 (ACLs lidas do catálogo):
 --   tabelas e views: {postgres=arwdDxt/postgres,anon=arwdDxt/postgres,
 --                     authenticated=arwdDxt/postgres,service_role=arwdDxt/postgres}
@@ -154,14 +163,29 @@ BEGIN
       END IF;
     END LOOP;
   END LOOP;
-  FOR f IN SELECT p2.oid::regprocedure FROM pg_proc p2 JOIN pg_namespace n ON n.oid = p2.pronamespace
-            WHERE n.nspname = 'public' AND p2.proname IN ('reset_daily_queue','revert_start_attendance',
-              'revert_finish_attendance','revert_cancel_attendance','revert_presence_confirmation',
-              'revert_toggle_external','get_queue_metrics','get_professional_performance_by_period',
-              'sync_missing_professionals','get_user_filters','upsert_user_filters','get_user_role',
-              'get_supervisor_goal_config','update_supervisor_goal_config','is_supervisor_or_admin',
-              'log_permission_change','get_worked_days_current_month','get_remaining_days_current_month',
-              'get_total_working_days_current_month','is_admin','is_admin_user','is_own_professional') LOOP
+  FOREACH f IN ARRAY ARRAY[
+    'public.reset_daily_queue()'::regprocedure,
+    'public.revert_start_attendance(uuid)',
+    'public.revert_finish_attendance(uuid)',
+    'public.revert_cancel_attendance(uuid)',
+    'public.revert_presence_confirmation(text)',
+    'public.revert_toggle_external(text)',
+    'public.get_queue_metrics()',
+    'public.get_professional_performance_by_period(integer, integer)',
+    'public.sync_missing_professionals()',
+    'public.get_user_filters(uuid)',
+    'public.upsert_user_filters(uuid, public.service_category[], integer, integer)',
+    'public.get_user_role()',
+    'public.get_supervisor_goal_config()',
+    'public.update_supervisor_goal_config(integer, numeric, integer, numeric, integer, numeric)',
+    'public.is_supervisor_or_admin()',
+    'public.log_permission_change(uuid, public.permission_audit_action, text, text, text, text, jsonb)',
+    'public.get_worked_days_current_month()',
+    'public.get_remaining_days_current_month()',
+    'public.get_total_working_days_current_month()',
+    'public.is_admin()',
+    'public.is_admin_user()',
+    'public.is_own_professional(text)'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc x, aclexplode(x.proacl) a
                     WHERE x.oid = f AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
        OR NOT has_function_privilege('anon', f, 'execute')
@@ -261,20 +285,47 @@ BEGIN
     v_falhas := v_falhas || format('FK de fora aponta para o studio: %s', r.dep);
   END LOOP;
 
-  -- nenhuma policy de tabela de fora (qualquer schema, inclusive storage) usa as funções do
-  -- studio ou as tabelas dele
+  -- QUALQUER objeto (view/regra, default de coluna, constraint, trigger, policy, índice,
+  -- função...) que dependa das 22 funções e cujo dono esteja fora do studio. O dono é a
+  -- relação a que o objeto pertence; classe sem dono conhecido conta como "de fora" (aborta).
+  -- Exceção: as próprias 22 funções dependendo umas das outras.
+  FOR r IN SELECT DISTINCT pg_describe_object(d.classid, d.objid, d.objsubid)
+                    || ' -> ' || d.refobjid::regprocedure::text AS dep
+             FROM pg_depend d
+            WHERE d.refclassid = 'pg_proc'::regclass
+              AND d.refobjid = ANY (v_fns::oid[])
+              AND NOT (d.classid = 'pg_proc'::regclass AND d.objid = ANY (v_fns::oid[]))
+              AND coalesce(
+                    CASE d.classid
+                      WHEN 'pg_rewrite'::regclass::oid THEN
+                        (SELECT rw.ev_class FROM pg_rewrite rw WHERE rw.oid = d.objid)
+                      WHEN 'pg_attrdef'::regclass::oid THEN
+                        (SELECT ad.adrelid FROM pg_attrdef ad WHERE ad.oid = d.objid)
+                      WHEN 'pg_constraint'::regclass::oid THEN
+                        (SELECT nullif(co.conrelid, 0) FROM pg_constraint co WHERE co.oid = d.objid)
+                      WHEN 'pg_trigger'::regclass::oid THEN
+                        (SELECT tg.tgrelid FROM pg_trigger tg WHERE tg.oid = d.objid)
+                      WHEN 'pg_policy'::regclass::oid THEN
+                        (SELECT po.polrelid FROM pg_policy po WHERE po.oid = d.objid)
+                      WHEN 'pg_class'::regclass::oid THEN
+                        coalesce((SELECT ix.indrelid FROM pg_index ix WHERE ix.indexrelid = d.objid), d.objid)
+                    END, 0::oid) <> ALL (v_rel_oids) LOOP
+    v_falhas := v_falhas || format('objeto de fora depende de função do studio: %s', r.dep);
+  END LOOP;
+
+  -- nenhuma policy de tabela de fora (qualquer schema, inclusive storage) depende das tabelas
+  -- do studio (por pg_depend) nem as cita no texto
   FOR r IN SELECT DISTINCT pol.polrelid::regclass::text || ' / ' || pol.polname AS dep
              FROM pg_policy pol
              JOIN pg_depend d ON d.classid = 'pg_policy'::regclass AND d.objid = pol.oid
             WHERE pol.polrelid <> ALL (v_rel_oids)
-              AND ((d.refclassid = 'pg_proc'::regclass AND d.refobjid = ANY (v_fns::oid[]))
-                   OR (d.refclassid = 'pg_class'::regclass AND d.refobjid = ANY (v_rel_oids))) LOOP
+              AND d.refclassid = 'pg_class'::regclass AND d.refobjid = ANY (v_rel_oids) LOOP
     v_falhas := v_falhas || format('policy de fora depende do studio: %s', r.dep);
   END LOOP;
   FOR r IN SELECT schemaname || '.' || tablename || ' / ' || policyname AS dep FROM pg_policies
             WHERE NOT (schemaname = 'public' AND tablename = ANY (v_rels))
               AND coalesce(qual, '') || ' ' || coalesce(with_check, '')
-                  ~* '(^|[^-a-z0-9_"])(is_admin|is_admin_user|is_own_professional|is_supervisor_or_admin|get_user_role|profiles|professionals|user_permissions|monthly_goals|system_config|supervisor_goal_config)([^a-z0-9_-]|$)' LOOP
+                  ~* '(^|[^-a-z0-9_])(is_admin|is_admin_user|is_own_professional|is_supervisor_or_admin|get_user_role|profiles|professionals|user_permissions|monthly_goals|system_config|supervisor_goal_config)([^a-z0-9_-]|$)' LOOP
     v_falhas := v_falhas || format('policy de fora cita o studio: %s', r.dep);
   END LOOP;
 
@@ -289,7 +340,7 @@ BEGIN
                                 'public.handle_new_user()'::regprocedure,
                                 'public.trigger_log_role_change()'::regprocedure,
                                 'public.trigger_log_user_permissions_change()'::regprocedure)
-              AND p.prosrc ~* '(^|[^-a-z0-9_"])(monthly_goals|system_config|supervisor_goal_config|user_filters|user_permissions|queue_attendances|queue_professionals|queue_events|queue_config|queue_automation_config|professionals|profiles|professional_performance|professional_forecast_details|supervisor_performance|supervisor_performance_with_forecast|reset_daily_queue|revert_start_attendance|revert_finish_attendance|revert_cancel_attendance|revert_presence_confirmation|revert_toggle_external|get_queue_metrics|get_professional_performance_by_period|sync_missing_professionals|get_user_filters|upsert_user_filters|get_user_role|get_supervisor_goal_config|update_supervisor_goal_config|is_supervisor_or_admin|log_permission_change|get_worked_days_current_month|get_remaining_days_current_month|get_total_working_days_current_month|is_admin|is_admin_user|is_own_professional)([^a-z0-9_-]|$)' LOOP
+              AND p.prosrc ~* '(^|[^-a-z0-9_])(monthly_goals|system_config|supervisor_goal_config|user_filters|user_permissions|queue_attendances|queue_professionals|queue_events|queue_config|queue_automation_config|professionals|profiles|professional_performance|professional_forecast_details|supervisor_performance|supervisor_performance_with_forecast|reset_daily_queue|revert_start_attendance|revert_finish_attendance|revert_cancel_attendance|revert_presence_confirmation|revert_toggle_external|get_queue_metrics|get_professional_performance_by_period|sync_missing_professionals|get_user_filters|upsert_user_filters|get_user_role|get_supervisor_goal_config|update_supervisor_goal_config|is_supervisor_or_admin|log_permission_change|get_worked_days_current_month|get_remaining_days_current_month|get_total_working_days_current_month|is_admin|is_admin_user|is_own_professional)([^a-z0-9_-]|$)' LOOP
     v_falhas := v_falhas || format('função de fora cita o studio: %s', r.dep);
   END LOOP;
 
@@ -344,14 +395,29 @@ WITH studio_rel AS (
      'professionals','profiles','professional_performance','professional_forecast_details',
      'supervisor_performance','supervisor_performance_with_forecast')
 ), studio_fn AS (
-  SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-   WHERE n.nspname = 'public' AND p.proname IN ('reset_daily_queue','revert_start_attendance',
-     'revert_finish_attendance','revert_cancel_attendance','revert_presence_confirmation',
-     'revert_toggle_external','get_queue_metrics','get_professional_performance_by_period',
-     'sync_missing_professionals','get_user_filters','upsert_user_filters','get_user_role',
-     'get_supervisor_goal_config','update_supervisor_goal_config','is_supervisor_or_admin',
-     'log_permission_change','get_worked_days_current_month','get_remaining_days_current_month',
-     'get_total_working_days_current_month','is_admin','is_admin_user','is_own_professional')
+  SELECT unnest(ARRAY[
+    'public.reset_daily_queue()'::regprocedure,
+    'public.revert_start_attendance(uuid)',
+    'public.revert_finish_attendance(uuid)',
+    'public.revert_cancel_attendance(uuid)',
+    'public.revert_presence_confirmation(text)',
+    'public.revert_toggle_external(text)',
+    'public.get_queue_metrics()',
+    'public.get_professional_performance_by_period(integer, integer)',
+    'public.sync_missing_professionals()',
+    'public.get_user_filters(uuid)',
+    'public.upsert_user_filters(uuid, public.service_category[], integer, integer)',
+    'public.get_user_role()',
+    'public.get_supervisor_goal_config()',
+    'public.update_supervisor_goal_config(integer, numeric, integer, numeric, integer, numeric)',
+    'public.is_supervisor_or_admin()',
+    'public.log_permission_change(uuid, public.permission_audit_action, text, text, text, text, jsonb)',
+    'public.get_worked_days_current_month()',
+    'public.get_remaining_days_current_month()',
+    'public.get_total_working_days_current_month()',
+    'public.is_admin()',
+    'public.is_admin_user()',
+    'public.is_own_professional(text)'])::oid AS oid
 )
 SELECT 'rel'::text AS tipo, c.oid::regclass::text AS objeto,
        concat_ws(' | ', pg_get_userbyid(c.relowner),

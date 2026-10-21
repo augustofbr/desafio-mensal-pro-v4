@@ -11,8 +11,9 @@
 -- mensagem diz qual passo).
 --
 -- O que prova:
---   1) anon e authenticated recebem 42501 ao ler/escrever cada uma das 16 relações e ao
---      executar cada uma das 22 funções do studio;
+--   1) anon e authenticated recebem 42501 DA CHECAGEM DE PRIVILÉGIO ("permission denied for
+--      function|table|view <nome>") ao ler/escrever cada uma das 16 relações e ao executar cada
+--      uma das 22 funções do studio;
 --   2) service_role continua lendo as 16 relações e executando as funções;
 --   3) INSERT em trinks_services como service_role E como postgres (os papéis do n8n) dispara
 --      trigger_sync_new_professional sem erro e cria a linha em public.professionals;
@@ -52,39 +53,44 @@ begin
 end $$;
 
 -- 1. anon e authenticated: 42501 em tudo ----------------------------------------
-create temp table aposenta_x1_chamadas on commit drop as
-select unnest(array[
-  'select public.reset_daily_queue()',
-  'select public.revert_start_attendance(null::uuid)',
-  'select public.revert_finish_attendance(null::uuid)',
-  'select public.revert_cancel_attendance(null::uuid)',
-  'select public.revert_presence_confirmation(null::text)',
-  'select public.revert_toggle_external(null::text)',
-  'select * from public.get_queue_metrics()',
-  'select * from public.get_professional_performance_by_period(null::integer, null::integer)',
-  'select public.sync_missing_professionals()',
-  'select public.get_user_filters(null::uuid)',
-  'select public.upsert_user_filters(null::uuid, null::public.service_category[], null::integer, null::integer)',
-  'select public.get_user_role()',
-  'select public.get_supervisor_goal_config()',
-  'select public.update_supervisor_goal_config(null::integer, null::numeric, null::integer, null::numeric, null::integer, null::numeric)',
-  'select public.is_supervisor_or_admin()',
-  'select public.log_permission_change(null::uuid, null::public.permission_audit_action, null::text, null::text, null::text, null::text, null::jsonb)',
-  'select public.get_worked_days_current_month()',
-  'select public.get_remaining_days_current_month()',
-  'select public.get_total_working_days_current_month()',
-  'select public.is_admin()',
-  'select public.is_admin_user()',
-  'select public.is_own_professional(null::text)'
-]) as sql
-union all
-select format('select 1 from public.%I limit 0', r) from unnest(array[
+-- Cada chamada leva o nome do objeto cuja checagem de privilégio deve barrá-la. Só conta
+-- como bloqueio o 42501 cuja mensagem é exatamente "permission denied for function|table|view
+-- <esse nome>" (a checagem de ACL do executor). Um 42501 de DENTRO do corpo de uma função (que
+-- teria rodado, portanto sem bloqueio) cita outro objeto e é registrado como falha. A guarda
+-- (b) da migração também cobre o caso: ela asserta has_function_privilege = false para anon e
+-- authenticated e a ausência de PUBLIC na ACL das 22 funções.
+create temp table aposenta_x1_chamadas (sql text, alvo text) on commit drop;
+insert into aposenta_x1_chamadas (sql, alvo) values
+  ('select public.reset_daily_queue()', 'reset_daily_queue'),
+  ('select public.revert_start_attendance(null::uuid)', 'revert_start_attendance'),
+  ('select public.revert_finish_attendance(null::uuid)', 'revert_finish_attendance'),
+  ('select public.revert_cancel_attendance(null::uuid)', 'revert_cancel_attendance'),
+  ('select public.revert_presence_confirmation(null::text)', 'revert_presence_confirmation'),
+  ('select public.revert_toggle_external(null::text)', 'revert_toggle_external'),
+  ('select * from public.get_queue_metrics()', 'get_queue_metrics'),
+  ('select * from public.get_professional_performance_by_period(null::integer, null::integer)', 'get_professional_performance_by_period'),
+  ('select public.sync_missing_professionals()', 'sync_missing_professionals'),
+  ('select public.get_user_filters(null::uuid)', 'get_user_filters'),
+  ('select public.upsert_user_filters(null::uuid, null::public.service_category[], null::integer, null::integer)', 'upsert_user_filters'),
+  ('select public.get_user_role()', 'get_user_role'),
+  ('select public.get_supervisor_goal_config()', 'get_supervisor_goal_config'),
+  ('select public.update_supervisor_goal_config(null::integer, null::numeric, null::integer, null::numeric, null::integer, null::numeric)', 'update_supervisor_goal_config'),
+  ('select public.is_supervisor_or_admin()', 'is_supervisor_or_admin'),
+  ('select public.log_permission_change(null::uuid, null::public.permission_audit_action, null::text, null::text, null::text, null::text, null::jsonb)', 'log_permission_change'),
+  ('select public.get_worked_days_current_month()', 'get_worked_days_current_month'),
+  ('select public.get_remaining_days_current_month()', 'get_remaining_days_current_month'),
+  ('select public.get_total_working_days_current_month()', 'get_total_working_days_current_month'),
+  ('select public.is_admin()', 'is_admin'),
+  ('select public.is_admin_user()', 'is_admin_user'),
+  ('select public.is_own_professional(null::text)', 'is_own_professional');
+insert into aposenta_x1_chamadas (sql, alvo)
+select format('select 1 from public.%I limit 0', r), r from unnest(array[
   'monthly_goals','system_config','supervisor_goal_config','user_filters','user_permissions',
   'queue_attendances','queue_professionals','queue_events','queue_config',
   'queue_automation_config','professionals','profiles','professional_performance',
   'professional_forecast_details','supervisor_performance','supervisor_performance_with_forecast']) r
 union all
-select format('delete from public.%I where false', r) from unnest(array[
+select format('delete from public.%I where false', r), r from unnest(array[
   'monthly_goals','system_config','supervisor_goal_config','user_filters','user_permissions',
   'queue_attendances','queue_professionals','queue_events','queue_config',
   'queue_automation_config','professionals','profiles']) r;
@@ -99,12 +105,14 @@ set local role anon;
 do $$
 declare c record;
 begin
-  for c in select sql from aposenta_x1_chamadas loop
+  for c in select sql, alvo from aposenta_x1_chamadas loop
     begin
       execute c.sql;
       insert into aposenta_x1_resultado values ('anon', c.sql, 'PASSOU');
     exception when insufficient_privilege then
-      null;
+      if sqlerrm !~ ('^permission denied for (function|table|view) ' || c.alvo || '$') then
+        insert into aposenta_x1_resultado values ('anon', c.sql, '42501 de outra origem: ' || sqlerrm);
+      end if;
     when others then
       insert into aposenta_x1_resultado values ('anon', c.sql, sqlstate || ' ' || sqlerrm);
     end;
@@ -118,12 +126,14 @@ set local role authenticated;
 do $$
 declare c record;
 begin
-  for c in select sql from aposenta_x1_chamadas loop
+  for c in select sql, alvo from aposenta_x1_chamadas loop
     begin
       execute c.sql;
       insert into aposenta_x1_resultado values ('authenticated', c.sql, 'PASSOU');
     exception when insufficient_privilege then
-      null;
+      if sqlerrm !~ ('^permission denied for (function|table|view) ' || c.alvo || '$') then
+        insert into aposenta_x1_resultado values ('authenticated', c.sql, '42501 de outra origem: ' || sqlerrm);
+      end if;
     when others then
       insert into aposenta_x1_resultado values ('authenticated', c.sql, sqlstate || ' ' || sqlerrm);
     end;
