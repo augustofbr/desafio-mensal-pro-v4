@@ -6,7 +6,7 @@
 --   pg_get_functiondef de avaliacao_clientes_do_dia; os comentários DENTRO desses corpos entram
 --   no hash. Aplicar sem eles (ou com espaços trocados) faz o ROLLBACK recusar-se a rodar.
 -- AVISO 2 — APLICAR SÓ DEPOIS (a) do deploy do front com login em todas as rotas (Tasks 2-4)
---   e das contas das profissionais (Task 5), e (b) da pré-checagem dos logs (Task 6, Step 1):
+--   (as contas da Task 5 podem vir antes ou depois da C), e (b) da pré-checagem dos logs (Task 6, Step 1):
 --   nenhuma requisição `anon` com referer do Destaque para /rest/v1/{trinks_services,
 --   avaliacoes_cadastradas, regras_desafio, feriados, tratamento_fabricante,
 --   profissional_fabricante} nem /rpc/avaliacao_clientes_do_dia depois do deploy. Com o bundle
