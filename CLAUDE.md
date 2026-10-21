@@ -646,10 +646,14 @@ Detalhes que ainda importam:
   tabelas; `lock_timeout` de 5 s, falha inteira sem efeito parcial). **Não é reaplicável.** O rollback é
   autossuficiente, no cabeçalho.
 - **Ordem decidida em 2026-10-20 (coordenador, após a revisão final)**: B (feita) → SMTP próprio, Redirect URLs/Site
-  URL e `SITE_URL` da edge conferidos → criar as contas (pela tela "Criar contas" do front NOVO rodando local, logado como
+  URL e `SITE_URL` da edge conferidos (`SITE_URL` = `https://x3.studioxbrasil.com.br/`, a RAIZ: um `/admin` levaria quem
+  aceita o convite antes do deploy ao `SemAcesso` antigo, com `signOut` global) → arquivar o workflow n8n
+  `Bv9b8LOvsi70dqE8` (TRUNCATE CASCADE) → resolver a senha da conta da Paula → criar as contas (pela tela "Criar contas" do front NOVO rodando local, logado como
   admin; o convite aponta para a URL de produção) → deploy do front → C. Criar as contas ANTES do deploy evita deixar a
-  equipe sem painel entre o deploy e os convites; com a B aplicada, uma conta logada antes da C não vê mais do que o
-  `anon` já vê. O cabeçalho da C diz que as contas podem vir antes ou depois. Gates para criar contas: B,
+  equipe sem painel entre o deploy e os convites. Quem aceita o convite antes do deploy cai na home antiga já logado
+  (sem aviso); o bundle novo reaproveita a mesma sessão (mesma storage key). Com a B aplicada, uma conta logada antes da
+  C vê o que o `anon` já vê, mais o que as RPCs novas entregam por desenho (motivo das recusas: as próprias para a
+  Profissional, todas para a Recepção). O cabeçalho da C diz que as contas podem vir antes ou depois. Gates para criar contas: B,
   `audit_log` do NFS-e fechado a `authenticated` e migração do studio-x1 (os três já aplicados) e **SMTP próprio
   configurado** (não consta como feito; ver "Criar contas"). Quando a C for aplicada, atualize a coluna "Hoje" da tabela de policies e este bloco.
 - O que `anon` ainda lê **depois da C**: só as 4 colunas da fila em `profissionais_ativos` (a fila
@@ -674,8 +678,8 @@ Seção da aba Usuários (`src/components/admin/CriarContasProfissionais.tsx`, m
 **só com `usuarios: write`**). Lista `destaque_profissionais_sem_conta()` e cria as contas pela ação
 `criar_usuario` da edge `destaque-auth-admin` (convite por e-mail), uma a uma, em sequência.
 
-- **Perfil sugerido** (`perfilSugerido`): categoria em `PROF_CATEGORIES` → Profissional; sem categoria → Recepção.
-  O dono edita (só Profissional ou Recepção).
+- **Perfil sugerido** (`perfilSugerido`): sempre Profissional (menor privilégio); Recepção é escolha do dono por
+  linha (só Profissional ou Recepção).
 - **Linhas com `ja_tem_login` vêm desmarcadas**, com o alerta "Essas pessoas já têm senha em outro app. Ao liberar o
   acesso, quem souber a senha entra no Destaque. Confirme com a pessoa antes." O padrão é conservador: linha sem a
   flag conta como "já tem login". Um selo mostra `vincula_automatico` ("liga ao cadastro" / "sem ligação"). O diálogo
