@@ -20,8 +20,10 @@
 -- AVISO 4 — lock_timeout de 5s: se a tabela estiver ocupada por DDL, a migração falha inteira,
 --   sem efeito parcial; basta rodar de novo. Reaplicável (REVOKE/GRANT são idempotentes).
 -- AVISO 5 — RELAÇÃO COM A MIGRAÇÃO A (20261021100000_login_fase_a.sql):
---   * para reverter as duas, reverta a B ANTES da A (o ROLLBACK da A regrava os privilégios de
---     authenticated em profissionais_ativos a partir do SELECT de tabela que a B tira);
+--   * para reverter as duas, reverta a B ANTES da A: o ROLLBACK da A devolve a ESCRITA de
+--     authenticated (insert/update/delete/...) e não mexe no SELECT; depois dele, o DO do ROLLBACK
+--     da B aborta ("authenticated com privilegio de escrita"). Com a B ainda aplicada, o ROLLBACK
+--     da A também deixaria authenticated sem o SELECT de tabela de partida;
 --   * reaplicar a A depois da B aborta na guarda da A, que exige SELECT de TABELA de
 --     authenticated em profissionais_ativos ("authenticated perdeu SELECT em profissionais_ativos
 --     (e da migracao B)"). Para reaplicar a A, reverta a B antes.
