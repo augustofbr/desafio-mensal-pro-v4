@@ -18,9 +18,17 @@ import { AlertTriangle, Cake, Star, ClipboardList, QrCode, ExternalLink, Chevron
 import { Button } from "@/components/ui/button";
 import CadastrarAvaliacaoModal from "@/components/avaliacoes/CadastrarAvaliacaoModal";
 import QrCodeOverlay from "@/components/QrCodeOverlay";
+import { ContaLogada } from "@/components/ContaLogada";
+import { useAcesso } from "@/auth/acesso";
+import { avisoDoErroEstrelas } from "@/lib/estrelasRpc";
 
 function DashboardContent() {
   const navigate = useNavigate();
+  // Perfil sem acesso a "estrelas" nao ve os passos de cadastrar nem de ver as
+  // avaliacoes (o gate real e a RLS/RPC). Os dois dependem do mesmo nivel, entao
+  // somem juntos: com "estrelas" liberada sao os passos 3 e 4; sem ela, ficam so 1 e 2.
+  const { acesso } = useAcesso();
+  const veEstrelas = (acesso?.paginas.estrelas ?? "none") !== "none";
   const {
     hairData,
     cabeloIndisponivel,
@@ -33,6 +41,7 @@ function DashboardContent() {
     rules,
     starsData,
     starsError,
+    starsErrorKind,
     selectProfessional,
     professionalDetails,
     activeProfessionals
@@ -79,6 +88,7 @@ function DashboardContent() {
       {/* Header */}
       <div className="px-4 pt-6 pb-4">
         <div className="max-w-7xl mx-auto">
+          <ContaLogada />
           <div className="flex flex-col items-center mb-5 animate-fade-slide-up">
             <img
               src="/lovable-uploads/0cb6b226-2d51-4078-9b78-b6565c728721.png"
@@ -149,44 +159,48 @@ function DashboardContent() {
                   <ExternalLink className="h-5 w-5 text-violet-400 flex-shrink-0" />
                 </button>
 
-                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+                {veEstrelas && (
+                  <>
+                    <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
 
-                {/* Passo 3 */}
-                <div className="relative w-full">
-                  <span className="absolute top-1 right-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-body font-semibold text-amber-600 z-10 shadow-sm">
-                    Apenas se estrela entrou no Google
-                  </span>
-                  <button
-                    onClick={() => setShowCadastrarAvaliacao(true)}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
-                  >
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
-                      3
+                    {/* Passo 3 */}
+                    <div className="relative w-full">
+                      <span className="absolute top-1 right-1.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-body font-semibold text-amber-600 z-10 shadow-sm">
+                        Apenas se estrela entrou no Google
+                      </span>
+                      <button
+                        onClick={() => setShowCadastrarAvaliacao(true)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                      >
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                          3
+                        </div>
+                        <div className="flex-1 text-left">
+                          <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 3</span>
+                          <p className="text-sm font-body text-gray-700 leading-tight">Cadastre a avaliação da sua cliente</p>
+                        </div>
+                        <Star className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                      </button>
                     </div>
-                    <div className="flex-1 text-left">
-                      <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 3</span>
-                      <p className="text-sm font-body text-gray-700 leading-tight">Cadastre a avaliação da sua cliente</p>
-                    </div>
-                    <Star className="h-5 w-5 text-violet-400 flex-shrink-0" />
-                  </button>
-                </div>
 
-                <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
+                    <ChevronDown className="h-5 w-5 text-violet-400 my-1" />
 
-                {/* Passo 4 */}
-                <button
-                  onClick={() => navigate('/minhas-avaliacoes')}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
-                >
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
-                    4
-                  </div>
-                  <div className="flex-1 text-left">
-                    <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 4</span>
-                    <p className="text-sm font-body text-gray-700 leading-tight">Veja suas avaliações cadastradas</p>
-                  </div>
-                  <ClipboardList className="h-5 w-5 text-violet-400 flex-shrink-0" />
-                </button>
+                    {/* Passo 4 */}
+                    <button
+                      onClick={() => navigate('/minhas-avaliacoes')}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-violet-200 bg-white hover:bg-violet-50 hover:border-violet-400 active:bg-violet-100 transition-all duration-150"
+                    >
+                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-white text-sm font-bold font-body shadow flex-shrink-0">
+                        4
+                      </div>
+                      <div className="flex-1 text-left">
+                        <span className="text-xs font-body font-bold text-violet-600 uppercase tracking-wide">Passo 4</span>
+                        <p className="text-sm font-body text-gray-700 leading-tight">Veja suas avaliações cadastradas</p>
+                      </div>
+                      <ClipboardList className="h-5 w-5 text-violet-400 flex-shrink-0" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -237,7 +251,7 @@ function DashboardContent() {
                 maquiagemData={maquiagemData}
                 rules={rules}
                 activeProfessionals={activeProfessionals}
-                renderAbaixo={({ perfilId, perfil, abrirSeletor }) => (
+                renderAbaixo={({ perfilId, perfil, abrirSeletor, identidadeCarregando, identidadeErro }) => (
                   <BonusEstrelas
                     starsData={starsData}
                     starsError={starsError}
@@ -246,6 +260,8 @@ function DashboardContent() {
                     perfilId={perfilId}
                     perfil={perfil}
                     onAbrirSeletor={abrirSeletor}
+                    identidadeCarregando={identidadeCarregando}
+                    identidadeErro={identidadeErro}
                   />
                 )}
               />
@@ -253,6 +269,15 @@ function DashboardContent() {
           </div>
 
           <div className="animate-fade-slide-up stagger-6 mt-5">
+            {/* Estrelas nao carregaram (qualquer filtro): a pontuacao abaixo esta SEM elas. */}
+            {!loading && starsError && (
+              <p
+                role="alert"
+                className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 font-body text-sm text-amber-800"
+              >
+                {avisoDoErroEstrelas(starsErrorKind ?? "generico")}
+              </p>
+            )}
             <DataRankings
               hairData={hairData}
               manicureData={manicureData}

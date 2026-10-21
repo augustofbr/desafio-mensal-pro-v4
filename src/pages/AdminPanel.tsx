@@ -11,7 +11,7 @@ import { rotuloContadorPendentes } from "@/lib/avaliacoesAdmin";
 // auth-kit: identidade e nível de acesso vêm do provider do kit (matriz de
 // páginas em destaque_perfis), não mais de uma lista de emails no bundle.
 import { useAcesso } from "@/auth/acesso";
-import { supabase } from "@/lib/supabase";
+import { sairDesteAparelho } from "@/auth/sair";
 import { PAGES } from "@/lib/pages";
 
 export default function AdminPanel() {
@@ -35,7 +35,8 @@ export default function AdminPanel() {
   const podeVerUsuarios = acesso != null && acesso.paginas.usuarios !== "none";
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // Só este aparelho (scope "local") e toast se falhar: ver src/auth/sair.ts.
+    await sairDesteAparelho("AdminPanel");
   };
 
   return (

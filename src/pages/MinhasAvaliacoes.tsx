@@ -12,6 +12,11 @@ import { useMinhasAvaliacoes, type Avaliacao } from "@/hooks/useMinhasAvaliacoes
 import { useEffect } from "react";
 // Mesmo formatador do painel de aprovação — uma definição só de "hora de Manaus".
 import { formatDataHoraManaus } from "@/lib/dateUtils";
+import { ContaLogada } from "@/components/ContaLogada";
+import { useAcesso } from "@/auth/acesso";
+import { useMinhaProfissional } from "@/hooks/useMinhaProfissional";
+import { modoMinhasAvaliacoes, resolverIdentidade } from "@/lib/identidade";
+import { motivoParaProfissional } from "@/lib/motivoRecusa";
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -43,27 +48,35 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function AvaliacaoCard({ avaliacao }: { avaliacao: Avaliacao }) {
+  const motivo = motivoParaProfissional(avaliacao.status, avaliacao.motivo_recusa);
   return (
-    <div className="flex items-center justify-between p-3 rounded-xl bg-white/80 border border-violet-100 shadow-sm">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0">
-          <User className="h-4 w-4 text-violet-500" />
-        </div>
-        <div className="min-w-0">
-          <p className="font-body font-medium text-sm text-gray-800 truncate">
-            {avaliacao.nome_cliente}
-          </p>
-          {avaliacao.nome_cliente_trinks?.trim() && (
-            <p className="font-body text-xs text-gray-500 truncate">
-              Trinks: {avaliacao.nome_cliente_trinks.trim()}
+    <div className="p-3 rounded-xl bg-white/80 border border-violet-100 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0">
+            <User className="h-4 w-4 text-violet-500" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-body font-medium text-sm text-gray-800 truncate">
+              {avaliacao.nome_cliente}
             </p>
-          )}
-          <p className="font-body text-xs text-gray-400">
-            {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
-          </p>
+            {avaliacao.nome_cliente_trinks?.trim() && (
+              <p className="font-body text-xs text-gray-500 truncate">
+                Trinks: {avaliacao.nome_cliente_trinks.trim()}
+              </p>
+            )}
+            <p className="font-body text-xs text-gray-400">
+              {formatDataHoraManaus(avaliacao.data_hora_cadastro)}
+            </p>
+          </div>
         </div>
+        <StatusBadge status={avaliacao.status} />
       </div>
-      <StatusBadge status={avaliacao.status} />
+      {motivo && (
+        <p className="mt-2 rounded-lg bg-red-50/70 border border-red-100 px-3 py-2 font-body text-xs text-red-800 break-words">
+          <span className="font-semibold">Motivo da recusa:</span> {motivo}
+        </p>
+      )}
     </div>
   );
 }
@@ -76,7 +89,31 @@ const MinhasAvaliacoes = () => {
     fetchActiveProfessionals,
   } = useActiveProfessionals();
 
-  const [selectedProfId, setSelectedProfId] = useState<number | null>(null);
+  // Identidade da conta: ligada a uma profissional que nao escolhe outra => a
+  // pagina e sempre dela, sem seletor. A lista vem da RPC `destaque_minhas_avaliacoes`
+  // (`estrelas:write` ve qualquer id; `estrelas:read` so o do vinculo).
+  const { acesso } = useAcesso();
+  const vinculo = useMinhaProfissional();
+  const nivelEstrelas = acesso?.paginas.estrelas ?? "none";
+  const identidade = resolverIdentidade({
+    vinculoId: vinculo.id,
+    vinculoErro: vinculo.erro,
+    nivelEstrelas,
+    perfilLocalId: null,
+  });
+  // Quem ve o que: `none` sem lista; `write` (recepcao) seletor livre; `read` so a
+  // profissional ligada, e sem vinculo utilizavel (sem ligacao, erro na RPC do vinculo ou
+  // profissional inativa) fica bloqueada: a RPC devolveria 0 linhas para qualquer outro id
+  // e a tela diria "Nenhuma avaliacao" por engano. Fora do seletor, o id vem so do modo.
+  const modo = modoMinhasAvaliacoes({
+    nivelEstrelas,
+    vinculoId: vinculo.id,
+    motivoBloqueio: identidade.motivoBloqueio,
+  });
+
+  const [profEscolhidaId, setSelectedProfId] = useState<number | null>(null);
+  const selectedProfId =
+    modo.tipo === "fixo" ? modo.profissionalId : modo.tipo === "seletor" ? profEscolhidaId : null;
   const {
     avaliacoes,
     loading: avaliacoesLoading,
@@ -155,6 +192,7 @@ const MinhasAvaliacoes = () => {
     <div className="min-h-screen bg-gradient-warm">
       <div className="px-4 pt-6 pb-4">
         <div className="max-w-7xl mx-auto">
+          <ContaLogada />
           {/* Header */}
           <div className="flex flex-col items-center mb-5 animate-fade-slide-up">
             <img
@@ -196,24 +234,50 @@ const MinhasAvaliacoes = () => {
                       Avaliações Google
                     </CardTitle>
                     <p className="text-xs text-gray-500 font-body">
-                      Selecione um profissional para ver suas avaliações
+                      {modo.tipo === "sem_acesso" || modo.tipo === "bloqueado"
+                        ? "Lista de avaliações indisponível"
+                        : modo.tipo === "fixo"
+                        ? "Suas avaliações cadastradas"
+                        : "Selecione um profissional para ver suas avaliações"}
                     </p>
                   </div>
                 </div>
               </CardHeader>
 
               <CardContent className="px-4 pb-4">
-                {profsLoading || regrasCarregando ? (
+                {modo.tipo === "sem_acesso" ? (
+                  <p role="status" className="py-6 text-center font-body text-sm text-gray-600">
+                    Seu perfil não inclui a lista de avaliações.
+                  </p>
+                ) : profsLoading ||
+                  vinculo.carregando ||
+                  (modo.tipo === "seletor" && regrasCarregando) ? (
                   <div className="h-10 rounded-lg animate-shimmer" />
+                ) : modo.tipo === "bloqueado" ? (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-body text-amber-800"
+                  >
+                    {modo.mensagem}
+                  </p>
                 ) : (
                   <>
-                    {/* Professional select */}
-                    <ProfessionalSelect
-                      professionals={sortedProfessionals}
-                      value={selectedProfId ? String(selectedProfId) : ""}
-                      onValueChange={(val) => setSelectedProfId(Number(val))}
-                      className="mb-4"
-                    />
+                    {modo.tipo === "fixo" ? (
+                      // Conta ligada: so as proprias avaliacoes, sem lista para trocar.
+                      <p className="mb-4 font-body text-sm font-medium text-gray-800">
+                        {activeProfessionals.find((p) => p.profissionalId === vinculo.id)
+                          ?.nome_profissional ?? "Sua conta"}
+                      </p>
+                    ) : (
+                      <>
+                        <ProfessionalSelect
+                          professionals={sortedProfessionals}
+                          value={selectedProfId ? String(selectedProfId) : ""}
+                          onValueChange={(val) => setSelectedProfId(Number(val))}
+                          className="mb-4"
+                        />
+                      </>
+                    )}
 
                     {!selectedProfId ? (
                       <div className="text-center py-10">

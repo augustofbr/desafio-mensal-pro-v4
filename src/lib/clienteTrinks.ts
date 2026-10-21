@@ -120,3 +120,22 @@ export function clienteDaLista(
 ): ClienteDoDia | null {
   return clientes.find((c) => c.nome === nome && c.cliente_trinks_id === id) ?? null;
 }
+
+/**
+ * Códigos com que o banco recusa um dia de atendimento fora de hoje-10..hoje (trigger
+ * avaliacoes_cadastradas_antes_inserir). 22023 é o da migração A; P0D01 foi o primeiro
+ * rascunho da migração C (fica por compatibilidade); PT400 é o da C (o PostgREST responde
+ * HTTP 400 em vez de 500).
+ */
+export const CODIGOS_DIA_FORA_DA_JANELA: readonly string[] = ["22023", "P0D01", "PT400"];
+
+/**
+ * Se o erro do INSERT é a regra do dia fora da janela, devolve a mensagem do banco (já é a
+ * frase para a usuária); senão, null.
+ */
+export function mensagemDiaForaDaJanela(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  if (typeof code !== "string" || !CODIGOS_DIA_FORA_DA_JANELA.includes(code)) return null;
+  return typeof message === "string" && message.trim() !== "" ? message : null;
+}

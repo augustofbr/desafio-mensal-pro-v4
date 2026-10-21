@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from "@/integrations/supabase/client";
+// Mesma instância do app, sem o genérico `Database` (que não conhece esta RPC).
+import { supabase } from "@/lib/supabase";
 
 export interface Avaliacao {
   id: string;
@@ -10,6 +11,8 @@ export interface Avaliacao {
   status: string;
   data_hora_cadastro: string;
   data_aprovacao: string | null;
+  /** Só vem preenchido nas recusadas; recusa legada = NULL ("Sem motivo registrado"). */
+  motivo_recusa: string | null;
 }
 
 interface AvaliacaoCounts {
@@ -37,11 +40,13 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
       setLoading(true);
       setIsError(false);
 
-      const { data, error } = await supabase
-        .from("avaliacoes_cadastradas" as any)
-        .select("id, nome_profissional, nome_cliente, nome_cliente_trinks, status, data_hora_cadastro, data_aprovacao")
-        .eq("profissional_id", profissionalId)
-        .order("data_hora_cadastro", { ascending: false });
+      // RPC `destaque_minhas_avaliacoes` (ordenada por data_hora_cadastro desc):
+      // `estrelas:write` ve qualquer id; `estrelas:read` so o do proprio vinculo.
+      // Sem permissao ela devolve 0 linhas, por isso a tela nem a chama quando o
+      // perfil nao tem acesso a "estrelas".
+      const { data, error } = await supabase.rpc("destaque_minhas_avaliacoes", {
+        p_profissional_id: profissionalId,
+      });
 
       if (error) {
         console.error("Erro ao buscar avaliações:", error);
@@ -50,7 +55,7 @@ export function useMinhasAvaliacoes(profissionalId: number | null) {
         return;
       }
 
-      setAvaliacoes((data as any[] as Avaliacao[]) ?? []);
+      setAvaliacoes((data as Avaliacao[] | null) ?? []);
     } catch (error) {
       console.error("Erro ao buscar avaliações:", error);
       setAvaliacoes([]);

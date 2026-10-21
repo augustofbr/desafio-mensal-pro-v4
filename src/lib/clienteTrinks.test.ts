@@ -9,8 +9,33 @@ import {
   estadoDaLista,
   normalizarBusca,
   clienteDaLista,
+  mensagemDiaForaDaJanela,
   type ClienteDoDia,
 } from "./clienteTrinks";
+
+describe("mensagemDiaForaDaJanela", () => {
+  const msg = "O dia do atendimento precisa estar entre hoje e 10 dias atrás.";
+
+  it("aceita os três códigos da regra do dia (22023, P0D01, PT400)", () => {
+    for (const code of ["22023", "P0D01", "PT400"]) {
+      expect(mensagemDiaForaDaJanela({ code, message: msg })).toBe(msg);
+    }
+  });
+
+  it("ignora outros códigos (ex.: 42501 da RLS)", () => {
+    expect(
+      mensagemDiaForaDaJanela({ code: "42501", message: "new row violates row-level security policy" })
+    ).toBeNull();
+  });
+
+  it("ignora mensagem vazia ou ausente e erros que não são objeto com code", () => {
+    expect(mensagemDiaForaDaJanela({ code: "PT400", message: "  " })).toBeNull();
+    expect(mensagemDiaForaDaJanela({ code: "PT400" })).toBeNull();
+    expect(mensagemDiaForaDaJanela(null)).toBeNull();
+    expect(mensagemDiaForaDaJanela("PT400")).toBeNull();
+    expect(mensagemDiaForaDaJanela(new Error(msg))).toBeNull();
+  });
+});
 
 describe("JANELA_DIAS_ATENDIMENTO", () => {
   it("janela de 10 dias", () => {

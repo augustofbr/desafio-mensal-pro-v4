@@ -6,6 +6,8 @@ import {
   erroDoMotivo,
   idsParaMotivos,
   mapaDeMotivos,
+  motivoParaProfissional,
+  SEM_MOTIVO_REGISTRADO,
 } from "./motivoRecusa";
 
 describe("normalizarMotivo", () => {
@@ -67,5 +69,18 @@ describe("mapaDeMotivos", () => {
   });
   it("resposta nula vira mapa vazio", () => {
     expect(mapaDeMotivos(null).size).toBe(0);
+  });
+});
+
+describe("motivoParaProfissional", () => {
+  it("só mostra motivo nas recusadas", () => {
+    expect(motivoParaProfissional("pendente", "x")).toBeNull();
+    expect(motivoParaProfissional("aprovada", "x")).toBeNull();
+    expect(motivoParaProfissional("rejeitada", " Duplicada ")).toBe("Duplicada");
+  });
+  it("recusa legada (null ou só espaços) mostra 'Sem motivo registrado'", () => {
+    expect(motivoParaProfissional("rejeitada", null)).toBe(SEM_MOTIVO_REGISTRADO);
+    expect(motivoParaProfissional("rejeitada", "   ")).toBe(SEM_MOTIVO_REGISTRADO);
+    expect(motivoParaProfissional("rejeitada", undefined)).toBe("Sem motivo registrado");
   });
 });

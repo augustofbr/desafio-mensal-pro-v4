@@ -1,11 +1,17 @@
 // auth-kit v0.1 — registry de páginas (gerado por render.mjs; edite via auth-kit.config.json + re-render)
+// Neste repo o render do kit não está disponível: "painel" e "estrelas" foram
+// acrescentadas à mão (2026-10-20), em sincronia com auth-kit.config.json.
 import {
+  LayoutDashboard,
+  Star,
   Settings,
   Users,
   type LucideIcon,
 } from "lucide-react";
 
 export const PAGE_KEYS = [
+  "painel",
+  "estrelas",
   "admin",
   "usuarios",
 ] as const;
@@ -23,6 +29,22 @@ export type PageDef = {
 };
 
 export const PAGES: Record<PageKey, PageDef> = {
+  "painel": {
+    key: "painel",
+    href: "/",
+    label: "Painel",
+    icon: LayoutDashboard,
+    resumo: "Ranking do desafio, aniversariantes e corrida",
+    isConfig: false,
+  },
+  "estrelas": {
+    key: "estrelas",
+    href: "/minhas-avaliacoes",
+    label: "Estrelas",
+    icon: Star,
+    resumo: "Avaliações Google: cadastro e acompanhamento",
+    isConfig: false,
+  },
   "admin": {
     key: "admin",
     href: "/admin",

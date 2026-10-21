@@ -39,7 +39,13 @@ export function useDashboardData() {
     fetchActiveProfessionals
   } = useActiveProfessionals();
 
-  const { starsData, loading: starsLoading, error: starsError } = useStarsData(activeProfessionals);
+  const {
+    starsData,
+    loading: starsLoading,
+    error: starsError,
+    errorKind: starsErrorKind,
+    errorMessage: starsErrorMessage,
+  } = useStarsData(activeProfessionals);
   // Marcas autorizadas sao versionadas por mes: mesmo mes de referencia das regras.
   const manufacturerData = useManufacturerData(
     rules.cabelo.manufacturerConstraints,
@@ -107,6 +113,8 @@ export function useDashboardData() {
     // o Bonus Estrelas as le sem uma segunda consulta.
     starsData,
     starsError,
+    starsErrorKind,
+    starsErrorMessage,
     refreshData: fetchServicesData,
     selectedProfessional,
     professionalDetails: cabeloIndisponivel && selectedCategory === "Cabelo" ? null : professionalDetails,

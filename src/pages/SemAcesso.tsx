@@ -1,6 +1,10 @@
 // auth-kit v0.1 — spa/pages/SemAcesso.tsx
+// Adaptado neste repo (login em todas as rotas, 2026-10-20): conta inativa,
+// sem linha ou sem perfil não chega mais aqui (é o estado "removido" do
+// RequirePage, que desloga e mostra o login com aviso). Esta tela fica só para
+// quem tem acesso válido, mas não à página pedida.
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { sairDesteAparelho } from "@/auth/sair";
 import { useAcesso, hasAnyAccess } from "@/auth/acesso";
 import { PAGES, PAGE_KEYS } from "@/lib/pages";
 
@@ -44,9 +48,10 @@ export default function SemAcesso() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-4 text-center">
       <h1 className="text-xl font-semibold">Sem acesso</h1>
       <p className="text-sm text-muted-foreground">
-        Sua conta não está habilitada no destaque-mensal-pro (ou foi desativada). Fale com o administrador para liberar o acesso.
+        Seu perfil não dá acesso a esta página. Fale com o administrador se precisar dela.
       </p>
-      <button onClick={() => supabase.auth.signOut()} className="rounded-md border px-3 py-2 text-sm">
+      {/* Só este aparelho (scope "local") e toast se falhar: src/auth/sair.ts. */}
+      <button onClick={() => void sairDesteAparelho("SemAcesso")} className="rounded-md border px-3 py-2 text-sm">
         Sair
       </button>
     </div>

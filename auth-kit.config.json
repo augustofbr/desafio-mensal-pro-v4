@@ -8,6 +8,20 @@
   "firstAdminEmail": "augusto.fbr@gmail.com",
   "pages": [
     {
+      "key": "painel",
+      "label": "Painel",
+      "path": "/",
+      "icon": "LayoutDashboard",
+      "resumo": "Ranking do desafio, aniversariantes e corrida"
+    },
+    {
+      "key": "estrelas",
+      "label": "Estrelas",
+      "path": "/minhas-avaliacoes",
+      "icon": "Star",
+      "resumo": "Avaliações Google: cadastro e acompanhamento"
+    },
+    {
       "key": "admin",
       "label": "Administração",
       "path": "/admin",

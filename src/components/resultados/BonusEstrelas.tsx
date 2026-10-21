@@ -20,6 +20,7 @@ import {
   type LinhaBonus,
 } from "@/lib/bonusEstrelas";
 import { getCategoryDisplayName } from "@/lib/categoryDisplayNames";
+import { MOTIVO_ERRO_VINCULO } from "@/lib/identidade";
 import { diaEmManaus } from "@/lib/periodoHistorico";
 import { calcularPosicoes } from "@/lib/posicoes";
 import type { RulesVersion } from "@/lib/rulesConfig";
@@ -33,8 +34,15 @@ interface BonusEstrelasProps {
   activeProfessionals: ProfissionalAtivo[];
   perfilId: string | null;
   perfil: ProfissionalAtivo | null;
-  /** Abre o MESMO seletor "Quem é você?" da seção Minha Meta. */
-  onAbrirSeletor: () => void;
+  /**
+   * Abre o MESMO seletor "Quem é você?" da seção Minha Meta. Ausente quando a
+   * identidade vem da conta (fixa) ou ainda carrega: sem "Trocar" nem convite.
+   */
+  onAbrirSeletor?: () => void;
+  /** O vínculo da conta ainda carrega: nem convite nem identidade por enquanto. */
+  identidadeCarregando?: boolean;
+  /** A leitura do vínculo falhou: não convida a escolher nem culpa o cadastro. */
+  identidadeErro?: boolean;
 }
 
 /** Cores de texto por categoria (contraste AA sobre branco). */
@@ -194,7 +202,7 @@ interface MeuBonusProps {
   valorPendente: number;
   mes: string;
   encerrado: boolean;
-  onTrocar: () => void;
+  onTrocar?: () => void;
 }
 
 function MeuBonus({
@@ -220,7 +228,7 @@ function MeuBonus({
           categoria && <ChipCategoria categoria={categoria} />
         )}
       </div>
-      <BotaoTrocar onClick={onTrocar} />
+      {onTrocar && <BotaoTrocar onClick={onTrocar} />}
     </div>
   );
 
@@ -283,7 +291,41 @@ function MeuBonus({
   );
 }
 
-function SemPerfil({ onAbrirSeletor }: { onAbrirSeletor: () => void }) {
+function SemPerfil({
+  onAbrirSeletor,
+  carregando,
+  erro,
+}: {
+  onAbrirSeletor?: () => void;
+  carregando: boolean;
+  erro: boolean;
+}) {
+  if (erro) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 text-center">
+        <p role="alert" className="font-body text-sm text-gray-700">
+          {MOTIVO_ERRO_VINCULO}
+        </p>
+      </div>
+    );
+  }
+
+  // Vínculo da conta ainda carregando: nada de convite que logo depois some.
+  if (carregando) {
+    return <div className="h-24 animate-shimmer rounded-xl" aria-busy="true" />;
+  }
+
+  // Identidade fixa da conta, mas sem cadastro correspondente nesta lista.
+  if (!onAbrirSeletor) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 text-center">
+        <p className="font-body text-sm text-gray-700">
+          Não encontramos o seu cadastro para mostrar o bônus. Fale com a recepção.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border-2 border-dashed border-gray-300 p-4 text-center">
       <p className="font-body text-sm text-gray-700">
@@ -421,6 +463,8 @@ function BonusEstrelasConteudo({
   perfilId,
   perfil,
   onAbrirSeletor,
+  identidadeCarregando = false,
+  identidadeErro = false,
 }: BonusEstrelasProps) {
   const { getFilteredDateRange } = useDateFilter();
   const { startDate, endDate } = getFilteredDateRange();
@@ -466,7 +510,11 @@ function BonusEstrelasConteudo({
               onTrocar={onAbrirSeletor}
             />
           ) : (
-            <SemPerfil onAbrirSeletor={onAbrirSeletor} />
+            <SemPerfil
+              onAbrirSeletor={onAbrirSeletor}
+              carregando={identidadeCarregando}
+              erro={identidadeErro}
+            />
           )}
         </div>
 

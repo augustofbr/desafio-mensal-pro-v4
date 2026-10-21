@@ -58,3 +58,18 @@ export function mapaDeMotivos(
     }),
   );
 }
+
+/** Texto exibido para recusa legada (`motivo_recusa` NULL ou só espaços). */
+export const SEM_MOTIVO_REGISTRADO = "Sem motivo registrado";
+
+/**
+ * Motivo mostrado à profissional em `/minhas-avaliacoes`: só nas recusadas
+ * (`status = 'rejeitada'`); nas demais devolve `null` e a tela não mostra nada.
+ */
+export function motivoParaProfissional(
+  status: string,
+  motivo: string | null | undefined,
+): string | null {
+  if (status !== "rejeitada") return null;
+  return normalizarMotivo(motivo) || SEM_MOTIVO_REGISTRADO;
+}

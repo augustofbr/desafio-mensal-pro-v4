@@ -1,19 +1,13 @@
 // auth-kit v0.1 — spa/pages/Login.tsx
+// Adaptado neste repo (login em todas as rotas, 2026-10-20): o link mágico
+// volta para a URL em que a pessoa estava (não para uma página fixa) e a tela
+// aceita um aviso opcional (ex.: acesso removido).
 import { useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
-import { PAGES, PAGE_KEYS } from "@/lib/pages";
+import { destinoDoLink } from "@/auth/destinoDoLink";
+import { mensagemErroLogin } from "@/auth/mensagemErroLogin";
 
-// Destino do link mágico: a primeira página do registry, NÃO a origin nua
-// ("/"). O kit não garante página em "/" — o schema só exige a chave
-// "usuarios" — então um app cuja primeira página seja "/painel" mandaria o
-// link mágico pra origin, o shell não teria rota ali, e o usuário veria 404
-// (ou tela branca) logo depois de um login bem-sucedido. Mesmo raciocínio
-// do DESTINO_PADRAO em next/app/auth/callback/route.ts, adaptado pra SPA:
-// aqui não há callback route — o supabase-js já resolve a sessão a partir
-// da própria URL de destino (detectSessionInUrl, ligado por padrão).
-const DESTINO_PADRAO = PAGES[PAGE_KEYS[0]].href;
-
-export default function Login() {
+export default function Login({ aviso }: { aviso?: string } = {}) {
   const [email, setEmail] = useState("");
   const [estado, setEstado] = useState<"idle" | "enviando" | "enviado" | "erro">("idle");
   const [erro, setErro] = useState("");
@@ -22,19 +16,15 @@ export default function Login() {
     e.preventDefault();
     setEstado("enviando");
     // shouldCreateUser:false — login NUNCA cadastra; cadastro é só por convite
-    // do admin (docs/armadilhas.md #1). emailRedirectTo aponta pra
-    // DESTINO_PADRAO (primeira página do registry), não pra origin nua — veja
-    // o comentário acima. PRÉ-REQUISITO DE INSTALAÇÃO: essa URL completa
-    // precisa estar na lista de Redirect URLs permitidas do projeto Supabase
-    // (Auth → URL Configuration), senão o link mágico volta com erro.
+    // do admin (docs/armadilhas.md #1). Só link mágico, sem senha.
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}${DESTINO_PADRAO}` },
+      options: { shouldCreateUser: false, emailRedirectTo: destinoDoLink(window.location.href) },
     });
     if (error) {
-      setErro(/not.*found|signup|disabled/i.test(error.message)
-        ? "Email não cadastrado. Peça a um administrador para criar seu acesso."
-        : error.message);
+      // Nunca a mensagem crua (inglês) do Supabase: ver mensagemErroLogin.ts.
+      console.error("Login: signInWithOtp falhou", error.message);
+      setErro(mensagemErroLogin(error.message));
       setEstado("erro");
     } else {
       setEstado("enviado");
@@ -44,9 +34,14 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={enviar} className="w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-semibold">destaque-mensal-pro</h1>
+        <h1 className="text-xl font-semibold">Profissional Destaque do Mês</h1>
+        {aviso && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {aviso}
+          </p>
+        )}
         {estado === "enviado" ? (
-          <p className="text-sm">Link de acesso enviado para <strong>{email}</strong>. Abra o email neste dispositivo.</p>
+          <p className="text-sm">Link de acesso enviado para <strong>{email}</strong>. Abra o e-mail neste dispositivo.</p>
         ) : (
           <>
             <input
@@ -56,7 +51,7 @@ export default function Login() {
             />
             <button type="submit" disabled={estado === "enviando"}
               className="w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50">
-              {estado === "enviando" ? "Enviando…" : "Entrar por email"}
+              {estado === "enviando" ? "Enviando…" : "Entrar por e-mail"}
             </button>
             {estado === "erro" && <p className="text-sm text-destructive">{erro}</p>}
           </>
